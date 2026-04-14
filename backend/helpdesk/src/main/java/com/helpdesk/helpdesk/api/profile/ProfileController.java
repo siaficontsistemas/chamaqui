@@ -1,5 +1,6 @@
 package com.helpdesk.helpdesk.api.profile;
 
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -21,5 +22,15 @@ public class ProfileController {
 	@GetMapping
 	public ProfileResponse getProfile(@RequestParam String email) {
 		return profileService.getByEmail(email);
+	}
+
+	@DeleteMapping
+	public void deleteProfile(@RequestParam String email) {
+		profileService.deleteByEmail(email);
+	}
+
+	@DeleteMapping("/company")
+	public void deleteCompany(@RequestParam String email) {
+		profileService.deleteCompanyByEmail(email);
 	}
 }

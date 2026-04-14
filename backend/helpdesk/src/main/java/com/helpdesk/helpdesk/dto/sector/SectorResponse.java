@@ -8,6 +8,9 @@ public record SectorResponse(
 	String slug,
 	String description,
 	boolean active,
+	UUID companyOwnerId,
+	String companyName,
+	String companyDocument,
 	String createdByEmail,
 	int memberCount
 ) {

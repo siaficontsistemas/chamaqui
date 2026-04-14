@@ -16,13 +16,13 @@ public interface TeamInviteRepository extends JpaRepository<TeamInvite, UUID> {
 	List<TeamInvite> findAllByOrderByCreatedAtDesc();
 
 	@EntityGraph(attributePaths = {"invitedBy", "acceptedUser", "sectors"})
-	List<TeamInvite> findAllByEmailIgnoreCaseOrderByCreatedAtDesc(String email);
+	List<TeamInvite> findAllByEmailIgnoreCaseAndInviteeHiddenFalseOrderByCreatedAtDesc(String email);
 
 	@EntityGraph(attributePaths = {"invitedBy", "acceptedUser", "sectors"})
-	List<TeamInvite> findAllByInvitedByEmailIgnoreCaseOrderByCreatedAtDesc(String invitedByEmail);
+	List<TeamInvite> findAllByInvitedByEmailIgnoreCaseAndInviterHiddenFalseOrderByCreatedAtDesc(String invitedByEmail);
 
 	@EntityGraph(attributePaths = {"invitedBy", "acceptedUser", "sectors"})
 	Optional<TeamInvite> findWithDetailsById(UUID id);
 
-	boolean existsByEmailIgnoreCaseAndStatus(String email, InviteStatus status);
+	boolean existsByEmailIgnoreCaseAndStatusAndInviteeHiddenFalse(String email, InviteStatus status);
 }

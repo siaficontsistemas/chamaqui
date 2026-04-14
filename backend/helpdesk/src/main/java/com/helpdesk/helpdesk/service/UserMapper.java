@@ -19,6 +19,8 @@ public class UserMapper {
 			user.getEmail(),
 			user.getPhoneNumber(),
 			user.getDocumentNumber(),
+			user.getCompanyName(),
+			user.getCompanyDocument(),
 			user.getStatus().name(),
 			roleCodes(user)
 		);
@@ -31,6 +33,8 @@ public class UserMapper {
 			user.getEmail(),
 			user.getPhoneNumber(),
 			user.getDocumentNumber(),
+			user.getCompanyName(),
+			user.getCompanyDocument(),
 			user.getStatus().name(),
 			roleCodes(user)
 		);

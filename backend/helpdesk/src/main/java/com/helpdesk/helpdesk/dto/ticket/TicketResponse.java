@@ -11,12 +11,14 @@ public record TicketResponse(
 	String requesterName,
 	String requesterEmail,
 	String assignedToName,
+	String assignedToEmail,
 	String sectorName,
 	String statusCode,
 	String statusName,
 	String priorityCode,
 	String priorityName,
 	OffsetDateTime openedAt,
-	OffsetDateTime closedAt
+	OffsetDateTime closedAt,
+	String pendingTransferToName
 ) {
 }

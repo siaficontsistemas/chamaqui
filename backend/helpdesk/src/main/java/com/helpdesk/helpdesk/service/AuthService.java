@@ -7,12 +7,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.helpdesk.helpdesk.common.NotFoundException;
-import com.helpdesk.helpdesk.dto.auth.AuthResponse;
-import com.helpdesk.helpdesk.dto.auth.LoginRequest;
-import com.helpdesk.helpdesk.dto.auth.RegisterRequest;
 import com.helpdesk.helpdesk.domain.Role;
 import com.helpdesk.helpdesk.domain.User;
 import com.helpdesk.helpdesk.domain.UserStatus;
+import com.helpdesk.helpdesk.dto.auth.AuthResponse;
+import com.helpdesk.helpdesk.dto.auth.LoginRequest;
+import com.helpdesk.helpdesk.dto.auth.RegisterRequest;
 import com.helpdesk.helpdesk.repository.RoleRepository;
 import com.helpdesk.helpdesk.repository.UserRepository;
 
@@ -38,20 +38,38 @@ public class AuthService {
 
 	@Transactional
 	public AuthResponse register(RegisterRequest request) {
+		boolean isAdminRegistration = "admin".equalsIgnoreCase(request.role());
+		String normalizedCompanyDocument = normalizeCompanyDocument(request.companyDocument());
+
 		if (userRepository.existsByEmailIgnoreCase(request.email())) {
 			throw new IllegalArgumentException("Já existe um usuário cadastrado com esse email.");
 		}
 		if (userRepository.existsByDocumentNumber(request.documentNumber())) {
 			throw new IllegalArgumentException("Já existe um usuário cadastrado com esse CPF/documento.");
 		}
+		if (isAdminRegistration && blankToNull(request.companyName()) == null) {
+			throw new IllegalArgumentException("Informe o nome da empresa para cadastrar um administrador.");
+		}
+		if (isAdminRegistration && normalizedCompanyDocument == null) {
+			throw new IllegalArgumentException("Informe o CNPJ da empresa para cadastrar um administrador.");
+		}
+		if (normalizedCompanyDocument != null && normalizedCompanyDocument.length() != 14) {
+			throw new IllegalArgumentException("Informe um CNPJ válido para a empresa.");
+		}
+		if (normalizedCompanyDocument != null && userRepository.existsByCompanyDocument(normalizedCompanyDocument)) {
+			throw new IllegalArgumentException("Já existe uma conta cadastrada para esse CNPJ.");
+		}
 
-		Role role = resolveRegistrationRole(request.role());
+		Role role = roleRepository.findByCode(request.role().toUpperCase(Locale.ROOT))
+			.orElseThrow(() -> new NotFoundException("Perfil não encontrado."));
 
 		User user = new User();
 		user.setFullName(request.fullName().trim());
 		user.setEmail(request.email().trim().toLowerCase(Locale.ROOT));
 		user.setPhoneNumber(blankToNull(request.phoneNumber()));
 		user.setDocumentNumber(request.documentNumber().trim());
+		user.setCompanyName(isAdminRegistration ? blankToNull(request.companyName()) : null);
+		user.setCompanyDocument(isAdminRegistration ? normalizedCompanyDocument : null);
 		user.setPasswordHash(passwordEncoder.encode(request.password()));
 		user.setStatus(UserStatus.ACTIVE);
 		user.setEmailVerified(true);
@@ -84,16 +102,12 @@ public class AuthService {
 		return value.trim();
 	}
 
-	private Role resolveRegistrationRole(String requestedRole) {
-		String normalizedRole = requestedRole.trim().toLowerCase(Locale.ROOT);
-
-		if ("admin".equals(normalizedRole)) {
-			throw new IllegalArgumentException("Contas administrativas não podem ser criadas pelo cadastro público.");
+	private String normalizeCompanyDocument(String value) {
+		String trimmedValue = blankToNull(value);
+		if (trimmedValue == null) {
+			return null;
 		}
-
-		String grantedRoleCode = "employee".equals(normalizedRole) ? "USER" : normalizedRole.toUpperCase(Locale.ROOT);
-
-		return roleRepository.findByCode(grantedRoleCode)
-			.orElseThrow(() -> new NotFoundException("Perfil não encontrado."));
+		return trimmedValue.replaceAll("\\D", "");
 	}
+
 }

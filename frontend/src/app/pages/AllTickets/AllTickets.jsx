@@ -2,11 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { getTickets } from '../../api'
 import Header from '../../components/header/Header'
 import Sidebar from '../../components/sidebar/Sidebar'
-import { isTeamRole } from '../../dashboardData'
+
 import { SearchIcon } from '../../dashboardIcons'
 import '../Home/Home.css'
 
-function AllTickets({ headerProps, navigationGroups, onNavigatePage, userRole = 'user' }) {
+function AllTickets({ currentUser, headerProps, navigationGroups, onNavigatePage, onOpenTicket }) {
   const [tickets, setTickets] = useState([])
   const [searchValue, setSearchValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -31,8 +31,32 @@ function AllTickets({ headerProps, navigationGroups, onNavigatePage, userRole = 
       )
     )
   }, [normalizedSearchValue, tickets])
+  const resolvedTicketSummary = useMemo(() => {
+    return tickets.reduce(
+      (summary, ticket) => {
+        if (ticket.statusCode === 'CLOSED') {
+          summary.closed += 1
+        } else if (ticket.statusCode === 'OPEN') {
+          summary.open += 1
+        } else {
+          summary.inProgress += 1
+        }
+
+        summary.total += 1
+        return summary
+      },
+      { total: 0, open: 0, inProgress: 0, closed: 0 }
+    )
+  }, [tickets])
 
   useEffect(() => {
+    if (!currentUser?.email) {
+      setTickets([])
+      setErrorMessage('')
+      setIsLoading(false)
+      return undefined
+    }
+
     let isCancelled = false
 
     async function loadTickets() {
@@ -40,7 +64,7 @@ function AllTickets({ headerProps, navigationGroups, onNavigatePage, userRole = 
       setErrorMessage('')
 
       try {
-        const response = await getTickets()
+        const response = await getTickets(currentUser.email)
 
         if (isCancelled) {
           return
@@ -66,10 +90,22 @@ function AllTickets({ headerProps, navigationGroups, onNavigatePage, userRole = 
     return () => {
       isCancelled = true
     }
-  }, [])
+  }, [currentUser?.email])
 
   function getStatusClass(statusCode) {
-    return statusCode === 'CLOSED' ? 'ticket-list__status--closed' : 'ticket-list__status--open'
+    if (statusCode === 'CLOSED') {
+      return 'ticket-list__status--closed'
+    }
+
+    if (statusCode === 'IN_PROGRESS' || statusCode === 'IN_PROGRESS_TRANSFER_PENDING') {
+      return 'ticket-list__status--in-progress'
+    }
+
+    if (statusCode === 'IN_PROGRESS_REQUESTER_REPLY') {
+      return 'ticket-list__status--requester-reply'
+    }
+
+    return 'ticket-list__status--open'
   }
 
   function formatDate(value) {
@@ -88,8 +124,8 @@ function AllTickets({ headerProps, navigationGroups, onNavigatePage, userRole = 
         <Header
           activeSection="all"
           {...headerProps}
-          isTeamRole={isTeamRole(userRole)}
           onSectionChange={onNavigatePage}
+          ticketSummary={resolvedTicketSummary}
         />
 
         <section className="home-content">
@@ -122,6 +158,7 @@ function AllTickets({ headerProps, navigationGroups, onNavigatePage, userRole = 
                       <span>Assunto</span>
                       <span>Status</span>
                       <span>Data</span>
+                      <span>Ação</span>
                     </div>
 
                     {filteredTickets.map((ticket) => (
@@ -136,6 +173,15 @@ function AllTickets({ headerProps, navigationGroups, onNavigatePage, userRole = 
                           </strong>
                         </span>
                         <span>{formatDate(ticket.openedAt)}</span>
+                        <span>
+                          <button
+                            className="ticket-list__action"
+                            type="button"
+                            onClick={() => onOpenTicket?.(ticket, 'all')}
+                          >
+                            Ver chamado
+                          </button>
+                        </span>
                       </div>
                     ))}
                   </>

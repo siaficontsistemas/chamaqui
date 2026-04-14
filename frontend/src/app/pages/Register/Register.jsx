@@ -7,6 +7,14 @@ const formFields = [
   { id: 'email', label: 'Email', type: 'email', icon: MailIcon },
   { id: 'phone', label: 'Telefone', type: 'tel', icon: PhoneIcon },
   { id: 'cpf', label: 'CPF', type: 'text', icon: DocumentIcon },
+]
+
+const adminOnlyFields = [
+  { id: 'companyName', label: 'Nome da empresa', type: 'text', icon: BuildingIcon },
+  { id: 'companyCnpj', label: 'CNPJ da empresa', type: 'text', icon: DocumentIcon },
+]
+
+const passwordFields = [
   { id: 'password', label: 'Senha', type: 'password', icon: LockIcon },
   {
     id: 'passwordConfirm',
@@ -23,10 +31,13 @@ function Register({ onNavigateHome, onNavigateLogin }) {
     email: '',
     phone: '',
     cpf: '',
+    companyName: '',
+    companyCnpj: '',
     password: '',
     passwordConfirm: '',
   })
-  const [acceptedTerms, setAcceptedTerms] = useState(true)
+  const [acceptedTerms, setAcceptedTerms] = useState(false)
+  const [isTermsModalOpen, setIsTermsModalOpen] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const selectedRoleLabel =
@@ -35,6 +46,24 @@ function Register({ onNavigateHome, onNavigateLogin }) {
       : selectedRole === 'employee'
         ? 'Funcionário'
         : 'Usuário'
+  const visibleFormFields = [
+    ...formFields,
+    ...(selectedRole === 'admin' ? adminOnlyFields : []),
+    ...passwordFields,
+  ]
+
+  function handleSelectRole(role) {
+    setSelectedRole(role)
+    setErrorMessage('')
+
+    if (role !== 'admin') {
+      setFormValues((currentValues) => ({
+        ...currentValues,
+        companyName: '',
+        companyCnpj: '',
+      }))
+    }
+  }
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -44,7 +73,7 @@ function Register({ onNavigateHome, onNavigateLogin }) {
       return
     }
 
-    if (Object.values(formValues).some((value) => !value.trim())) {
+    if (visibleFormFields.some((field) => !formValues[field.id].trim())) {
       setErrorMessage('Preencha todos os campos obrigatórios do cadastro.')
       return
     }
@@ -68,6 +97,8 @@ function Register({ onNavigateHome, onNavigateLogin }) {
         email: formValues.email.trim(),
         phoneNumber: formValues.phone.trim(),
         documentNumber: formValues.cpf.trim(),
+        companyName: selectedRole === 'admin' ? formValues.companyName.trim() : null,
+        companyDocument: selectedRole === 'admin' ? formValues.companyCnpj.trim() : null,
         password: formValues.password,
         role: selectedRole,
       })
@@ -105,11 +136,9 @@ function Register({ onNavigateHome, onNavigateLogin }) {
           <div className="auth-card__form-header">
             <h2>Crie sua Conta Aqui</h2>
             <p>
-              {selectedRole === 'employee'
-                ? 'Preencha os dados para criar seu acesso. Você só entra na equipe depois de aceitar um convite.'
-                : selectedRole
-                  ? `Preencha os dados para concluir seu cadastro como ${selectedRoleLabel.toLowerCase()}.`
-                  : 'Primeiro escolha como deseja se cadastrar.'}
+              {selectedRole
+                ? `Preencha os dados para concluir seu cadastro como ${selectedRoleLabel.toLowerCase()}.`
+                : 'Primeiro escolha como deseja se cadastrar.'}
             </p>
           </div>
 
@@ -118,7 +147,8 @@ function Register({ onNavigateHome, onNavigateLogin }) {
               <>
                 <div className="signup-form__step-header">
                   <div className="signup-form__selected-role">
-                    Cadastrando como <strong>{selectedRoleLabel}</strong>
+                    <span>Cadastrando como</span>
+                    <strong>{selectedRoleLabel}</strong>
                   </div>
 
                   <button
@@ -133,7 +163,7 @@ function Register({ onNavigateHome, onNavigateLogin }) {
                   </button>
                 </div>
 
-                {formFields.map((field) => (
+                {visibleFormFields.map((field) => (
                   <label className="form-field" htmlFor={field.id} key={field.id}>
                     <span className="form-field__icon" aria-hidden="true">
                       {field.icon()}
@@ -156,15 +186,6 @@ function Register({ onNavigateHome, onNavigateLogin }) {
 
                 {errorMessage ? <p className="signup-form__feedback">{errorMessage}</p> : null}
 
-                <div className="signup-form__divider">
-                  <span>ou continuar com</span>
-                </div>
-
-                <button className="google-button" type="button">
-                  <GoogleIcon />
-                  Continue with Google
-                </button>
-
                 <label className="terms-check" htmlFor="terms">
                   <input
                     id="terms"
@@ -174,7 +195,14 @@ function Register({ onNavigateHome, onNavigateLogin }) {
                     onChange={(event) => setAcceptedTerms(event.target.checked)}
                   />
                   <span>
-                    Eu li e concordo com os <a href="/">termos e condições de uso</a>
+                    Eu li e concordo com os{' '}
+                    <button
+                      className="terms-check__button"
+                      type="button"
+                      onClick={() => setIsTermsModalOpen(true)}
+                    >
+                      termos e condições de uso
+                    </button>
                   </span>
                 </label>
 
@@ -194,24 +222,29 @@ function Register({ onNavigateHome, onNavigateLogin }) {
                   <button
                     className="signup-form__role-card"
                     type="button"
-                    onClick={() => {
-                      setSelectedRole('employee')
-                      setErrorMessage('')
-                    }}
+                    onClick={() => handleSelectRole('employee')}
                   >
                     <span className="signup-form__role-title">Funcionário</span>
                     <span className="signup-form__role-text">
-                      Crie sua conta de acesso. A entrada na equipe só acontece após aceitar um convite.
+                      Cadastro para colaboradores que irão abrir e acompanhar chamados.
                     </span>
                   </button>
 
                   <button
                     className="signup-form__role-card"
                     type="button"
-                    onClick={() => {
-                      setSelectedRole('user')
-                      setErrorMessage('')
-                    }}
+                    onClick={() => handleSelectRole('admin')}
+                  >
+                    <span className="signup-form__role-title">Administrador</span>
+                    <span className="signup-form__role-text">
+                      Cadastro para quem irá gerenciar usuários, filas e atendimentos.
+                    </span>
+                  </button>
+
+                  <button
+                    className="signup-form__role-card"
+                    type="button"
+                    onClick={() => handleSelectRole('user')}
                   >
                     <span className="signup-form__role-title">Usuário</span>
                     <span className="signup-form__role-text">
@@ -224,11 +257,101 @@ function Register({ onNavigateHome, onNavigateLogin }) {
           </form>
         </section>
       </section>
+
+      {isTermsModalOpen ? <TermsOfUseModal onClose={() => setIsTermsModalOpen(false)} /> : null}
     </main>
   )
 }
 
 export default Register
+
+function TermsOfUseModal({ onClose }) {
+  return (
+    <div className="terms-modal" role="dialog" aria-modal="true" aria-labelledby="terms-title">
+      <div className="terms-modal__backdrop" onClick={onClose} />
+      <section className="terms-modal__content">
+        <div className="terms-modal__header">
+          <div>
+            <h3 id="terms-title">Termo de Uso do Helpdesk Lopes Consultoria</h3>
+            <p>
+              Leia com atencao as regras de utilizacao da plataforma antes de concluir o
+              cadastro.
+            </p>
+          </div>
+
+          <button className="terms-modal__close" type="button" onClick={onClose}>
+            Fechar
+          </button>
+        </div>
+
+        <div className="terms-modal__body">
+          <section>
+            <h4>1. Finalidade da plataforma</h4>
+            <p>
+              O Helpdesk Lopes Consultoria e uma plataforma destinada ao registro,
+              acompanhamento e atendimento de chamados, solicitacoes e comunicacoes entre
+              usuarios, funcionarios e administradores vinculados ao projeto.
+            </p>
+          </section>
+
+          <section>
+            <h4>2. Responsabilidade do usuario</h4>
+            <p>
+              Ao se cadastrar, voce declara que as informacoes fornecidas sao verdadeiras,
+              atualizadas e de sua titularidade. O usuario e responsavel por manter a
+              confidencialidade de sua senha e por todas as acoes realizadas com sua conta.
+            </p>
+          </section>
+
+          <section>
+            <h4>3. Uso adequado</h4>
+            <p>
+              E proibido utilizar o sistema para envio de conteudo ilegal, ofensivo,
+              fraudulento, enganoso ou que comprometa a seguranca da plataforma, dos dados
+              cadastrados ou do atendimento prestado.
+            </p>
+          </section>
+
+          <section>
+            <h4>4. Tratamento de dados</h4>
+            <p>
+              Os dados informados no cadastro e nas interacoes do sistema podem ser utilizados
+              para autenticar acessos, organizar atendimentos, registrar historicos e melhorar
+              a operacao do helpdesk, sempre de acordo com a finalidade do projeto.
+            </p>
+          </section>
+
+          <section>
+            <h4>5. Perfis de acesso</h4>
+            <p>
+              Cada tipo de conta possui permissoes especificas. O usuario concorda em utilizar
+              apenas os recursos compativeis com seu perfil e reconhece que acessos indevidos
+              podem ser bloqueados ou revisados pela administracao do sistema.
+            </p>
+          </section>
+
+          <section>
+            <h4>6. Disponibilidade e manutencao</h4>
+            <p>
+              O sistema pode passar por indisponibilidades temporarias, atualizacoes,
+              manutencoes ou ajustes sem aviso previo, quando necessario para garantir a
+              continuidade e a seguranca da plataforma.
+            </p>
+          </section>
+
+          <section>
+            <h4>7. Aceite</h4>
+            <p>
+              Ao marcar a opcao de concordancia e concluir o cadastro, voce declara que leu,
+              compreendeu e aceita este Termo de Uso para utilizacao do Helpdesk Lopes
+              Consultoria.
+            </p>
+          </section>
+        </div>
+      </section>
+    </div>
+  )
+}
 
 function BrandMark() {
   return (
@@ -296,11 +419,11 @@ function DocumentIcon() {
   )
 }
 
-function LockIcon() {
+function BuildingIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none">
       <path
-        d="M7 11V8a5 5 0 1 1 10 0v3m-9 0h8a1 1 0 0 1 1 1v7H7v-7a1 1 0 0 1 1-1Z"
+        d="M5 19.5h14M7 19.5v-11l5-3 5 3v11M10 11h.01M14 11h.01M10 14.5h.01M14 14.5h.01"
         stroke="currentColor"
         strokeWidth="1.7"
         strokeLinecap="round"
@@ -310,24 +433,15 @@ function LockIcon() {
   )
 }
 
-function GoogleIcon() {
+function LockIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="none">
       <path
-        d="M21.8 12.23c0-.69-.06-1.2-.2-1.74H12v3.45h5.64c-.11.86-.7 2.16-2 3.03l-.02.12 2.81 2.17.19.02c1.73-1.58 2.73-3.9 2.73-7.05Z"
-        fill="#4285F4"
-      />
-      <path
-        d="M12 22c2.76 0 5.07-.9 6.76-2.44l-3.22-2.5c-.86.59-2.01 1-3.54 1-2.7 0-4.99-1.77-5.8-4.22l-.12.01-2.92 2.25-.04.11A10.2 10.2 0 0 0 12 22Z"
-        fill="#34A853"
-      />
-      <path
-        d="M6.2 13.84A6.13 6.13 0 0 1 5.86 12c0-.64.12-1.25.32-1.84l-.01-.12-2.96-2.3-.1.04A10.06 10.06 0 0 0 2 12c0 1.62.39 3.16 1.1 4.54l3.1-2.7Z"
-        fill="#FBBC05"
-      />
-      <path
-        d="M12 5.94c1.93 0 3.23.82 3.97 1.5l2.9-2.78C17.06 2.98 14.76 2 12 2a10.2 10.2 0 0 0-8.89 5.45l3.07 2.38C7.02 7.38 9.3 5.94 12 5.94Z"
-        fill="#EA4335"
+        d="M7 11V8a5 5 0 1 1 10 0v3m-9 0h8a1 1 0 0 1 1 1v7H7v-7a1 1 0 0 1 1-1Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </svg>
   )

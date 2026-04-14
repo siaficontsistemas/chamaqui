@@ -2,17 +2,17 @@ import { useEffect, useMemo, useState } from 'react'
 import { getTickets } from '../../api'
 import Header from '../../components/header/Header'
 import Sidebar from '../../components/sidebar/Sidebar'
-import { isTeamRole } from '../../dashboardData'
+
 import { SearchIcon } from '../../dashboardIcons'
 import './Home.css'
 
 function Home({
+  currentUser,
   headerProps,
   isTicketSummaryLoading,
   navigationGroups,
   onNavigatePage,
-  ticketSummary,
-  userRole = 'user',
+  onOpenTicket,
 }) {
   const [tickets, setTickets] = useState([])
   const [searchValue, setSearchValue] = useState('')
@@ -38,8 +38,32 @@ function Home({
       )
     )
   }, [normalizedSearchValue, tickets])
+  const resolvedTicketSummary = useMemo(() => {
+    return tickets.reduce(
+      (summary, ticket) => {
+        if (ticket.statusCode === 'CLOSED') {
+          summary.closed += 1
+        } else if (ticket.statusCode === 'OPEN') {
+          summary.open += 1
+        } else {
+          summary.inProgress += 1
+        }
+
+        summary.total += 1
+        return summary
+      },
+      { total: 0, open: 0, inProgress: 0, closed: 0 }
+    )
+  }, [tickets])
 
   useEffect(() => {
+    if (!currentUser?.email) {
+      setTickets([])
+      setErrorMessage('')
+      setIsLoading(false)
+      return undefined
+    }
+
     let isCancelled = false
 
     async function loadTickets() {
@@ -47,7 +71,7 @@ function Home({
       setErrorMessage('')
 
       try {
-        const response = await getTickets()
+        const response = await getTickets(currentUser.email)
 
         if (isCancelled) {
           return
@@ -73,10 +97,22 @@ function Home({
     return () => {
       isCancelled = true
     }
-  }, [])
+  }, [currentUser?.email])
 
   function getStatusClass(statusCode) {
-    return statusCode === 'CLOSED' ? 'ticket-list__status--closed' : 'ticket-list__status--open'
+    if (statusCode === 'CLOSED') {
+      return 'ticket-list__status--closed'
+    }
+
+    if (statusCode === 'IN_PROGRESS' || statusCode === 'IN_PROGRESS_TRANSFER_PENDING') {
+      return 'ticket-list__status--in-progress'
+    }
+
+    if (statusCode === 'IN_PROGRESS_REQUESTER_REPLY') {
+      return 'ticket-list__status--requester-reply'
+    }
+
+    return 'ticket-list__status--open'
   }
 
   function formatDate(value) {
@@ -99,10 +135,9 @@ function Home({
         <Header
           activeSection="tickets"
           {...headerProps}
-          isTeamRole={isTeamRole(userRole)}
           isTicketSummaryLoading={isTicketSummaryLoading}
           onSectionChange={onNavigatePage}
-          ticketSummary={ticketSummary}
+          ticketSummary={resolvedTicketSummary}
         />
 
         <section className="home-content">
@@ -135,6 +170,7 @@ function Home({
                       <span>Assunto</span>
                       <span>Status</span>
                       <span>Data</span>
+                      <span>Ação</span>
                     </div>
 
                     {filteredTickets.map((ticket) => (
@@ -149,6 +185,15 @@ function Home({
                           </strong>
                         </span>
                         <span>{formatDate(ticket.openedAt)}</span>
+                        <span>
+                          <button
+                            className="ticket-list__action"
+                            type="button"
+                            onClick={() => onOpenTicket?.(ticket, 'tickets')}
+                          >
+                            Ver chamado
+                          </button>
+                        </span>
                       </div>
                     ))}
                   </>

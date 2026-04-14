@@ -1,0 +1,62 @@
+import { generatePath, matchPath } from 'react-router-dom'
+
+export const PUBLIC_ROUTE_PATHS = {
+  login: '/login',
+  register: '/register',
+}
+
+export const SECTION_ROUTE_PATHS = {
+  tickets: '/tickets',
+  reports: '/reports',
+  all: '/tickets/all',
+  open: '/tickets/open',
+  closed: '/tickets/closed',
+  newTicket: '/tickets/new',
+  myData: '/my-data',
+  team: '/team',
+  createSector: '/sectors/new',
+}
+
+const SECTION_MATCHERS = [
+  ['reports', '/reports'],
+  ['all', '/tickets/all'],
+  ['open', '/tickets/open'],
+  ['closed', '/tickets/closed'],
+  ['newTicket', '/tickets/new'],
+  ['myData', '/my-data'],
+  ['team', '/team'],
+  ['createSector', '/sectors/new'],
+  ['tickets', '/tickets'],
+]
+
+export function getSectionPath(sectionId) {
+  if (SECTION_ROUTE_PATHS[sectionId]) {
+    return SECTION_ROUTE_PATHS[sectionId]
+  }
+
+  return generatePath('/sectors/:sectorId', { sectorId: sectionId })
+}
+
+export function getTicketPath(ticketId) {
+  return generatePath('/tickets/:ticketId', { ticketId })
+}
+
+export function getSectionIdFromPathname(pathname) {
+  for (const [sectionId, pattern] of SECTION_MATCHERS) {
+    if (matchPath({ path: pattern, end: true }, pathname)) {
+      return sectionId
+    }
+  }
+
+  const sectorMatch = matchPath({ path: '/sectors/:sectorId', end: true }, pathname)
+  if (sectorMatch?.params?.sectorId) {
+    return sectorMatch.params.sectorId
+  }
+
+  const ticketMatch = matchPath({ path: '/tickets/:ticketId', end: true }, pathname)
+  if (ticketMatch?.params?.ticketId) {
+    return 'tickets'
+  }
+
+  return null
+}

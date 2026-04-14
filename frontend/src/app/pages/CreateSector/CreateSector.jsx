@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import Header from '../../components/header/Header'
 import Sidebar from '../../components/sidebar/Sidebar'
-import { dashboardPages, getRoleLabel, isTeamRole } from '../../dashboardData'
+import { dashboardPages, getRoleLabel } from '../../dashboardData'
 import '../Home/Home.css'
 
 function CreateSector({
@@ -49,7 +49,6 @@ function CreateSector({
         <Header
           activeSection="createSector"
           {...headerProps}
-          isTeamRole={isTeamRole(userRole)}
           onSectionChange={onNavigatePage}
         />
 

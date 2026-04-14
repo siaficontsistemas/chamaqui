@@ -10,8 +10,10 @@ import jakarta.validation.constraints.Size;
 public record CreateTicketRequest(
 	@NotBlank @Size(min = 3, max = 180) String title,
 	@NotBlank @Size(min = 10) String description,
+	@NotNull UUID companyOwnerId,
 	@NotNull UUID sectorId,
 	@NotBlank String priorityCode,
-	@NotBlank @Email String requesterEmail
+	@NotBlank @Email String requesterEmail,
+	@Email @Size(max = 255) String copyEmail
 ) {
 }

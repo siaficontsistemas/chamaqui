@@ -2,11 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { getTickets } from '../../api'
 import Header from '../../components/header/Header'
 import Sidebar from '../../components/sidebar/Sidebar'
-import { isTeamRole } from '../../dashboardData'
+
 import { SearchIcon } from '../../dashboardIcons'
 import '../Home/Home.css'
 
-function ClosedTickets({ headerProps, navigationGroups, onNavigatePage, userRole = 'user' }) {
+function ClosedTickets({ currentUser, headerProps, navigationGroups, onNavigatePage, onOpenTicket }) {
   const [tickets, setTickets] = useState([])
   const [searchValue, setSearchValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -33,6 +33,13 @@ function ClosedTickets({ headerProps, navigationGroups, onNavigatePage, userRole
   }, [normalizedSearchValue, tickets])
 
   useEffect(() => {
+    if (!currentUser?.email) {
+      setTickets([])
+      setErrorMessage('')
+      setIsLoading(false)
+      return undefined
+    }
+
     let isCancelled = false
 
     async function loadTickets() {
@@ -40,7 +47,7 @@ function ClosedTickets({ headerProps, navigationGroups, onNavigatePage, userRole
       setErrorMessage('')
 
       try {
-        const response = await getTickets('CLOSED')
+        const response = await getTickets(currentUser.email, 'CLOSED')
 
         if (isCancelled) {
           return
@@ -66,7 +73,7 @@ function ClosedTickets({ headerProps, navigationGroups, onNavigatePage, userRole
     return () => {
       isCancelled = true
     }
-  }, [])
+  }, [currentUser?.email])
 
   function formatDate(value) {
     if (!value) {
@@ -88,7 +95,6 @@ function ClosedTickets({ headerProps, navigationGroups, onNavigatePage, userRole
         <Header
           activeSection="closed"
           {...headerProps}
-          isTeamRole={isTeamRole(userRole)}
           onSectionChange={onNavigatePage}
         />
 
@@ -122,6 +128,7 @@ function ClosedTickets({ headerProps, navigationGroups, onNavigatePage, userRole
                       <span>Assunto</span>
                       <span>Status</span>
                       <span>Data</span>
+                      <span>Ação</span>
                     </div>
 
                     {filteredTickets.map((ticket) => (
@@ -134,6 +141,15 @@ function ClosedTickets({ headerProps, navigationGroups, onNavigatePage, userRole
                           </strong>
                         </span>
                         <span>{formatDate(ticket.openedAt)}</span>
+                        <span>
+                          <button
+                            className="ticket-list__action"
+                            type="button"
+                            onClick={() => onOpenTicket?.(ticket, 'closed')}
+                          >
+                            Ver chamado
+                          </button>
+                        </span>
                       </div>
                     ))}
                   </>

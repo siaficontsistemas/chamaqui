@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { getPersonalReport } from '../../api'
 import Header from '../../components/header/Header'
 import Sidebar from '../../components/sidebar/Sidebar'
-import { dashboardPages, isTeamRole } from '../../dashboardData'
+import { dashboardPages } from '../../dashboardData'
 import '../Home/Home.css'
 
 function Reports({
@@ -10,7 +10,6 @@ function Reports({
   headerProps,
   navigationGroups,
   onNavigatePage,
-  userRole = 'user',
 }) {
   const [reportRows, setReportRows] = useState([])
   const [isLoading, setIsLoading] = useState(false)
@@ -71,7 +70,6 @@ function Reports({
         <Header
           activeSection="reports"
           {...headerProps}
-          isTeamRole={isTeamRole(userRole)}
           onSectionChange={onNavigatePage}
         />
 
@@ -86,14 +84,16 @@ function Reports({
                     <div className="reports-table__head">
                       <span>Ano</span>
                       <span>Mês</span>
-                      <span>Tempo de Trabalho</span>
+                      <span>Novos chamados</span>
+                      <span>Respostas enviadas</span>
                     </div>
 
                     {reportRows.map((row) => (
                       <div className="reports-table__row" key={`${row.year}-${row.month}`}>
                         <span>{row.year}</span>
                         <span>{row.month}</span>
-                        <span>{row.workTime}</span>
+                        <span>{row.createdTickets}</span>
+                        <span>{row.repliedTickets}</span>
                       </div>
                     ))}
                   </>

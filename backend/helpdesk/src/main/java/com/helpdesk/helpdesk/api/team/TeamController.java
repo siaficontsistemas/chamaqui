@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -34,8 +35,8 @@ public class TeamController {
 	}
 
 	@GetMapping("/members")
-	public List<TeamMemberResponse> listMembers() {
-		return teamService.listMembers();
+	public List<TeamMemberResponse> listMembers(@RequestParam(required = false) String email) {
+		return teamService.listMembers(email);
 	}
 
 	@GetMapping("/invites")
@@ -75,11 +76,28 @@ public class TeamController {
 		return teamService.declineInvite(inviteId, request);
 	}
 
+	@DeleteMapping("/invites/{inviteId}/notification")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	public void deleteNotification(@PathVariable UUID inviteId, @RequestParam String email) {
+		teamService.deleteNotification(inviteId, email);
+	}
+
 	@PutMapping("/members/{userId}/sectors")
 	public List<TeamMemberResponse> updateMemberSectors(
 		@PathVariable UUID userId,
 		@Valid @RequestBody UpdateMemberSectorsRequest request
 	) {
 		return teamService.updateMemberSectors(userId, request);
+	}
+
+	@DeleteMapping("/members/{userId}")
+	public List<TeamMemberResponse> removeMemberFromCompany(@PathVariable UUID userId, @RequestParam String email) {
+		return teamService.removeMemberFromCompany(userId, email);
+	}
+
+	@DeleteMapping("/sectors/{sectorId}/leave")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	public void leaveSector(@PathVariable UUID sectorId, @RequestParam String email) {
+		teamService.leaveSector(sectorId, email);
 	}
 }

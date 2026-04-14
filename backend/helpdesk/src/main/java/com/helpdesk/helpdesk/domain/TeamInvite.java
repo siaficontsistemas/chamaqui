@@ -62,6 +62,12 @@ public class TeamInvite {
 	@Column(name = "updated_at", nullable = false)
 	private OffsetDateTime updatedAt;
 
+	@Column(name = "invitee_hidden", nullable = false)
+	private boolean inviteeHidden;
+
+	@Column(name = "inviter_hidden", nullable = false)
+	private boolean inviterHidden;
+
 	@ManyToMany
 	@JoinTable(
 		name = "team_invite_sectors",
@@ -156,6 +162,22 @@ public class TeamInvite {
 
 	public OffsetDateTime getUpdatedAt() {
 		return updatedAt;
+	}
+
+	public boolean isInviteeHidden() {
+		return inviteeHidden;
+	}
+
+	public void setInviteeHidden(boolean inviteeHidden) {
+		this.inviteeHidden = inviteeHidden;
+	}
+
+	public boolean isInviterHidden() {
+		return inviterHidden;
+	}
+
+	public void setInviterHidden(boolean inviterHidden) {
+		this.inviterHidden = inviterHidden;
 	}
 
 	public Set<Sector> getSectors() {

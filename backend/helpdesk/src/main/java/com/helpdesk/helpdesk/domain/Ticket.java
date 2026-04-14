@@ -40,6 +40,17 @@ public class Ticket {
 	@JoinColumn(name = "assigned_to")
 	private User assignedTo;
 
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "pending_transfer_to")
+	private User pendingTransferTo;
+
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "pending_transfer_requested_by")
+	private User pendingTransferRequestedBy;
+
+	@Column(name = "pending_transfer_requested_at")
+	private OffsetDateTime pendingTransferRequestedAt;
+
 	@ManyToOne(fetch = FetchType.LAZY, optional = false)
 	@JoinColumn(name = "sector_id", nullable = false)
 	private Sector sector;
@@ -63,6 +74,9 @@ public class Ticket {
 
 	@Column(name = "closed_at")
 	private OffsetDateTime closedAt;
+
+	@Column(name = "copy_email", length = 255)
+	private String copyEmail;
 
 	@Column(name = "due_at")
 	private OffsetDateTime dueAt;
@@ -135,6 +149,30 @@ public class Ticket {
 		this.assignedTo = assignedTo;
 	}
 
+	public User getPendingTransferTo() {
+		return pendingTransferTo;
+	}
+
+	public void setPendingTransferTo(User pendingTransferTo) {
+		this.pendingTransferTo = pendingTransferTo;
+	}
+
+	public User getPendingTransferRequestedBy() {
+		return pendingTransferRequestedBy;
+	}
+
+	public void setPendingTransferRequestedBy(User pendingTransferRequestedBy) {
+		this.pendingTransferRequestedBy = pendingTransferRequestedBy;
+	}
+
+	public OffsetDateTime getPendingTransferRequestedAt() {
+		return pendingTransferRequestedAt;
+	}
+
+	public void setPendingTransferRequestedAt(OffsetDateTime pendingTransferRequestedAt) {
+		this.pendingTransferRequestedAt = pendingTransferRequestedAt;
+	}
+
 	public Sector getSector() {
 		return sector;
 	}
@@ -171,12 +209,32 @@ public class Ticket {
 		return firstResponseAt;
 	}
 
+	public void setFirstResponseAt(OffsetDateTime firstResponseAt) {
+		this.firstResponseAt = firstResponseAt;
+	}
+
 	public OffsetDateTime getResolvedAt() {
 		return resolvedAt;
 	}
 
+	public void setResolvedAt(OffsetDateTime resolvedAt) {
+		this.resolvedAt = resolvedAt;
+	}
+
 	public OffsetDateTime getClosedAt() {
 		return closedAt;
+	}
+
+	public void setClosedAt(OffsetDateTime closedAt) {
+		this.closedAt = closedAt;
+	}
+
+	public String getCopyEmail() {
+		return copyEmail;
+	}
+
+	public void setCopyEmail(String copyEmail) {
+		this.copyEmail = copyEmail;
 	}
 
 	public OffsetDateTime getDueAt() {

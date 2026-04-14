@@ -9,6 +9,8 @@ public record ProfileResponse(
 	String email,
 	String phoneNumber,
 	String documentNumber,
+	String companyName,
+	String companyDocument,
 	String status,
 	List<String> roles
 ) {

@@ -1,11 +1,14 @@
+import { useState } from 'react'
+import ConfirmActionModal from '../../components/confirm-action-modal/ConfirmActionModal'
 import Header from '../../components/header/Header'
 import Sidebar from '../../components/sidebar/Sidebar'
-import { getRoleLabel, isTeamRole } from '../../dashboardData'
+import { getRoleLabel } from '../../dashboardData'
 import '../Home/Home.css'
 
 function Sector({
   headerProps,
   navigationGroups,
+  onLeaveSector,
   onNavigatePage,
   sector,
   teamMembers = [],
@@ -13,12 +16,22 @@ function Sector({
 }) {
   const roleLabel = getRoleLabel(userRole)
   const assignedMembers = teamMembers.filter((member) => (member.sectors ?? []).includes(sector.id))
+  const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false)
+  const [isLeavingSector, setIsLeavingSector] = useState(false)
   const summaryCards = [
     {
       id: 'sector',
       label: 'Setor',
       value: sector.name,
       detail: 'Setor criado pelo administrador',
+    },
+    {
+      id: 'company',
+      label: 'Empresa',
+      value: sector.companyName || 'Empresa não informada',
+      detail: sector.companyDocument
+        ? `CNPJ ${sector.companyDocument}`
+        : 'Empresa vinculada a este setor',
     },
     {
       id: 'members',
@@ -32,10 +45,27 @@ function Sector({
       value: roleLabel,
       detail:
         userRole === 'admin'
-          ? 'Pode ajustar participantes na tela de equipe'
+          ? headerProps.isTeamRole
+            ? 'Pode ajustar participantes na tela de equipe'
+            : 'Aguarda aceite de convite para acessar a equipe'
           : 'Visualiza somente o setor em que participa',
     },
   ]
+
+  async function handleLeaveSector() {
+    if (!onLeaveSector) {
+      return
+    }
+
+    setIsLeavingSector(true)
+
+    try {
+      await onLeaveSector(sector.id)
+      setIsLeaveModalOpen(false)
+    } finally {
+      setIsLeavingSector(false)
+    }
+  }
 
   return (
     <main className="home-page">
@@ -49,7 +79,6 @@ function Sector({
         <Header
           activeSection={sector.id}
           {...headerProps}
-          isTeamRole={isTeamRole(userRole)}
           onSectionChange={onNavigatePage}
         />
 
@@ -64,15 +93,28 @@ function Sector({
 
               {userRole === 'admin' ? (
                 <div className="home-content__actions">
-                  <button className="home-content__button" type="button" onClick={() => onNavigatePage('team')}>
-                    Ajustar equipe
-                  </button>
+                  {headerProps.isTeamRole ? (
+                    <button className="home-content__button" type="button" onClick={() => onNavigatePage('team')}>
+                      Ajustar equipe
+                    </button>
+                  ) : null}
                   <button
                     className="home-content__button home-content__button--ghost"
                     type="button"
                     onClick={() => onNavigatePage('createSector')}
                   >
                     Criar setor
+                  </button>
+                </div>
+              ) : userRole === 'employee' ? (
+                <div className="home-content__actions">
+                  <button
+                    className="home-content__button home-content__button--danger"
+                    type="button"
+                    onClick={() => setIsLeaveModalOpen(true)}
+                    disabled={isLeavingSector}
+                  >
+                    {isLeavingSector ? 'Saindo...' : 'Sair do setor'}
                   </button>
                 </div>
               ) : null}
@@ -127,6 +169,17 @@ function Sector({
           </div>
         </section>
       </div>
+
+      <ConfirmActionModal
+        isOpen={isLeaveModalOpen}
+        isProcessing={isLeavingSector}
+        title="Sair do setor"
+        description={`Tem certeza que deseja sair do setor ${sector.name}?`}
+        confirmLabel="Sair do setor"
+        confirmVariant="danger"
+        onCancel={() => setIsLeaveModalOpen(false)}
+        onConfirm={handleLeaveSector}
+      />
     </main>
   )
 }

@@ -42,6 +42,12 @@ public class User {
 	@Column(name = "document_number", length = 20)
 	private String documentNumber;
 
+	@Column(name = "company_name", length = 150)
+	private String companyName;
+
+	@Column(name = "company_document", length = 20)
+	private String companyDocument;
+
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false, length = 20)
 	private UserStatus status = UserStatus.ACTIVE;
@@ -123,6 +129,22 @@ public class User {
 
 	public void setDocumentNumber(String documentNumber) {
 		this.documentNumber = documentNumber;
+	}
+
+	public String getCompanyName() {
+		return companyName;
+	}
+
+	public void setCompanyName(String companyName) {
+		this.companyName = companyName;
+	}
+
+	public String getCompanyDocument() {
+		return companyDocument;
+	}
+
+	public void setCompanyDocument(String companyDocument) {
+		this.companyDocument = companyDocument;
 	}
 
 	public UserStatus getStatus() {

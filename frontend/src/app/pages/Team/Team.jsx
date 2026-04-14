@@ -1,21 +1,29 @@
 import { useMemo, useState } from 'react'
+import ConfirmActionModal from '../../components/confirm-action-modal/ConfirmActionModal'
 import Header from '../../components/header/Header'
 import Sidebar from '../../components/sidebar/Sidebar'
-import { getRoleLabel, getTeamContent, getTeamMembers, isTeamRole } from '../../dashboardData'
+import { getRoleLabel, getTeamContent, getTeamMembers } from '../../dashboardData'
 import '../Home/Home.css'
 
 function Team({
+  currentUser,
   headerProps,
   isTeamDataLoading,
   navigationGroups,
   onInviteMember,
+  onLeaveSector,
   onNavigatePage,
   onAcceptInvite,
+  onAcceptTicketTransfer,
+  onDeleteNotification,
   onDeclineInvite,
+  onDeclineTicketTransfer,
+  onRemoveMemberFromCompany,
   onUpdateMemberSectors,
   receivedInvites = [],
   sectors = [],
   sentInvites = [],
+  ticketNotifications = [],
   teamDataError = '',
   teamMembers = [],
   userRole = 'user',
@@ -29,6 +37,11 @@ function Team({
   const [feedbackMessage, setFeedbackMessage] = useState('')
   const [isSubmittingInvite, setIsSubmittingInvite] = useState(false)
   const [processingInviteId, setProcessingInviteId] = useState('')
+  const [deletingInviteId, setDeletingInviteId] = useState('')
+  const [processingMemberId, setProcessingMemberId] = useState('')
+  const [leavingSectorId, setLeavingSectorId] = useState('')
+  const [pendingConfirmation, setPendingConfirmation] = useState(null)
+  const [isConfirmingAction, setIsConfirmingAction] = useState(false)
   const sectorNameById = useMemo(
     () =>
       Object.fromEntries(
@@ -42,16 +55,57 @@ function Team({
   const membersWithSector = visibleTeamMembers.filter((member) => (member.sectors ?? []).length > 0).length
   const pendingReceivedInvites = receivedInvites.filter((invite) => invite.status === 'PENDING')
   const handledSentInvites = sentInvites.filter((invite) => invite.status !== 'PENDING')
+  const employeeNotifications = [...pendingReceivedInvites, ...ticketNotifications].sort(
+    (firstNotification, secondNotification) =>
+      new Date(
+        secondNotification.updatedAt ||
+          secondNotification.acceptedAt ||
+          secondNotification.expiresAt ||
+          secondNotification.createdAt
+      ).getTime() -
+      new Date(
+        firstNotification.updatedAt ||
+          firstNotification.acceptedAt ||
+          firstNotification.expiresAt ||
+          firstNotification.createdAt
+      ).getTime()
+  )
+  const companyName =
+    currentUser?.companyName ||
+    sectors.find((sector) => sector.companyName)?.companyName ||
+    'Empresa não informada'
 
   async function toggleMemberSector(memberId, sectorId) {
     const currentMember = visibleTeamMembers.find((member) => member.id === memberId)
     const memberSectors = currentMember?.sectors ?? []
+    if (memberSectors.length === 1 && memberSectors.includes(sectorId)) {
+      setFeedbackMessage('Para remover o último setor, use a ação de remover da empresa.')
+      return
+    }
     const nextSectors = memberSectors.includes(sectorId)
       ? memberSectors.filter((currentSectorId) => currentSectorId !== sectorId)
       : [...memberSectors, sectorId]
 
     setFeedbackMessage('')
     await onUpdateMemberSectors(memberId, nextSectors)
+  }
+
+  async function handleRemoveMember(member) {
+    if (!onRemoveMemberFromCompany) {
+      return
+    }
+
+    setProcessingMemberId(member.id)
+    setFeedbackMessage('')
+
+    try {
+      await onRemoveMemberFromCompany(member.id)
+      setFeedbackMessage(`${member.name} foi removido(a) da empresa e recebeu uma notificação.`)
+    } catch (error) {
+      setFeedbackMessage(error.message)
+    } finally {
+      setProcessingMemberId('')
+    }
   }
 
   function toggleInviteSector(sectorId) {
@@ -89,24 +143,232 @@ function Team({
     }
   }
 
-  async function handleInviteDecision(inviteId, action) {
-    setProcessingInviteId(inviteId)
+  async function handleEmployeeNotificationDecision(notification, action) {
+    setProcessingInviteId(notification.id)
     setFeedbackMessage('')
 
     try {
+      if (notification.type === 'ticket-transfer') {
+        if (action === 'accept') {
+          await onAcceptTicketTransfer(notification.id)
+          setFeedbackMessage('Transferência aceita com sucesso. O chamado agora aparece na sua lista.')
+          return
+        }
+
+        await onDeclineTicketTransfer(notification.id)
+        setFeedbackMessage('Transferência recusada. O chamado continua com o responsável anterior.')
+        return
+      }
+
       if (action === 'accept') {
-        await onAcceptInvite(inviteId)
+        await onAcceptInvite(notification.id)
         setFeedbackMessage('Convite aceito com sucesso. Sua participação na equipe foi atualizada.')
         return
       }
 
-      await onDeclineInvite(inviteId)
+      await onDeclineInvite(notification.id)
       setFeedbackMessage('Convite recusado. Nenhuma alteração foi feita na equipe.')
     } catch (error) {
       setFeedbackMessage(error.message)
     } finally {
       setProcessingInviteId('')
     }
+  }
+
+  async function handleDeleteNotification(notificationOrId) {
+    const notificationId =
+      typeof notificationOrId === 'object' ? notificationOrId?.id : notificationOrId
+
+    setDeletingInviteId(notificationId)
+    setFeedbackMessage('')
+
+    try {
+      await onDeleteNotification(notificationOrId)
+      setFeedbackMessage('Notificação excluída com sucesso.')
+    } catch (error) {
+      setFeedbackMessage(error.message)
+    } finally {
+      setDeletingInviteId('')
+    }
+  }
+
+  async function handleLeaveSector(sector) {
+    if (!onLeaveSector) {
+      return
+    }
+
+    setLeavingSectorId(sector.id)
+    setFeedbackMessage('')
+
+    try {
+      await onLeaveSector(sector.id)
+      setFeedbackMessage(`Você saiu do setor ${sector.name} com sucesso.`)
+    } catch (error) {
+      setFeedbackMessage(error.message)
+    } finally {
+      setLeavingSectorId('')
+    }
+  }
+
+  function openConfirmation(config) {
+    setPendingConfirmation(config)
+  }
+
+  function closeConfirmation() {
+    if (isConfirmingAction) {
+      return
+    }
+
+    setPendingConfirmation(null)
+  }
+
+  async function handleConfirmAction() {
+    if (!pendingConfirmation?.onConfirm) {
+      return
+    }
+
+    setIsConfirmingAction(true)
+
+    try {
+      await pendingConfirmation.onConfirm()
+      setPendingConfirmation(null)
+    } finally {
+      setIsConfirmingAction(false)
+    }
+  }
+
+  function requestRemoveMemberConfirmation(member) {
+    openConfirmation({
+      title: 'Remover da empresa',
+      description: [
+        `Tem certeza que deseja remover ${member.name} da empresa?`,
+        'O funcionário perderá acesso aos setores da empresa e receberá uma notificação.',
+      ],
+      confirmLabel: 'Excluir',
+      confirmVariant: 'danger',
+      onConfirm: () => handleRemoveMember(member),
+    })
+  }
+
+  function requestDeleteNotificationConfirmation(notificationOrId) {
+    openConfirmation({
+      title: 'Excluir notificação',
+      description: 'Tem certeza que deseja excluir esta notificação?',
+      confirmLabel: 'Excluir',
+      confirmVariant: 'danger',
+      onConfirm: () => handleDeleteNotification(notificationOrId),
+    })
+  }
+
+  function requestDecisionConfirmation(notification, action) {
+    const isAccepting = action === 'accept'
+
+    if (notification.type === 'ticket-transfer') {
+      openConfirmation({
+        title: isAccepting ? 'Aceitar transferência' : 'Recusar transferência',
+        description: `Tem certeza que deseja ${isAccepting ? 'aceitar' : 'recusar'} a transferência do chamado ${notification.ticketProtocol}?`,
+        confirmLabel: isAccepting ? 'Aceitar' : 'Recusar',
+        confirmVariant: isAccepting ? 'primary' : 'danger',
+        onConfirm: () => handleEmployeeNotificationDecision(notification, action),
+      })
+      return
+    }
+
+    const sectorNames = notification.sectorNames?.join(', ') || 'setor não informado'
+
+    openConfirmation({
+      title: isAccepting ? 'Aceitar convite' : 'Recusar convite',
+      description: isAccepting
+        ? `Tem certeza que deseja aceitar o convite para os setores ${sectorNames}?`
+        : `Tem certeza que deseja recusar o convite para os setores ${sectorNames}?`,
+      confirmLabel: isAccepting ? 'Aceitar' : 'Recusar',
+      confirmVariant: isAccepting ? 'primary' : 'danger',
+      onConfirm: () => handleEmployeeNotificationDecision(notification, action),
+    })
+  }
+
+  function requestLeaveSectorConfirmation(sector) {
+    openConfirmation({
+      title: 'Sair do setor',
+      description: `Tem certeza que deseja sair do setor ${sector.name}?`,
+      confirmLabel: 'Sair do setor',
+      confirmVariant: 'danger',
+      onConfirm: () => handleLeaveSector(sector),
+    })
+  }
+
+  function getEmployeeNotificationTitle(notification) {
+    if (notification.type === 'ticket-assignment') {
+      return `Novo chamado ${notification.ticketProtocol}`
+    }
+
+    if (notification.type === 'ticket-transfer') {
+      return `${notification.senderName} quer transferir o chamado ${notification.ticketProtocol}`
+    }
+
+    if (notification.type === 'team-membership-removed') {
+      if (notification.removalType === 'COMPANY_DELETED') {
+        return 'A empresa foi excluída'
+      }
+
+      return notification.removalType === 'COMPANY_REMOVED'
+        ? 'Você foi removido da empresa'
+        : `Você foi removido do setor ${notification.sectorName}`
+    }
+
+    return notification.invitedByName
+  }
+
+  function getEmployeeNotificationDescription(notification) {
+    if (notification.type === 'ticket-assignment') {
+      return `${notification.requesterName} abriu "${notification.ticketTitle}" para o setor ${notification.sectorName}.`
+    }
+
+    if (notification.type === 'team-membership-removed') {
+      if (notification.removalType === 'COMPANY_DELETED') {
+        return `${notification.removedByName} excluiu a empresa ${notification.companyName || 'informada'}. Os setores dessa empresa não existem mais para você.`
+      }
+
+      if (notification.removalType === 'COMPANY_REMOVED') {
+        return `${notification.removedByName} removeu seu acesso da empresa ${notification.companyName || 'informada'}.`
+      }
+
+      return `${notification.removedByName} removeu sua participação do setor ${notification.sectorName}.`
+    }
+
+    if (notification.type === 'ticket-transfer') {
+      return `O chamado "${notification.ticketTitle}" foi transferido para você por ${notification.senderName}.`
+    }
+
+    return notification.sectorNames.join(', ')
+  }
+
+  function canDeleteNotification(notification) {
+    return !(notification.type === 'ticket-transfer' && notification.status === 'PENDING')
+  }
+
+  function getNotificationStatusLabel(notification) {
+    if (notification.type === 'team-membership-removed') {
+      return 'Removido'
+    }
+
+    if (notification.type === 'ticket-assignment') {
+      return 'Novo chamado'
+    }
+
+    return getInviteStatusLabel(notification.status)
+  }
+
+  function formatMemberStatus(status) {
+    if (status === 'ACTIVE') {
+      return 'Ativo'
+    }
+
+    if (status === 'INACTIVE') {
+      return 'Inativo'
+    }
+
+    return status
   }
 
   function getInviteStatusLabel(status) {
@@ -137,7 +399,6 @@ function Team({
         <Header
           activeSection="team"
           {...headerProps}
-          isTeamRole={isTeamRole(userRole)}
           onSectionChange={onNavigatePage}
         />
 
@@ -161,6 +422,11 @@ function Team({
                   <span>Total de pessoas</span>
                   <strong>{visibleTeamMembers.length}</strong>
                   <small>Integrantes cadastrados na equipe de trabalho</small>
+                </article>
+                <article className="team-view__summary-card">
+                  <span>Empresa da equipe</span>
+                  <strong>{companyName}</strong>
+                  <small>Empresa vinculada aos setores e integrantes dessa equipe</small>
                 </article>
                 <article className="team-view__summary-card">
                   <span>Seu acesso</span>
@@ -192,13 +458,13 @@ function Team({
                   <div>
                     <span className="home-panel__eyebrow">Notificações</span>
                     <h2>
-                      {userRole === 'admin' ? 'Retornos dos convites enviados' : 'Convites recebidos'}
+                      {userRole === 'admin' ? 'Retornos dos convites enviados' : 'Suas notificações'}
                     </h2>
                   </div>
                   <span className="home-panel__badge">
                     {userRole === 'admin'
                       ? `${handledSentInvites.length} retorno(s)`
-                      : `${pendingReceivedInvites.length} pendente(s)`}
+                      : `${employeeNotifications.length} item(ns)`}
                   </span>
                 </div>
 
@@ -211,9 +477,20 @@ function Team({
                             <strong>{invite.invitedName}</strong>
                             <p>{invite.sectorNames.join(', ')}</p>
                           </div>
-                          <span className={`team-invite-list__status team-invite-list__status--${invite.status.toLowerCase()}`}>
-                            {getInviteStatusLabel(invite.status)}
-                          </span>
+                          <div className="team-invite-list__meta">
+                            <span className={`team-invite-list__status team-invite-list__status--${invite.status.toLowerCase()}`}>
+                              {getInviteStatusLabel(invite.status)}
+                            </span>
+                            <button
+                              className="team-invite-list__icon-button"
+                              type="button"
+                              onClick={() => requestDeleteNotificationConfirmation(invite.id)}
+                              disabled={deletingInviteId === invite.id}
+                              aria-label="Excluir notificação"
+                            >
+                              <TrashIcon />
+                            </button>
+                          </div>
                         </article>
                       ))}
                     </div>
@@ -222,38 +499,59 @@ function Team({
                       Nenhum retorno de convite recebido até o momento.
                     </span>
                   )
-                ) : pendingReceivedInvites.length > 0 ? (
+                ) : employeeNotifications.length > 0 ? (
                   <div className="team-invite-list">
-                    {pendingReceivedInvites.map((invite) => (
-                      <article className="team-invite-list__item" key={invite.id}>
+                    {employeeNotifications.map((notification) => (
+                      <article className="team-invite-list__item" key={notification.id}>
                         <div>
-                          <strong>{invite.invitedByName}</strong>
-                          <p>{invite.sectorNames.join(', ')}</p>
+                          <strong>{getEmployeeNotificationTitle(notification)}</strong>
+                          <p>{getEmployeeNotificationDescription(notification)}</p>
                         </div>
-                        <div className="team-invite-list__actions">
-                          <button
-                            className="team-invite-list__button"
-                            type="button"
-                            onClick={() => handleInviteDecision(invite.id, 'accept')}
-                            disabled={processingInviteId === invite.id}
-                          >
-                            {processingInviteId === invite.id ? 'Processando...' : 'Aceitar'}
-                          </button>
-                          <button
-                            className="team-invite-list__button team-invite-list__button--ghost"
-                            type="button"
-                            onClick={() => handleInviteDecision(invite.id, 'decline')}
-                            disabled={processingInviteId === invite.id}
-                          >
-                            Recusar
-                          </button>
+                        <div className="team-invite-list__meta">
+                          {notification.type === 'received' || notification.type === 'ticket-transfer' ? (
+                            <div className="team-invite-list__actions">
+                              <button
+                                className="team-invite-list__button"
+                                type="button"
+                                onClick={() => requestDecisionConfirmation(notification, 'accept')}
+                                disabled={processingInviteId === notification.id || deletingInviteId === notification.id}
+                              >
+                                {processingInviteId === notification.id ? 'Processando...' : 'Aceitar'}
+                              </button>
+                              <button
+                                className="team-invite-list__button team-invite-list__button--ghost"
+                                type="button"
+                                onClick={() => requestDecisionConfirmation(notification, 'decline')}
+                                disabled={processingInviteId === notification.id || deletingInviteId === notification.id}
+                              >
+                                Recusar
+                              </button>
+                            </div>
+                          ) : (
+                            <span
+                              className={`team-invite-list__status team-invite-list__status--${notification.status.toLowerCase()}`}
+                            >
+                              {getNotificationStatusLabel(notification)}
+                            </span>
+                          )}
+                          {canDeleteNotification(notification) ? (
+                            <button
+                              className="team-invite-list__icon-button"
+                              type="button"
+                              onClick={() => requestDeleteNotificationConfirmation(notification)}
+                              disabled={processingInviteId === notification.id || deletingInviteId === notification.id}
+                              aria-label="Excluir notificação"
+                            >
+                              <TrashIcon />
+                            </button>
+                          ) : null}
                         </div>
                       </article>
                     ))}
                   </div>
                 ) : (
                   <span className="team-panel__empty">
-                    Nenhum convite pendente para sua conta neste momento.
+                    Nenhuma notificação disponível para sua conta neste momento.
                   </span>
                 )}
               </div>
@@ -358,17 +656,30 @@ function Team({
                       Criar setor
                     </button>
                   ) : (
-                    <span className="home-panel__badge">Visualização</span>
+                    <span className="home-panel__badge">Você pode sair</span>
                   )}
                 </div>
 
                 {sectors.length > 0 ? (
                   <div className="team-sectors">
                     {sectors.map((sector) => (
-                      <button className="team-sectors__item is-active" key={sector.id} type="button">
+                      <div className="team-sectors__item is-active" key={sector.id}>
                         <span>{sector.name}</span>
                         <strong>{sector.description}</strong>
-                      </button>
+                        {userRole === 'employee' ? (
+                          <>
+                            <p className="team-sectors__hint">Clique abaixo para sair deste setor.</p>
+                            <button
+                              className="team-panel__action-button team-panel__action-button--danger team-sectors__leave-button"
+                              type="button"
+                              onClick={() => requestLeaveSectorConfirmation(sector)}
+                              disabled={leavingSectorId === sector.id}
+                            >
+                              {leavingSectorId === sector.id ? 'Saindo...' : 'Sair do setor'}
+                            </button>
+                          </>
+                        ) : null}
+                      </div>
                     ))}
                   </div>
                 ) : (
@@ -392,15 +703,19 @@ function Team({
                 <div className="team-panel__table">
                   {visibleTeamMembers.length > 0 ? (
                     <>
-                      <div className="team-panel__head">
+                      <div className={`team-panel__head${userRole === 'admin' ? ' team-panel__head--admin' : ''}`}>
                         <span>Nome</span>
                         <span>Função</span>
                         <span>Setores</span>
                         <span>Status</span>
+                        {userRole === 'admin' ? <span>Ações</span> : null}
                       </div>
 
                       {visibleTeamMembers.map((member) => (
-                        <div className="team-panel__row" key={member.id}>
+                        <div
+                          className={`team-panel__row${userRole === 'admin' ? ' team-panel__row--admin' : ''}`}
+                          key={member.id}
+                        >
                           <span>{member.name}</span>
                           <span>{member.role}</span>
                           <span className="team-panel__sectors">
@@ -435,7 +750,19 @@ function Team({
                               <span className="team-panel__empty">Nenhum setor definido</span>
                             ) : null}
                           </span>
-                          <span className="team-panel__status">{member.status}</span>
+                          <span className="team-panel__status">{formatMemberStatus(member.status)}</span>
+                          {userRole === 'admin' ? (
+                            <span className="team-panel__actions">
+                              <button
+                                className="team-panel__action-button team-panel__action-button--danger"
+                                type="button"
+                                onClick={() => requestRemoveMemberConfirmation(member)}
+                                disabled={isTeamDataLoading || processingMemberId === member.id}
+                              >
+                                {processingMemberId === member.id ? 'Removendo...' : 'Remover da empresa'}
+                              </button>
+                            </span>
+                          ) : null}
                         </div>
                       ))}
                     </>
@@ -452,8 +779,33 @@ function Team({
           </div>
         </section>
       </div>
+
+      <ConfirmActionModal
+        isOpen={Boolean(pendingConfirmation)}
+        title={pendingConfirmation?.title}
+        description={pendingConfirmation?.description}
+        confirmLabel={pendingConfirmation?.confirmLabel}
+        confirmVariant={pendingConfirmation?.confirmVariant}
+        onCancel={closeConfirmation}
+        onConfirm={handleConfirmAction}
+        isProcessing={isConfirmingAction}
+      />
     </main>
   )
 }
 
 export default Team
+
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M4 7h16m-10 4v5m4-5v5M9 4h6l1 2H8l1-2Zm1 16h4a2 2 0 0 0 2-2V7H8v11a2 2 0 0 0 2 2Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}

@@ -2,11 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { getTickets } from '../../api'
 import Header from '../../components/header/Header'
 import Sidebar from '../../components/sidebar/Sidebar'
-import { isTeamRole } from '../../dashboardData'
+
 import { SearchIcon } from '../../dashboardIcons'
 import '../Home/Home.css'
 
-function OpenTickets({ headerProps, navigationGroups, onNavigatePage, userRole = 'user' }) {
+function OpenTickets({ currentUser, headerProps, navigationGroups, onNavigatePage, onOpenTicket }) {
   const [tickets, setTickets] = useState([])
   const [searchValue, setSearchValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -33,6 +33,13 @@ function OpenTickets({ headerProps, navigationGroups, onNavigatePage, userRole =
   }, [normalizedSearchValue, tickets])
 
   useEffect(() => {
+    if (!currentUser?.email) {
+      setTickets([])
+      setErrorMessage('')
+      setIsLoading(false)
+      return undefined
+    }
+
     let isCancelled = false
 
     async function loadTickets() {
@@ -40,7 +47,7 @@ function OpenTickets({ headerProps, navigationGroups, onNavigatePage, userRole =
       setErrorMessage('')
 
       try {
-        const response = await getTickets('OPEN')
+        const response = await getTickets(currentUser.email, ['OPEN', 'IN_PROGRESS'])
 
         if (isCancelled) {
           return
@@ -66,7 +73,19 @@ function OpenTickets({ headerProps, navigationGroups, onNavigatePage, userRole =
     return () => {
       isCancelled = true
     }
-  }, [])
+  }, [currentUser?.email])
+
+  function getStatusClass(statusCode) {
+    if (statusCode === 'IN_PROGRESS' || statusCode === 'IN_PROGRESS_TRANSFER_PENDING') {
+      return 'ticket-list__status--in-progress'
+    }
+
+    if (statusCode === 'IN_PROGRESS_REQUESTER_REPLY') {
+      return 'ticket-list__status--requester-reply'
+    }
+
+    return 'ticket-list__status--open'
+  }
 
   function formatDate(value) {
     if (!value) {
@@ -84,7 +103,6 @@ function OpenTickets({ headerProps, navigationGroups, onNavigatePage, userRole =
         <Header
           activeSection="open"
           {...headerProps}
-          isTeamRole={isTeamRole(userRole)}
           onSectionChange={onNavigatePage}
         />
 
@@ -118,6 +136,7 @@ function OpenTickets({ headerProps, navigationGroups, onNavigatePage, userRole =
                       <span>Assunto</span>
                       <span>Status</span>
                       <span>Data</span>
+                      <span>Ação</span>
                     </div>
 
                     {filteredTickets.map((ticket) => (
@@ -125,11 +144,20 @@ function OpenTickets({ headerProps, navigationGroups, onNavigatePage, userRole =
                         <span>{ticket.protocol}</span>
                         <span>{ticket.title}</span>
                         <span>
-                          <strong className="ticket-list__status ticket-list__status--open">
+                          <strong className={`ticket-list__status ${getStatusClass(ticket.statusCode)}`}>
                             {ticket.statusName}
                           </strong>
                         </span>
                         <span>{formatDate(ticket.openedAt)}</span>
+                        <span>
+                          <button
+                            className="ticket-list__action"
+                            type="button"
+                            onClick={() => onOpenTicket?.(ticket, 'open')}
+                          >
+                            Ver chamado
+                          </button>
+                        </span>
                       </div>
                     ))}
                   </>

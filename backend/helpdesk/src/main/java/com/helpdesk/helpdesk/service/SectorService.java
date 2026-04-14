@@ -1,6 +1,7 @@
 package com.helpdesk.helpdesk.service;
 
 import java.util.List;
+import java.util.Locale;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,8 +32,28 @@ public class SectorService {
 	}
 
 	@Transactional(readOnly = true)
-	public List<SectorResponse> listAll() {
-		return sectorRepository.findByArchivedAtIsNullOrderByNameAsc().stream()
+	public List<SectorResponse> listVisible(String email) {
+		if (email == null || email.isBlank()) {
+			return toResponseList(sectorRepository.findByArchivedAtIsNullOrderByNameAsc());
+		}
+
+		String normalizedEmail = normalizeEmail(email);
+		User user = userRepository.findByEmailIgnoreCase(normalizedEmail)
+			.orElseThrow(() -> new NotFoundException("Usuário responsável pela consulta não encontrado."));
+
+		if (hasRole(user, "ADMIN")) {
+			return toResponseList(sectorRepository.findVisibleToAdminByEmail(normalizedEmail));
+		}
+
+		if (hasRole(user, "EMPLOYEE")) {
+			return toResponseList(sectorRepository.findVisibleToMemberByEmail(normalizedEmail));
+		}
+
+		return toResponseList(sectorRepository.findByArchivedAtIsNullOrderByNameAsc());
+	}
+
+	private List<SectorResponse> toResponseList(List<Sector> sectors) {
+		return sectors.stream()
 			.map(this::toResponse)
 			.toList();
 	}
@@ -67,14 +88,31 @@ public class SectorService {
 	}
 
 	private SectorResponse toResponse(Sector sector) {
+		String companyName = sector.getCreatedBy().getCompanyName();
+		if (companyName == null || companyName.isBlank()) {
+			companyName = sector.getCreatedBy().getFullName();
+		}
+
 		return new SectorResponse(
 			sector.getId(),
 			sector.getName(),
 			sector.getSlug(),
 			sector.getDescription(),
 			sector.isActive(),
+			sector.getCreatedBy().getId(),
+			companyName,
+			sector.getCreatedBy().getCompanyDocument(),
 			sector.getCreatedBy().getEmail(),
 			sector.getMembers().size()
 		);
+	}
+
+	private boolean hasRole(User user, String roleCode) {
+		return user.getRoles().stream()
+			.anyMatch(role -> roleCode.equalsIgnoreCase(role.getCode()));
+	}
+
+	private String normalizeEmail(String email) {
+		return email.trim().toLowerCase(Locale.ROOT);
 	}
 }

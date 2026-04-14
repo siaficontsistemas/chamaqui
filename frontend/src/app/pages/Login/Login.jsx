@@ -100,15 +100,6 @@ function Login({ onNavigateHome, onNavigateRegister }) {
               .
             </p>
 
-            <div className="login-form__divider">
-              <span>ou fazer login com</span>
-            </div>
-
-            <button className="google-button" type="button">
-              <GoogleIcon />
-              Continue with Google
-            </button>
-
             <button
               className="auth-card__submit-button"
               type="submit"
@@ -158,29 +149,6 @@ function LockIcon() {
         strokeWidth="1.7"
         strokeLinecap="round"
         strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
-function GoogleIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M21.8 12.23c0-.69-.06-1.2-.2-1.74H12v3.45h5.64c-.11.86-.7 2.16-2 3.03l-.02.12 2.81 2.17.19.02c1.73-1.58 2.73-3.9 2.73-7.05Z"
-        fill="#4285F4"
-      />
-      <path
-        d="M12 22c2.76 0 5.07-.9 6.76-2.44l-3.22-2.5c-.86.59-2.01 1-3.54 1-2.7 0-4.99-1.77-5.8-4.22l-.12.01-2.92 2.25-.04.11A10.2 10.2 0 0 0 12 22Z"
-        fill="#34A853"
-      />
-      <path
-        d="M6.2 13.84A6.13 6.13 0 0 1 5.86 12c0-.64.12-1.25.32-1.84l-.01-.12-2.96-2.3-.1.04A10.06 10.06 0 0 0 2 12c0 1.62.39 3.16 1.1 4.54l3.1-2.7Z"
-        fill="#FBBC05"
-      />
-      <path
-        d="M12 5.94c1.93 0 3.23.82 3.97 1.5l2.9-2.78C17.06 2.98 14.76 2 12 2a10.2 10.2 0 0 0-8.89 5.45l3.07 2.38C7.02 7.38 9.3 5.94 12 5.94Z"
-        fill="#EA4335"
       />
     </svg>
   )

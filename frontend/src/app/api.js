@@ -4,9 +4,10 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:420
 )
 
 async function apiRequest(path, options = {}) {
+  const isFormData = options.body instanceof FormData
   const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: {
-      'Content-Type': 'application/json',
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...(options.headers || {}),
     },
     ...options,
@@ -68,14 +69,29 @@ export function getProfile(email) {
   return apiRequest(`/api/v1/profile?email=${encodeURIComponent(email)}`)
 }
 
-export function getTicketSummary() {
-  return apiRequest('/api/v1/tickets/summary')
+export function deleteProfile(email) {
+  return apiRequest(`/api/v1/profile?email=${encodeURIComponent(email)}`, {
+    method: 'DELETE',
+  })
 }
 
-export function getTickets(status) {
-  const searchParams = new URLSearchParams()
+export function deleteCompanyProfile(email) {
+  return apiRequest(`/api/v1/profile/company?email=${encodeURIComponent(email)}`, {
+    method: 'DELETE',
+  })
+}
 
-  if (status) {
+export function getTicketSummary(email) {
+  return apiRequest(`/api/v1/tickets/summary?email=${encodeURIComponent(email)}`)
+}
+
+export function getTickets(email, status) {
+  const searchParams = new URLSearchParams()
+  searchParams.set('email', email)
+
+  if (Array.isArray(status) && status.length > 0) {
+    searchParams.set('status', status.join(','))
+  } else if (status) {
     searchParams.set('status', status)
   }
 
@@ -84,8 +100,63 @@ export function getTickets(status) {
   return apiRequest(`/api/v1/tickets${queryString ? `?${queryString}` : ''}`)
 }
 
+export function getTicketById(ticketId, email) {
+  return apiRequest(`/api/v1/tickets/${ticketId}?email=${encodeURIComponent(email)}`)
+}
+
 export function createTicket(payload) {
-  return apiRequest('/api/v1/tickets', {
+  return createMultipartRequest('/api/v1/tickets', payload)
+}
+
+export function getTicketMessages(ticketId, email) {
+  return apiRequest(
+    `/api/v1/tickets/${ticketId}/messages?email=${encodeURIComponent(email)}`
+  )
+}
+
+export function addTicketMessage(ticketId, payload) {
+  return createMultipartRequest(`/api/v1/tickets/${ticketId}/messages`, payload)
+}
+
+function createMultipartRequest(path, payload) {
+  const { files = [], ...data } = payload || {}
+
+  if (!Array.isArray(files) || files.length === 0) {
+    return apiRequest(path, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  const formData = new FormData()
+  formData.append('payload', new Blob([JSON.stringify(data)], { type: 'application/json' }))
+  files.forEach((file) => formData.append('files', file))
+
+  return apiRequest(path, {
+    method: 'POST',
+    body: formData,
+  })
+}
+
+export function getTicketAttachmentDownloadUrl(ticketId, attachmentId, email) {
+  return `${API_BASE_URL}/api/v1/tickets/${ticketId}/attachments/${attachmentId}?email=${encodeURIComponent(email)}`
+}
+
+export function closeTicket(ticketId, payload) {
+  return apiRequest(`/api/v1/tickets/${ticketId}/close`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function getTicketTransferCandidates(ticketId, email) {
+  return apiRequest(
+    `/api/v1/tickets/${ticketId}/transfer-candidates?email=${encodeURIComponent(email)}`
+  )
+}
+
+export function requestTicketTransfer(ticketId, payload) {
+  return apiRequest(`/api/v1/tickets/${ticketId}/transfer`, {
     method: 'POST',
     body: JSON.stringify(payload),
   })
@@ -95,8 +166,16 @@ export function getPersonalReport(email) {
   return apiRequest(`/api/v1/reports/personal?email=${encodeURIComponent(email)}`)
 }
 
-export function getSectors() {
-  return apiRequest('/api/v1/sectors')
+export function getSectors(email) {
+  const searchParams = new URLSearchParams()
+
+  if (email) {
+    searchParams.set('email', email)
+  }
+
+  const queryString = searchParams.toString()
+
+  return apiRequest(`/api/v1/sectors${queryString ? `?${queryString}` : ''}`)
 }
 
 export function createSector(payload) {
@@ -106,8 +185,16 @@ export function createSector(payload) {
   })
 }
 
-export function getTeamMembers() {
-  return apiRequest('/api/v1/team/members')
+export function getTeamMembers(email) {
+  const searchParams = new URLSearchParams()
+
+  if (email) {
+    searchParams.set('email', email)
+  }
+
+  const queryString = searchParams.toString()
+
+  return apiRequest(`/api/v1/team/members${queryString ? `?${queryString}` : ''}`)
 }
 
 export function createTeamInvite(payload) {
@@ -139,9 +226,80 @@ export function declineTeamInvite(inviteId, email) {
   })
 }
 
+export function deleteTeamNotification(inviteId, email) {
+  return apiRequest(`/api/v1/team/invites/${inviteId}/notification?email=${encodeURIComponent(email)}`, {
+    method: 'DELETE',
+  })
+}
+
+export function getTicketAssignmentNotifications(email) {
+  return apiRequest(`/api/v1/notifications/ticket-assignments?email=${encodeURIComponent(email)}`)
+}
+
+export function deleteTicketAssignmentNotification(notificationId, email) {
+  return apiRequest(
+    `/api/v1/notifications/ticket-assignments/${notificationId}?email=${encodeURIComponent(email)}`,
+    {
+      method: 'DELETE',
+    }
+  )
+}
+
+export function getTicketTransferNotifications(email) {
+  return apiRequest(`/api/v1/notifications/ticket-transfers?email=${encodeURIComponent(email)}`)
+}
+
+export function getTeamMembershipNotifications(email) {
+  return apiRequest(`/api/v1/notifications/team-memberships?email=${encodeURIComponent(email)}`)
+}
+
+export function acceptTicketTransferNotification(notificationId, email) {
+  return apiRequest(`/api/v1/notifications/ticket-transfers/${notificationId}/accept`, {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  })
+}
+
+export function declineTicketTransferNotification(notificationId, email) {
+  return apiRequest(`/api/v1/notifications/ticket-transfers/${notificationId}/decline`, {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  })
+}
+
+export function deleteTicketTransferNotification(notificationId, email) {
+  return apiRequest(
+    `/api/v1/notifications/ticket-transfers/${notificationId}?email=${encodeURIComponent(email)}`,
+    {
+      method: 'DELETE',
+    }
+  )
+}
+
+export function deleteTeamMembershipNotification(notificationId, email) {
+  return apiRequest(
+    `/api/v1/notifications/team-memberships/${notificationId}?email=${encodeURIComponent(email)}`,
+    {
+      method: 'DELETE',
+    }
+  )
+}
+
 export function updateTeamMemberSectors(userId, payload) {
   return apiRequest(`/api/v1/team/members/${userId}/sectors`, {
     method: 'PUT',
     body: JSON.stringify(payload),
+  })
+}
+
+export function removeTeamMemberFromCompany(userId, email) {
+  return apiRequest(`/api/v1/team/members/${userId}?email=${encodeURIComponent(email)}`, {
+    method: 'DELETE',
+  })
+}
+
+export function leaveTeamSector(sectorId, email) {
+  return apiRequest(`/api/v1/team/sectors/${sectorId}/leave?email=${encodeURIComponent(email)}`, {
+    method: 'DELETE',
   })
 }
