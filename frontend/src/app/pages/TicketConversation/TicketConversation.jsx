@@ -31,6 +31,7 @@ function TicketConversation({
   const [errorMessage, setErrorMessage] = useState('')
   const [isTransferConfirmationOpen, setIsTransferConfirmationOpen] = useState(false)
   const [isConfirmingTransfer, setIsConfirmingTransfer] = useState(false)
+  const [isCloseConfirmationOpen, setIsCloseConfirmationOpen] = useState(false)
   const fileInputRef = useRef(null)
   const dateFormatter = useMemo(
     () =>
@@ -41,6 +42,33 @@ function TicketConversation({
     []
   )
 
+  const isWhatsappTicket = ticket?.channel === 'WHATSAPP'
+
+  const loadMessages = async (shouldKeepError = false) => {
+    if (!ticket?.id || !currentUser?.email) {
+      setMessages([])
+      return
+    }
+
+    if (!shouldKeepError) {
+      setIsLoadingMessages(true)
+    }
+
+    setErrorMessage('')
+
+    try {
+      const response = await getTicketMessages(ticket.id, currentUser.email)
+      setMessages(Array.isArray(response) ? response : [])
+    } catch (error) {
+      setMessages([])
+      setErrorMessage(error.message)
+    } finally {
+      if (!shouldKeepError) {
+        setIsLoadingMessages(false)
+      }
+    }
+  }
+
   useEffect(() => {
     if (!ticket?.id || !currentUser?.email) {
       setMessages([])
@@ -49,38 +77,36 @@ function TicketConversation({
 
     let isCancelled = false
 
-    async function loadMessages() {
-      setIsLoadingMessages(true)
-      setErrorMessage('')
-
-      try {
-        const response = await getTicketMessages(ticket.id, currentUser.email)
-
-        if (isCancelled) {
-          return
-        }
-
-        setMessages(Array.isArray(response) ? response : [])
-      } catch (error) {
-        if (isCancelled) {
-          return
-        }
-
-        setMessages([])
-        setErrorMessage(error.message)
-      } finally {
-        if (!isCancelled) {
-          setIsLoadingMessages(false)
-        }
-      }
-    }
-
     loadMessages()
+
+    let pollTimer = null
+    if (isWhatsappTicket) {
+      pollTimer = window.setInterval(async () => {
+        if (isCancelled) {
+          return
+        }
+
+        try {
+          const response = await getTicketMessages(ticket.id, currentUser.email)
+
+          if (isCancelled) {
+            return
+          }
+
+          setMessages(Array.isArray(response) ? response : [])
+        } catch {
+          // Keep the current history visible if the background sync fails temporarily.
+        }
+      }, 10000)
+    }
 
     return () => {
       isCancelled = true
+      if (pollTimer) {
+        window.clearInterval(pollTimer)
+      }
     }
-  }, [currentUser?.email, ticket?.id])
+  }, [currentUser?.email, isWhatsappTicket, ticket?.id])
 
   const isTicketClosed = ticket?.statusCode === 'CLOSED' || Boolean(ticket?.closedAt)
 
@@ -317,6 +343,9 @@ function TicketConversation({
       setMessages((currentMessages) => [...currentMessages, savedMessage])
       setDraftMessage('')
       setAttachedFiles([])
+      if (isWhatsappTicket) {
+        await loadMessages(true)
+      }
     } catch (error) {
       setErrorMessage(error.message)
     } finally {
@@ -337,6 +366,32 @@ function TicketConversation({
     } catch (error) {
       setErrorMessage(error.message)
       setIsClosingTicket(false)
+      throw error
+    }
+  }
+
+  function openCloseConfirmation() {
+    if (isClosingTicket || !canCloseTicket) {
+      return
+    }
+
+    setIsCloseConfirmationOpen(true)
+  }
+
+  function closeCloseConfirmation() {
+    if (isClosingTicket) {
+      return
+    }
+
+    setIsCloseConfirmationOpen(false)
+  }
+
+  async function handleConfirmCloseTicket() {
+    try {
+      await handleCloseCurrentTicket()
+      setIsCloseConfirmationOpen(false)
+    } catch {
+      // The existing feedback area already shows the error.
     }
   }
 
@@ -409,7 +464,7 @@ function TicketConversation({
                     <button
                       className="ticket-chat__close"
                       type="button"
-                      onClick={handleCloseCurrentTicket}
+                      onClick={openCloseConfirmation}
                       disabled={isClosingTicket}
                     >
                       {isClosingTicket ? 'Fechando...' : 'Fechar chamado'}
@@ -421,6 +476,9 @@ function TicketConversation({
                   <span className="ticket-chat__eyebrow">
                     {displayStatusName}
                   </span>
+                  {isWhatsappTicket ? (
+                    <span className="ticket-chat__channel-badge">Canal: WhatsApp</span>
+                  ) : null}
                   <h1 className="ticket-chat__title">
                     #{ticket.protocol} - {ticket.title}
                   </h1>
@@ -486,7 +544,9 @@ function TicketConversation({
                   placeholder={
                     isTicketClosed
                       ? 'Este chamado foi encerrado.'
-                      : 'Responder chamado...'
+                      : isWhatsappTicket
+                        ? 'Responder cliente pelo WhatsApp...'
+                        : 'Responder chamado...'
                   }
                   rows={3}
                   value={draftMessage}
@@ -534,9 +594,15 @@ function TicketConversation({
                     isTicketClosed
                   }
                 >
-                  {isSendingMessage ? 'Enviando...' : 'Enviar'}
+                  {isSendingMessage ? 'Enviando...' : isWhatsappTicket ? 'Enviar ao WhatsApp' : 'Enviar'}
                 </button>
               </form>
+
+              {isWhatsappTicket ? (
+                <div className="ticket-chat__feedback">
+                  As respostas enviadas por esta tela tambem sao encaminhadas para o WhatsApp do cliente.
+                </div>
+              ) : null}
 
               {errorMessage ? <div className="ticket-chat__feedback">{errorMessage}</div> : null}
             </section>
@@ -546,6 +612,10 @@ function TicketConversation({
                 <h2>Informações do chamado</h2>
 
                 <dl className="ticket-chat__details">
+                  <div>
+                    <dt>Canal</dt>
+                    <dd>{isWhatsappTicket ? 'WhatsApp' : 'Portal'}</dd>
+                  </div>
                   <div>
                     <dt>Setor</dt>
                     <dd>{ticket.sectorName || 'Não informado'}</dd>
@@ -570,6 +640,26 @@ function TicketConversation({
                     <dt>Responsável</dt>
                     <dd>{ticket.assignedToName || 'Aguardando atribuição'}</dd>
                   </div>
+                  <div>
+                    <dt>Solicitante</dt>
+                    <dd>{ticket.requesterName || 'Não informado'}</dd>
+                  </div>
+                  <div>
+                    <dt>E-mail</dt>
+                    <dd>{ticket.requesterEmail || 'Não informado'}</dd>
+                  </div>
+                  {ticket.requesterPhoneNumber ? (
+                    <div>
+                      <dt>Telefone</dt>
+                      <dd>{ticket.requesterPhoneNumber}</dd>
+                    </div>
+                  ) : null}
+                  {ticket.requesterDocumentNumber ? (
+                    <div>
+                      <dt>CPF</dt>
+                      <dd>{ticket.requesterDocumentNumber}</dd>
+                    </div>
+                  ) : null}
                 </dl>
               </article>
 
@@ -644,6 +734,19 @@ function TicketConversation({
         </section>
       </div>
 
+      <ConfirmActionModal
+        isOpen={isCloseConfirmationOpen}
+        title="Fechar chamado"
+        description={[
+          `Tem certeza que deseja fechar o chamado #${ticket.protocol}?`,
+          'Depois de confirmar, este chamado sera encerrado e nao ficara mais em aberto.',
+        ]}
+        confirmLabel={isClosingTicket ? 'Fechando...' : 'Fechar chamado'}
+        confirmVariant="danger"
+        onCancel={closeCloseConfirmation}
+        onConfirm={handleConfirmCloseTicket}
+        isProcessing={isClosingTicket}
+      />
       <ConfirmActionModal
         isOpen={isTransferConfirmationOpen}
         title="Transferir chamado"

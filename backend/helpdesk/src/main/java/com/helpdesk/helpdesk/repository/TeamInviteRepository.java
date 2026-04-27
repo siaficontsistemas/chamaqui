@@ -24,5 +24,8 @@ public interface TeamInviteRepository extends JpaRepository<TeamInvite, UUID> {
 	@EntityGraph(attributePaths = {"invitedBy", "acceptedUser", "sectors"})
 	Optional<TeamInvite> findWithDetailsById(UUID id);
 
+	@EntityGraph(attributePaths = {"invitedBy", "acceptedUser", "sectors"})
+	List<TeamInvite> findAllBySectorsId(UUID sectorId);
+
 	boolean existsByEmailIgnoreCaseAndStatusAndInviteeHiddenFalse(String email, InviteStatus status);
 }

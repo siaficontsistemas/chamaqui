@@ -81,39 +81,29 @@
 }
 
 .home-brand-panel {
-  min-height: 74px;
-  padding: 12px 18px 10px;
+  min-height: 58px;
+  padding: 6px 18px 2px;
   display: flex;
   align-items: center;
+  justify-content: center;
 }
 
 .home-brand {
-  display: grid;
-  justify-items: start;
-  line-height: 0.9;
-  transform: scale(0.82);
-  transform-origin: left center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  cursor: pointer;
 }
 
-.home-brand__name {
-  font-size: clamp(1.8rem, 3.1vw, 3.2rem);
-  letter-spacing: 0.05rem;
-  color: #08145f;
-  font-weight: 800;
-}
-
-.home-brand__accent {
-  font-size: clamp(0.95rem, 1.45vw, 1.6rem);
-  letter-spacing: 0.04rem;
-  color: #e0202f;
-  font-weight: 700;
-}
-
-.home-brand__subtitle {
-  margin-top: 6px;
-  font-size: clamp(0.42rem, 0.7vw, 0.72rem);
-  letter-spacing: 0.34rem;
-  color: #1d2668;
+.home-brand__logo {
+  width: 136px;
+  max-width: 100%;
+  height: auto;
+  display: block;
 }
 
 .home-topbar__stats {
@@ -365,6 +355,21 @@
   color: #203449;
 }
 
+.home-notification-card__status--upcoming {
+  background: rgba(43, 131, 220, 0.14);
+  color: #1f5da3;
+}
+
+.home-notification-card__status--due_today {
+  background: rgba(237, 164, 44, 0.16);
+  color: #a9630b;
+}
+
+.home-notification-card__status--overdue {
+  background: rgba(227, 94, 76, 0.14);
+  color: #af3421;
+}
+
 .home-notification-card__status--removed {
   background: rgba(209, 77, 77, 0.12);
   color: #b13d47;
@@ -608,17 +613,17 @@
 }
 
 .home-sidebar {
-  padding: 28px 18px 20px;
+  padding: 12px 18px 20px;
   display: flex;
   flex-direction: column;
-  gap: 42px;
+  gap: 26px;
   min-height: 0;
   flex: 1;
 }
 
 .home-sidebar__group {
   display: grid;
-  gap: 18px;
+  gap: 12px;
 }
 
 .home-sidebar__title {
@@ -996,6 +1001,22 @@
   z-index: 1;
 }
 
+.home-content__placeholder {
+  padding: 24px;
+  border-radius: 22px;
+  background: rgba(244, 246, 248, 0.96);
+  border: 1px solid rgba(36, 56, 74, 0.1);
+  color: #2a3e50;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    0 8px 18px rgba(28, 44, 62, 0.05);
+}
+
+.home-content__placeholder p {
+  margin: 0;
+  line-height: 1.6;
+}
+
 .ticket-form__grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1261,6 +1282,11 @@
   color: #a11b27;
   font-size: 0.96rem;
   text-align: center;
+}
+
+.profile-form__feedback--success {
+  background: rgba(24, 118, 87, 0.1);
+  color: #187657;
 }
 
 .profile-form .ticket-field {

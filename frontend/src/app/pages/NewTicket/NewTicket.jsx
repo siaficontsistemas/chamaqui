@@ -22,6 +22,11 @@ function NewTicket({
   onNavigatePage,
 }) {
   const activeContent = dashboardPages.newTicket
+  const canCreateTickets =
+    Array.isArray(currentUser?.roles) &&
+    (currentUser.roles.includes('user') ||
+      currentUser.roles.includes('admin') ||
+      currentUser.roles.includes('employee'))
   const [formValues, setFormValues] = useState({
     companyName: '',
     companyOwnerId: '',
@@ -51,6 +56,7 @@ function NewTicket({
       companies.set(sector.companyOwnerId, {
         id: sector.companyOwnerId,
         name: sector.companyName || 'Empresa não informada',
+        document: sector.companyDocument || '',
       })
     })
 
@@ -75,7 +81,8 @@ function NewTicket({
     }
 
     return availableCompanies.filter((company) =>
-      normalizeText(company.name).includes(normalizedCompanyName)
+      normalizeText(company.name).includes(normalizedCompanyName) ||
+      company.document.includes(formValues.companyName.replace(/\D/g, ''))
     )
   }, [availableCompanies, formValues.companyName])
 
@@ -238,7 +245,14 @@ function NewTicket({
               </div>
             </div>
 
-            <form className="ticket-form" onSubmit={handleSubmit}>
+            {!canCreateTickets ? (
+              <div className="home-content__placeholder">
+                <p>
+                  Sua conta ainda nao possui empresas parceiras aceitas ou nao pode abrir chamados por esta tela.
+                </p>
+              </div>
+            ) : (
+              <form className="ticket-form" onSubmit={handleSubmit}>
               <div className="ticket-form__grid">
                 <label className="ticket-field ticket-field--combobox">
                   <span>Empresa</span>
@@ -246,8 +260,8 @@ function NewTicket({
                     <input
                       placeholder={
                         availableCompanies.length > 0
-                          ? 'Digite ou selecione a empresa...'
-                          : 'Nenhuma empresa disponível'
+                          ? 'Digite o nome ou CNPJ da empresa parceira...'
+                          : 'Nenhuma empresa parceira disponível'
                       }
                       type="text"
                       value={formValues.companyName}
@@ -275,14 +289,14 @@ function NewTicket({
 
                         setIsCompanyOptionsOpen((currentValue) => !currentValue)
                       }}
-                      aria-label="Abrir opções de empresa"
+                      aria-label="Abrir opções de empresa parceira"
                       disabled={availableCompanies.length === 0}
                     >
                       <ChevronDownIcon />
                     </button>
                   </div>
                   {isCompanyOptionsOpen ? (
-                    <div className="ticket-field__options" role="listbox" aria-label="Empresas cadastradas">
+                    <div className="ticket-field__options" role="listbox" aria-label="Empresas parceiras">
                       {filteredCompanies.length > 0 ? (
                         filteredCompanies.map((company) => (
                           <button
@@ -294,7 +308,7 @@ function NewTicket({
                             onMouseDown={(event) => event.preventDefault()}
                             onClick={() => handleCompanySelect(company)}
                           >
-                            {company.name}
+                            {company.document ? `${company.name} - ${company.document}` : company.name}
                           </button>
                         ))
                       ) : (
@@ -439,7 +453,8 @@ function NewTicket({
                   {isSubmitting ? 'Criando...' : 'Criar Chamado'}
                 </button>
               </div>
-            </form>
+              </form>
+            )}
           </div>
         </section>
       </div>

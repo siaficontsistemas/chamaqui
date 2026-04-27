@@ -37,3 +37,37 @@ a {
 #root {
   min-height: 100vh;
 }
+
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-shell__routes {
+  flex: 1;
+}
+
+.app-shell__footer {
+  min-height: 18px;
+  margin-top: auto;
+  padding: 2px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 19, 35, 0.92);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.68rem;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+  text-align: center;
+  backdrop-filter: blur(8px);
+}
+
+@media (max-width: 640px) {
+  .app-shell__footer {
+    min-height: 16px;
+    padding: 2px 8px;
+    font-size: 0.62rem;
+  }
+}

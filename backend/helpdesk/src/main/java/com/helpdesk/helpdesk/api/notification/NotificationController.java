@@ -14,10 +14,15 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.helpdesk.helpdesk.dto.company.RespondCompanyAccessRequest;
+import com.helpdesk.helpdesk.dto.notification.CalendarReminderNotificationResponse;
+import com.helpdesk.helpdesk.dto.notification.CompanyAccessRequestNotificationResponse;
+import com.helpdesk.helpdesk.dto.notification.CompanyPartnershipNotificationResponse;
 import com.helpdesk.helpdesk.dto.notification.TeamMembershipNotificationResponse;
 import com.helpdesk.helpdesk.dto.notification.TicketAssignmentNotificationResponse;
 import com.helpdesk.helpdesk.dto.notification.TicketTransferNotificationResponse;
 import com.helpdesk.helpdesk.dto.ticket.RespondTicketTransferRequest;
+import com.helpdesk.helpdesk.service.CompanyAccessRequestService;
 import com.helpdesk.helpdesk.service.NotificationService;
 
 import jakarta.validation.Valid;
@@ -27,9 +32,14 @@ import jakarta.validation.Valid;
 public class NotificationController {
 
 	private final NotificationService notificationService;
+	private final CompanyAccessRequestService companyAccessRequestService;
 
-	public NotificationController(NotificationService notificationService) {
+	public NotificationController(
+		NotificationService notificationService,
+		CompanyAccessRequestService companyAccessRequestService
+	) {
 		this.notificationService = notificationService;
+		this.companyAccessRequestService = companyAccessRequestService;
 	}
 
 	@GetMapping("/ticket-assignments")
@@ -45,6 +55,21 @@ public class NotificationController {
 	@GetMapping("/team-memberships")
 	public List<TeamMembershipNotificationResponse> listTeamMemberships(@RequestParam String email) {
 		return notificationService.listTeamMemberships(email);
+	}
+
+	@GetMapping("/calendar-reminders")
+	public List<CalendarReminderNotificationResponse> listCalendarReminders(@RequestParam String email) {
+		return notificationService.listCalendarReminders(email);
+	}
+
+	@GetMapping("/company-partnerships")
+	public List<CompanyPartnershipNotificationResponse> listCompanyPartnerships(@RequestParam String email) {
+		return notificationService.listCompanyPartnerships(email);
+	}
+
+	@GetMapping("/company-access-requests")
+	public List<CompanyAccessRequestNotificationResponse> listCompanyAccessRequests(@RequestParam String email) {
+		return companyAccessRequestService.listPendingNotifications(email);
 	}
 
 	@DeleteMapping("/ticket-assignments/{notificationId}")
@@ -71,6 +96,24 @@ public class NotificationController {
 		notificationService.declineTicketTransfer(notificationId, request);
 	}
 
+	@PostMapping("/company-access-requests/{requestId}/accept")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	public void acceptCompanyAccessRequest(
+		@PathVariable UUID requestId,
+		@Valid @RequestBody RespondCompanyAccessRequest request
+	) {
+		companyAccessRequestService.accept(requestId, request);
+	}
+
+	@PostMapping("/company-access-requests/{requestId}/decline")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	public void declineCompanyAccessRequest(
+		@PathVariable UUID requestId,
+		@Valid @RequestBody RespondCompanyAccessRequest request
+	) {
+		companyAccessRequestService.decline(requestId, request);
+	}
+
 	@DeleteMapping("/ticket-transfers/{notificationId}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void deleteTicketTransfer(@PathVariable UUID notificationId, @RequestParam String email) {
@@ -81,5 +124,17 @@ public class NotificationController {
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void deleteTeamMembership(@PathVariable UUID notificationId, @RequestParam String email) {
 		notificationService.deleteTeamMembership(notificationId, email);
+	}
+
+	@DeleteMapping("/calendar-reminders/{notificationId}")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	public void deleteCalendarReminder(@PathVariable UUID notificationId, @RequestParam String email) {
+		notificationService.deleteCalendarReminder(notificationId, email);
+	}
+
+	@DeleteMapping("/company-partnerships/{notificationId}")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	public void deleteCompanyPartnership(@PathVariable UUID notificationId, @RequestParam String email) {
+		notificationService.deleteCompanyPartnership(notificationId, email);
 	}
 }

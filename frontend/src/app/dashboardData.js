@@ -6,6 +6,13 @@ const dashboardPages = {
     contentText:
       'Aqui ficarão os painéis e listagens principais de atendimento. Por enquanto, essa área já responde aos botões laterais.',
   },
+  calendar: {
+    id: 'calendar',
+    label: 'Calendário',
+    contentTitle: 'Calendário',
+    contentText:
+      'Acompanhe obrigações, vencimentos e lembretes de prazo da sua empresa em um único painel.',
+  },
   reports: {
     id: 'reports',
     label: 'Relatórios',
@@ -130,6 +137,11 @@ function buildNavigationGroups({ userRole, sectors, teamMembers, currentMemberId
         {
           id: 'tickets',
           label: 'Chamados',
+        },
+        {
+          id: 'calendar',
+          label: 'Calendário',
+          icon: 'calendar',
         },
         {
           id: 'reports',

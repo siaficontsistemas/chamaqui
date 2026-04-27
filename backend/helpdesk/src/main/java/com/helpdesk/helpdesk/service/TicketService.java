@@ -1,7 +1,9 @@
 package com.helpdesk.helpdesk.service;
 
+import java.io.IOException;
 import java.time.OffsetDateTime;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -9,16 +11,21 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.helpdesk.helpdesk.common.NotFoundException;
+import com.helpdesk.helpdesk.domain.CompanyPartnershipStatus;
+import com.helpdesk.helpdesk.domain.CompanyType;
 import com.helpdesk.helpdesk.domain.SectorMember;
 import com.helpdesk.helpdesk.domain.Ticket;
 import com.helpdesk.helpdesk.domain.TicketAssignmentNotification;
 import com.helpdesk.helpdesk.domain.TicketAttachment;
+import com.helpdesk.helpdesk.domain.TicketChannel;
 import com.helpdesk.helpdesk.domain.TicketMessage;
 import com.helpdesk.helpdesk.domain.TicketPriority;
 import com.helpdesk.helpdesk.domain.TicketStatus;
@@ -34,6 +41,7 @@ import com.helpdesk.helpdesk.dto.ticket.TicketMessageResponse;
 import com.helpdesk.helpdesk.dto.ticket.TicketResponse;
 import com.helpdesk.helpdesk.dto.ticket.TicketSummaryResponse;
 import com.helpdesk.helpdesk.dto.ticket.TicketTransferCandidateResponse;
+import com.helpdesk.helpdesk.repository.CompanyPartnershipRepository;
 import com.helpdesk.helpdesk.repository.SectorMemberRepository;
 import com.helpdesk.helpdesk.repository.SectorRepository;
 import com.helpdesk.helpdesk.repository.TicketAssignmentNotificationRepository;
@@ -44,12 +52,16 @@ import com.helpdesk.helpdesk.repository.TicketRepository;
 import com.helpdesk.helpdesk.repository.TicketStatusRepository;
 import com.helpdesk.helpdesk.repository.TicketTransferNotificationRepository;
 import com.helpdesk.helpdesk.repository.UserRepository;
+import com.helpdesk.helpdesk.repository.WhatsappConversationRepository;
 
 @Service
 public class TicketService {
 
+	private static final Logger logger = LoggerFactory.getLogger(TicketService.class);
+
 	private final TicketRepository ticketRepository;
 	private final UserRepository userRepository;
+	private final CompanyPartnershipRepository companyPartnershipRepository;
 	private final SectorMemberRepository sectorMemberRepository;
 	private final SectorRepository sectorRepository;
 	private final TicketAssignmentNotificationRepository ticketAssignmentNotificationRepository;
@@ -60,10 +72,13 @@ public class TicketService {
 	private final TicketTransferNotificationRepository ticketTransferNotificationRepository;
 	private final TicketAttachmentStorageService ticketAttachmentStorageService;
 	private final TicketClosureEmailService ticketClosureEmailService;
+	private final WhatsappService whatsappService;
+	private final WhatsappConversationRepository whatsappConversationRepository;
 
 	public TicketService(
 		TicketRepository ticketRepository,
 		UserRepository userRepository,
+		CompanyPartnershipRepository companyPartnershipRepository,
 		SectorMemberRepository sectorMemberRepository,
 		SectorRepository sectorRepository,
 		TicketAssignmentNotificationRepository ticketAssignmentNotificationRepository,
@@ -73,10 +88,13 @@ public class TicketService {
 		TicketAttachmentRepository ticketAttachmentRepository,
 		TicketTransferNotificationRepository ticketTransferNotificationRepository,
 		TicketAttachmentStorageService ticketAttachmentStorageService,
-		TicketClosureEmailService ticketClosureEmailService
+		TicketClosureEmailService ticketClosureEmailService,
+		WhatsappService whatsappService,
+		WhatsappConversationRepository whatsappConversationRepository
 	) {
 		this.ticketRepository = ticketRepository;
 		this.userRepository = userRepository;
+		this.companyPartnershipRepository = companyPartnershipRepository;
 		this.sectorMemberRepository = sectorMemberRepository;
 		this.sectorRepository = sectorRepository;
 		this.ticketAssignmentNotificationRepository = ticketAssignmentNotificationRepository;
@@ -87,6 +105,8 @@ public class TicketService {
 		this.ticketTransferNotificationRepository = ticketTransferNotificationRepository;
 		this.ticketAttachmentStorageService = ticketAttachmentStorageService;
 		this.ticketClosureEmailService = ticketClosureEmailService;
+		this.whatsappService = whatsappService;
+		this.whatsappConversationRepository = whatsappConversationRepository;
 	}
 
 	@Transactional(readOnly = true)
@@ -162,9 +182,11 @@ public class TicketService {
 		com.helpdesk.helpdesk.domain.Sector sector = sectorRepository.findById(request.sectorId())
 			.orElseThrow(() -> new NotFoundException("Setor não encontrado."));
 
+		User requesterCompany = resolveRequesterCompany(requester);
 		if (!sector.getCreatedBy().getId().equals(request.companyOwnerId())) {
 			throw new IllegalArgumentException("O setor informado não pertence a empresa selecionada.");
 		}
+		ensureAcceptedPartnership(requesterCompany, sector.getCreatedBy());
 
 		Ticket ticket = new Ticket();
 		ticket.setProtocol(nextProtocol());
@@ -175,6 +197,7 @@ public class TicketService {
 		ticket.setSector(sector);
 		ticket.setStatus(status);
 		ticket.setPriority(priority);
+		ticket.setChannel(TicketChannel.PORTAL);
 		ticket.setCopyEmail(normalizeOptionalEmail(request.copyEmail()));
 
 		Ticket savedTicket = ticketRepository.save(ticket);
@@ -183,6 +206,44 @@ public class TicketService {
 		saveAttachments(savedTicket, initialMessage, requester, files);
 
 		return toResponse(savedTicket);
+	}
+
+	@Transactional
+	public Ticket createFromWhatsapp(CreateWhatsappTicketRequest request) {
+		User requester = request.requester();
+		List<IncomingAttachment> incomingAttachments = normalizeIncomingAttachments(request.attachments());
+		TicketStatus status = ticketStatusRepository.findByCode("OPEN")
+			.orElseThrow(() -> new NotFoundException("Status padrão de abertura não encontrado."));
+		TicketPriority priority = ticketPriorityRepository.findByCode("MEDIUM")
+			.orElseThrow(() -> new NotFoundException("Prioridade padrão não encontrada."));
+		com.helpdesk.helpdesk.domain.Sector sector = sectorRepository.findById(request.sectorId())
+			.orElseThrow(() -> new NotFoundException("Setor não encontrado."));
+
+		if (!sector.getCreatedBy().getId().equals(request.companyOwnerId())) {
+			throw new IllegalArgumentException("O setor informado não pertence a empresa selecionada.");
+		}
+		if (sector.getCreatedBy().getCompanyType() != CompanyType.RESPONDER) {
+			throw new IllegalArgumentException("O chamado só pode ser enviado para empresas que respondem chamados.");
+		}
+
+		Ticket ticket = new Ticket();
+		ticket.setProtocol(nextProtocol());
+		ticket.setTitle(buildWhatsappTicketTitle(request.subject(), requester.getFullName()));
+		ticket.setDescription(resolveWhatsappInboundMessage(request.description(), incomingAttachments));
+		ticket.setRequester(requester);
+		ticket.setAssignedTo(resolveNextAssignee(sector));
+		ticket.setSector(sector);
+		ticket.setStatus(status);
+		ticket.setPriority(priority);
+		ticket.setChannel(TicketChannel.WHATSAPP);
+		ticket.setCopyEmail(normalizeOptionalEmail(requester.getEmail()));
+
+		Ticket savedTicket = ticketRepository.save(ticket);
+		createAssignmentNotification(savedTicket);
+		TicketMessage initialMessage = ensureInitialMessage(savedTicket);
+		saveIncomingAttachments(savedTicket, initialMessage, requester, incomingAttachments);
+
+		return savedTicket;
 	}
 
 	@Transactional
@@ -252,6 +313,16 @@ public class TicketService {
 		TicketMessage savedMessage = ticketMessageRepository.save(ticketMessage);
 		List<TicketAttachmentResponse> attachments = saveAttachments(ticket, savedMessage, author, validFiles);
 
+		if (shouldMirrorMessageToWhatsapp(ticket, author)) {
+			List<WhatsappService.OutboundAttachment> outboundAttachments = loadWhatsappOutboundAttachments(savedMessage.getId());
+			whatsappService.sendMessage(
+				resolveWhatsappCompanyOwner(ticket),
+				resolveWhatsappTicketRecipient(ticket),
+				buildWhatsappOutboundText(ticket.getProtocol(), author.getFullName(), savedMessage.getMessage(), outboundAttachments),
+				outboundAttachments
+			);
+		}
+
 		if (ticket.getFirstResponseAt() == null && !author.getId().equals(ticket.getRequester().getId())) {
 			ticket.setFirstResponseAt(savedMessage.getCreatedAt());
 		}
@@ -265,6 +336,40 @@ public class TicketService {
 		ticketRepository.save(ticket);
 
 		return toMessageResponse(savedMessage, attachments);
+	}
+
+	@Transactional
+	public TicketMessageResponse addWhatsappMessage(UUID ticketId, String message) {
+		return addWhatsappMessage(ticketId, message, List.of());
+	}
+
+	@Transactional
+	public TicketMessageResponse addWhatsappMessage(UUID ticketId, String message, List<IncomingAttachment> attachments) {
+		Ticket ticket = ticketRepository.findById(ticketId)
+			.orElseThrow(() -> new NotFoundException("Chamado não encontrado."));
+		String normalizedMessage = normalizeMessage(message);
+		List<IncomingAttachment> incomingAttachments = normalizeIncomingAttachments(attachments);
+
+		if (normalizedMessage.isBlank() && incomingAttachments.isEmpty()) {
+			throw new IllegalArgumentException("Envie uma mensagem de texto ou anexe um arquivo para continuar o atendimento.");
+		}
+
+		ensureInitialMessage(ticket);
+
+		TicketMessage ticketMessage = new TicketMessage();
+		ticketMessage.setTicket(ticket);
+		ticketMessage.setAuthor(ticket.getRequester());
+		ticketMessage.setMessage(resolveWhatsappInboundMessage(normalizedMessage, incomingAttachments));
+		ticketMessage.setInternal(false);
+
+		TicketMessage savedMessage = ticketMessageRepository.save(ticketMessage);
+		List<TicketAttachmentResponse> savedAttachments = saveIncomingAttachments(
+			ticket,
+			savedMessage,
+			ticket.getRequester(),
+			incomingAttachments
+		);
+		return toMessageResponse(savedMessage, savedAttachments);
 	}
 
 	@Transactional
@@ -290,6 +395,7 @@ public class TicketService {
 		ticket.setClosedAt(closedAt);
 
 		Ticket savedTicket = ticketRepository.save(ticket);
+		notifyWhatsappTicketClosure(savedTicket, author);
 		ticketClosureEmailService.sendConversationTranscript(
 			savedTicket,
 			ticketMessageRepository.findByTicketIdOrderByCreatedAtAsc(savedTicket.getId()),
@@ -316,7 +422,7 @@ public class TicketService {
 
 	private String nextProtocol() {
 		long nextNumber = ticketRepository.count() + 1;
-		return "HD-2026-" + String.format("%04d", nextNumber);
+		return "CA-2026-" + String.format("%04d", nextNumber);
 	}
 
 	private TicketResponse toResponse(Ticket ticket) {
@@ -328,9 +434,12 @@ public class TicketService {
 			ticket.getDescription(),
 			ticket.getRequester().getFullName(),
 			ticket.getRequester().getEmail(),
+			ticket.getRequester().getPhoneNumber(),
+			ticket.getRequester().getDocumentNumber(),
 			ticket.getAssignedTo() == null ? null : ticket.getAssignedTo().getFullName(),
 			ticket.getAssignedTo() == null ? null : ticket.getAssignedTo().getEmail(),
 			ticket.getSector().getName(),
+			resolveChannel(ticket).name(),
 			displayStatus.code(),
 			displayStatus.name(),
 			ticket.getPriority().getCode(),
@@ -546,6 +655,24 @@ public class TicketService {
 			.toList();
 	}
 
+	private List<TicketAttachmentResponse> saveIncomingAttachments(
+		Ticket ticket,
+		TicketMessage message,
+		User uploadedBy,
+		List<IncomingAttachment> attachments
+	) {
+		List<IncomingAttachment> validAttachments = normalizeIncomingAttachments(attachments);
+
+		if (validAttachments.isEmpty()) {
+			return List.of();
+		}
+
+		return validAttachments.stream()
+			.map(attachment -> saveIncomingAttachment(ticket, message, uploadedBy, attachment))
+			.map(this::toAttachmentResponse)
+			.toList();
+	}
+
 	private TicketAttachment saveAttachment(Ticket ticket, TicketMessage message, User uploadedBy, MultipartFile file) {
 		if (file.getSize() <= 0) {
 			throw new IllegalArgumentException("Os anexos enviados devem conter conteúdo.");
@@ -562,6 +689,33 @@ public class TicketService {
 		attachment.setSizeBytes(storedAttachment.sizeBytes());
 
 		return ticketAttachmentRepository.save(attachment);
+	}
+
+	private TicketAttachment saveIncomingAttachment(
+		Ticket ticket,
+		TicketMessage message,
+		User uploadedBy,
+		IncomingAttachment attachment
+	) {
+		if (attachment.content() == null || attachment.content().length == 0) {
+			throw new IllegalArgumentException("Os anexos enviados devem conter conteúdo.");
+		}
+
+		TicketAttachmentStorageService.StoredAttachment storedAttachment = ticketAttachmentStorageService.store(
+			attachment.originalFileName(),
+			attachment.contentType(),
+			attachment.content()
+		);
+		TicketAttachment savedAttachment = new TicketAttachment();
+		savedAttachment.setTicket(ticket);
+		savedAttachment.setMessage(message);
+		savedAttachment.setUploadedBy(uploadedBy);
+		savedAttachment.setOriginalFileName(storedAttachment.originalFileName());
+		savedAttachment.setStorageKey(storedAttachment.storageKey());
+		savedAttachment.setContentType(storedAttachment.contentType());
+		savedAttachment.setSizeBytes(storedAttachment.sizeBytes());
+
+		return ticketAttachmentRepository.save(savedAttachment);
 	}
 
 	private TicketMessageResponse toMessageResponse(
@@ -611,9 +765,229 @@ public class TicketService {
 		return "Usuário";
 	}
 
+	private List<IncomingAttachment> normalizeIncomingAttachments(List<IncomingAttachment> attachments) {
+		if (attachments == null || attachments.isEmpty()) {
+			return List.of();
+		}
+
+		return attachments.stream()
+			.filter(java.util.Objects::nonNull)
+			.filter(attachment -> attachment.content() != null && attachment.content().length > 0)
+			.map(attachment -> new IncomingAttachment(
+				normalizeIncomingAttachmentName(attachment.originalFileName(), attachment.contentType()),
+				normalizeIncomingAttachmentContentType(attachment.contentType()),
+				attachment.content()
+			))
+			.toList();
+	}
+
+	private String normalizeIncomingAttachmentName(String originalFileName, String contentType) {
+		String normalizedName = originalFileName == null ? "" : originalFileName.trim();
+		if (!normalizedName.isBlank()) {
+			return normalizedName;
+		}
+
+		return switch (normalizeIncomingAttachmentContentType(contentType)) {
+			case "image/jpeg" -> "imagem-whatsapp.jpg";
+			case "image/png" -> "imagem-whatsapp.png";
+			case "image/webp" -> "imagem-whatsapp.webp";
+			case "video/mp4" -> "video-whatsapp.mp4";
+			case "audio/ogg" -> "audio-whatsapp.ogg";
+			case "audio/mpeg" -> "audio-whatsapp.mp3";
+			case "application/pdf" -> "documento-whatsapp.pdf";
+			default -> "arquivo-whatsapp";
+		};
+	}
+
+	private String normalizeIncomingAttachmentContentType(String contentType) {
+		String normalizedContentType = contentType == null ? "" : contentType.trim().toLowerCase(Locale.ROOT);
+		return normalizedContentType.isBlank() ? "application/octet-stream" : normalizedContentType;
+	}
+
+	private String resolveWhatsappInboundMessage(String message, List<IncomingAttachment> attachments) {
+		String normalizedMessage = normalizeMessage(message);
+		if (!normalizedMessage.isBlank()) {
+			return normalizedMessage;
+		}
+
+		if (attachments == null || attachments.isEmpty()) {
+			return normalizedMessage;
+		}
+
+		return attachments.size() == 1
+			? "Arquivo enviado via WhatsApp."
+			: attachments.size() + " arquivos enviados via WhatsApp.";
+	}
+
 	private boolean hasRole(User user, String roleCode) {
 		return user.getRoles().stream()
 			.anyMatch(role -> roleCode.equalsIgnoreCase(role.getCode()));
+	}
+
+	private User resolveRequesterCompany(User requester) {
+		if (requester == null) {
+			throw new IllegalArgumentException("O usuário responsável pelo chamado não foi encontrado.");
+		}
+
+		if (hasRole(requester, "ADMIN")
+			&& requester.getCompanyName() != null
+			&& requester.getCompanyDocument() != null) {
+			return requester;
+		}
+
+		if (requester.getCompanyOwner() != null) {
+			return requester.getCompanyOwner();
+		}
+
+		throw new IllegalArgumentException("O usuário precisa estar vinculado a uma empresa para abrir chamados.");
+	}
+
+	private void ensureAcceptedPartnership(User requesterCompany, User targetCompany) {
+		if (requesterCompany == null || targetCompany == null) {
+			throw new IllegalArgumentException("Não foi possível validar a parceria entre as empresas.");
+		}
+
+		if (!companyPartnershipRepository.existsByCompanyPairAndStatus(
+			requesterCompany.getId(),
+			targetCompany.getId(),
+			CompanyPartnershipStatus.ACCEPTED
+		)) {
+			throw new IllegalArgumentException("Sua empresa ainda não possui uma parceria aceita com a empresa selecionada.");
+		}
+	}
+
+	private boolean shouldMirrorMessageToWhatsapp(Ticket ticket, User author) {
+		return resolveChannel(ticket) == TicketChannel.WHATSAPP
+			&& ticket.getRequester() != null
+			&& ticket.getSector() != null
+			&& ticket.getSector().getCreatedBy() != null
+			&& !resolveWhatsappTicketRecipient(ticket).isBlank()
+			&& !author.getId().equals(ticket.getRequester().getId());
+	}
+
+	private boolean hasWhatsappRecipient(User requester) {
+		if (requester == null) {
+			return false;
+		}
+		return (requester.getWhatsappTransportId() != null && !requester.getWhatsappTransportId().isBlank())
+			|| (requester.getPhoneNumber() != null && !requester.getPhoneNumber().isBlank());
+	}
+
+	private String buildWhatsappOutboundText(
+		String protocol,
+		String authorName,
+		String message,
+		List<WhatsappService.OutboundAttachment> attachments
+	) {
+		String normalizedProtocol = protocol == null || protocol.isBlank() ? "nao informado" : protocol.trim();
+		String normalizedAuthorName = authorName == null || authorName.isBlank() ? "Atendente" : authorName.trim();
+		String normalizedMessage = message == null ? "" : message.trim();
+		if (normalizedMessage.isBlank()) {
+			return attachments == null || attachments.isEmpty()
+				? ""
+				: "*%s diz para o protocolo %s:*".formatted(normalizedAuthorName, normalizedProtocol);
+		}
+
+		return ("*%s diz para o protocolo %s:* %s".formatted(
+			normalizedAuthorName,
+			normalizedProtocol,
+			normalizedMessage
+		)).trim();
+	}
+
+	private List<WhatsappService.OutboundAttachment> loadWhatsappOutboundAttachments(UUID messageId) {
+		return ticketAttachmentRepository.findByMessageIdOrderByCreatedAtAsc(messageId).stream()
+			.map(this::toWhatsappOutboundAttachment)
+			.toList();
+	}
+
+	private WhatsappService.OutboundAttachment toWhatsappOutboundAttachment(TicketAttachment attachment) {
+		Resource resource = ticketAttachmentStorageService.loadAsResource(attachment.getStorageKey());
+
+		try (var inputStream = resource.getInputStream()) {
+			return new WhatsappService.OutboundAttachment(
+				attachment.getOriginalFileName(),
+				attachment.getContentType(),
+				Base64.getEncoder().encodeToString(inputStream.readAllBytes())
+			);
+		} catch (IOException exception) {
+			throw new IllegalStateException("Não foi possível preparar o anexo para envio no WhatsApp.");
+		}
+	}
+
+	private void notifyWhatsappTicketClosure(Ticket ticket, User closedBy) {
+		if (ticket == null || closedBy == null) {
+			return;
+		}
+		if (!"WHATSAPP".equalsIgnoreCase(resolveChannel(ticket).name())) {
+			return;
+		}
+		String closureRecipient = resolveWhatsappClosureRecipient(ticket);
+		if (closureRecipient.isBlank()) {
+			return;
+		}
+
+		String closedByName = closedBy.getFullName() == null || closedBy.getFullName().isBlank()
+			? "funcionario"
+			: closedBy.getFullName().trim();
+		String closureMessage = """
+			Seu chamado foi encerrado.
+			Protocolo: %s
+			Encerrado por: %s
+
+			Se precisar de um novo atendimento, envie uma nova mensagem.
+			""".formatted(ticket.getProtocol(), closedByName).trim();
+
+		try {
+			whatsappService.sendMessage(
+				resolveWhatsappCompanyOwner(ticket),
+				closureRecipient,
+				closureMessage
+			);
+		} catch (RuntimeException exception) {
+			logger.warn(
+				"Falha ao enviar mensagem de fechamento no WhatsApp: ticketId={}, protocol={}, recipient={}",
+				ticket.getId(),
+				ticket.getProtocol(),
+				closureRecipient,
+				exception
+			);
+		}
+	}
+
+	private String resolveWhatsappClosureRecipient(Ticket ticket) {
+		return resolveWhatsappTicketRecipient(ticket);
+	}
+
+	private String resolveWhatsappTicketRecipient(Ticket ticket) {
+		if (ticket == null || ticket.getId() == null) {
+			return "";
+		}
+
+		return whatsappConversationRepository.findByActiveTicketId(ticket.getId())
+			.map(conversation -> firstNonBlank(conversation.getWhatsappTransportId(), conversation.getPhoneNumber()))
+			.filter(value -> value != null && !value.isBlank())
+			.orElseGet(() -> hasWhatsappRecipient(ticket.getRequester()) ? resolveWhatsappRecipient(ticket.getRequester()) : "");
+	}
+
+	private String buildWhatsappTicketTitle(String subject, String fullName) {
+		String normalizedSubject = subject == null ? "" : subject.trim();
+		String normalizedName = fullName == null || fullName.isBlank() ? "Cliente" : fullName.trim();
+		String title = normalizedSubject.isBlank()
+			? "WhatsApp - " + normalizedName
+			: "WhatsApp - " + normalizedSubject;
+		return title.length() <= 180 ? title : title.substring(0, 180);
+	}
+
+	private User resolveWhatsappCompanyOwner(Ticket ticket) {
+		if (ticket == null || ticket.getSector() == null || ticket.getSector().getCreatedBy() == null) {
+			throw new IllegalArgumentException("O chamado do WhatsApp não possui uma empresa responsável configurada.");
+		}
+		return ticket.getSector().getCreatedBy();
+	}
+
+	private TicketChannel resolveChannel(Ticket ticket) {
+		return ticket.getChannel() == null ? TicketChannel.PORTAL : ticket.getChannel();
 	}
 
 	private List<MultipartFile> normalizeFiles(List<MultipartFile> files) {
@@ -656,6 +1030,35 @@ public class TicketService {
 		return email.trim().toLowerCase(Locale.ROOT);
 	}
 
+	private String normalizePhone(String phone) {
+		String normalizedPhone = phone == null ? "" : phone.replaceAll("\\D+", "");
+		if (normalizedPhone.isBlank()) {
+			throw new IllegalArgumentException("O chamado do WhatsApp não possui um telefone válido para resposta.");
+		}
+		return normalizedPhone;
+	}
+
+	private String resolveWhatsappRecipient(User requester) {
+		if (requester != null && requester.getWhatsappTransportId() != null && !requester.getWhatsappTransportId().isBlank()) {
+			return requester.getWhatsappTransportId();
+		}
+		return normalizePhone(requester == null ? null : requester.getPhoneNumber());
+	}
+
+	private String firstNonBlank(String... values) {
+		if (values == null) {
+			return "";
+		}
+
+		for (String value : values) {
+			if (value != null && !value.isBlank()) {
+				return value;
+			}
+		}
+
+		return "";
+	}
+
 	private List<String> normalizeStatusCodes(String status) {
 		if (status == null || status.isBlank()) {
 			return List.of();
@@ -677,6 +1080,25 @@ public class TicketService {
 		String originalFileName,
 		String contentType,
 		long sizeBytes
+	) {
+	}
+
+	public record CreateWhatsappTicketRequest(
+		User requester,
+		String phoneNumber,
+		String whatsappTransportId,
+		UUID companyOwnerId,
+		UUID sectorId,
+		String subject,
+		String description,
+		List<IncomingAttachment> attachments
+	) {
+	}
+
+	public record IncomingAttachment(
+		String originalFileName,
+		String contentType,
+		byte[] content
 	) {
 	}
 }

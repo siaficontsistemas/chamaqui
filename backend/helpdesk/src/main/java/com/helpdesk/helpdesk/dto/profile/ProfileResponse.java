@@ -11,6 +11,7 @@ public record ProfileResponse(
 	String documentNumber,
 	String companyName,
 	String companyDocument,
+	String companyType,
 	String status,
 	List<String> roles
 ) {

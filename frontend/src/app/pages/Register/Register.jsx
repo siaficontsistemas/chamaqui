@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { registerUser } from '../../api'
+import { useEffect, useMemo, useState } from 'react'
+import { getAvailableCompanies, registerUser } from '../../api'
 import './Register.css'
 
 const formFields = [
@@ -24,45 +24,112 @@ const passwordFields = [
   },
 ]
 
+const INITIAL_FORM_VALUES = {
+  name: '',
+  email: '',
+  phone: '',
+  cpf: '',
+  companyName: '',
+  companyCnpj: '',
+  companyType: '',
+  companyOwnerId: '',
+  password: '',
+  passwordConfirm: '',
+}
+
 function Register({ onNavigateHome, onNavigateLogin }) {
   const [selectedRole, setSelectedRole] = useState('')
-  const [formValues, setFormValues] = useState({
-    name: '',
-    email: '',
-    phone: '',
-    cpf: '',
-    companyName: '',
-    companyCnpj: '',
-    password: '',
-    passwordConfirm: '',
+  const [selectedParticipation, setSelectedParticipation] = useState('')
+  const [formValues, setFormValues] = useState(INITIAL_FORM_VALUES)
+  const [availableCompanies, setAvailableCompanies] = useState([])
+  const [isLoadingCompanies, setIsLoadingCompanies] = useState(false)
+  const [passwordVisibility, setPasswordVisibility] = useState({
+    password: false,
+    passwordConfirm: false,
   })
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [isTermsModalOpen, setIsTermsModalOpen] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
+  const [successMessage, setSuccessMessage] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const selectedRoleLabel =
-    selectedRole === 'admin'
-      ? 'Administrador'
-      : selectedRole === 'employee'
-        ? 'Funcionário'
-        : 'Usuário'
+  const participantCompanyType = useMemo(
+    () => getParticipantCompanyType(selectedParticipation),
+    [selectedParticipation]
+  )
+  const selectedRoleLabel = selectedRole === 'admin' ? 'Administrador' : 'Usuário'
+  const selectedParticipationLabel =
+    selectedParticipation === 'responder'
+      ? 'Responder chamados'
+      : selectedParticipation === 'requester'
+        ? 'Criar chamados'
+        : ''
   const visibleFormFields = [
     ...formFields,
     ...(selectedRole === 'admin' ? adminOnlyFields : []),
     ...passwordFields,
   ]
 
+  useEffect(() => {
+    let ignore = false
+
+    async function loadCompanies() {
+      if (selectedRole !== 'user' || !participantCompanyType) {
+        setAvailableCompanies([])
+        setIsLoadingCompanies(false)
+        return
+      }
+
+      try {
+        setErrorMessage('')
+        setAvailableCompanies([])
+        setIsLoadingCompanies(true)
+        const companies = await getAvailableCompanies(participantCompanyType)
+        if (!ignore) {
+          setAvailableCompanies(companies)
+        }
+      } catch (error) {
+        if (!ignore) {
+          setAvailableCompanies([])
+          setErrorMessage(error.message)
+        }
+      } finally {
+        if (!ignore) {
+          setIsLoadingCompanies(false)
+        }
+      }
+    }
+
+    loadCompanies()
+
+    return () => {
+      ignore = true
+    }
+  }, [participantCompanyType, selectedRole])
+
   function handleSelectRole(role) {
     setSelectedRole(role)
+    setSelectedParticipation('')
     setErrorMessage('')
+    setSuccessMessage('')
+    setAvailableCompanies([])
+    setIsLoadingCompanies(false)
+    setFormValues((currentValues) => ({
+      ...currentValues,
+      companyName: role === 'admin' ? currentValues.companyName : '',
+      companyCnpj: role === 'admin' ? currentValues.companyCnpj : '',
+      companyType: '',
+      companyOwnerId: '',
+    }))
+  }
 
-    if (role !== 'admin') {
-      setFormValues((currentValues) => ({
-        ...currentValues,
-        companyName: '',
-        companyCnpj: '',
-      }))
-    }
+  function handleSelectParticipation(participation) {
+    setSelectedParticipation(participation)
+    setErrorMessage('')
+    setSuccessMessage('')
+    setFormValues((currentValues) => ({
+      ...currentValues,
+      companyOwnerId: '',
+    }))
   }
 
   async function handleSubmit(event) {
@@ -70,6 +137,21 @@ function Register({ onNavigateHome, onNavigateLogin }) {
 
     if (!selectedRole) {
       setErrorMessage('Escolha o tipo de cadastro para continuar.')
+      return
+    }
+
+    if (selectedRole === 'user' && !selectedParticipation) {
+      setErrorMessage('Escolha se esse usuário vai criar ou responder chamados.')
+      return
+    }
+
+    if (selectedRole === 'admin' && !formValues.companyType) {
+      setErrorMessage('Selecione se a empresa vai criar ou responder chamados.')
+      return
+    }
+
+    if (selectedRole === 'user' && !formValues.companyOwnerId) {
+      setErrorMessage('Selecione a empresa à qual esse usuário será vinculado.')
       return
     }
 
@@ -91,17 +173,38 @@ function Register({ onNavigateHome, onNavigateLogin }) {
     try {
       setIsSubmitting(true)
       setErrorMessage('')
+      setSuccessMessage('')
 
+      const selectedCompany = availableCompanies.find(
+        (company) => company.id === formValues.companyOwnerId
+      )
+
+      const roleToSubmit = selectedRole === 'admin' ? 'admin' : getParticipantRole(selectedParticipation)
       const user = await registerUser({
         fullName: formValues.name.trim(),
         email: formValues.email.trim(),
         phoneNumber: formValues.phone.trim(),
         documentNumber: formValues.cpf.trim(),
+        companyOwnerId: selectedRole === 'user' ? formValues.companyOwnerId : null,
         companyName: selectedRole === 'admin' ? formValues.companyName.trim() : null,
         companyDocument: selectedRole === 'admin' ? formValues.companyCnpj.trim() : null,
+        companyType: selectedRole === 'admin' ? formValues.companyType : participantCompanyType,
         password: formValues.password,
-        role: selectedRole,
+        role: roleToSubmit,
       })
+
+      if (selectedRole === 'user' && user?.status === 'PENDING') {
+        const companyName = selectedCompany?.name || 'empresa selecionada'
+        setSelectedRole('')
+        setSelectedParticipation('')
+        setAvailableCompanies([])
+        setAcceptedTerms(false)
+        setFormValues(INITIAL_FORM_VALUES)
+        setSuccessMessage(
+          `Cadastro concluído. Sua solicitação foi enviada para a empresa ${companyName} e precisa ser aprovada por um administrador antes do acesso.`
+        )
+        return
+      }
 
       onNavigateHome(user)
     } catch (error) {
@@ -117,7 +220,7 @@ function Register({ onNavigateHome, onNavigateLogin }) {
         <aside className="auth-card__brand">
           <BrandMark />
           <div className="auth-card__welcome">
-            <h1>Bem-vindo ao helpdesk da Lopes Consultoria</h1>
+            <h1>Bem-vindo ao ChamAqui Helpdesk</h1>
             <p>
               Acesse sua conta para acompanhar chamados e solicitações em um só
               lugar.
@@ -149,6 +252,7 @@ function Register({ onNavigateHome, onNavigateLogin }) {
                   <div className="signup-form__selected-role">
                     <span>Cadastrando como</span>
                     <strong>{selectedRoleLabel}</strong>
+                    {selectedParticipationLabel ? <span>• {selectedParticipationLabel}</span> : null}
                   </div>
 
                   <button
@@ -156,12 +260,94 @@ function Register({ onNavigateHome, onNavigateLogin }) {
                     type="button"
                     onClick={() => {
                       setSelectedRole('')
+                      setSelectedParticipation('')
+                      setAvailableCompanies([])
                       setErrorMessage('')
+                      setSuccessMessage('')
+                      setFormValues((currentValues) => ({
+                        ...currentValues,
+                        companyName: '',
+                        companyCnpj: '',
+                        companyType: '',
+                        companyOwnerId: '',
+                      }))
                     }}
                   >
                     Alterar tipo
                   </button>
                 </div>
+
+                {selectedRole === 'user' ? (
+                  <div className="signup-form__flow-block">
+                    <span className="signup-form__role-label">Como esse usuário vai participar?</span>
+
+                    <div className="signup-form__role-options signup-form__role-options--two">
+                      <button
+                        className={`signup-form__role-card ${selectedParticipation === 'requester' ? 'is-active' : ''}`}
+                        type="button"
+                        onClick={() => handleSelectParticipation('requester')}
+                      >
+                        <span className="signup-form__role-title">Criar chamados</span>
+                        <span className="signup-form__role-text">
+                          Mostra somente as empresas que abrem chamados e tiram duvidas.
+                        </span>
+                      </button>
+
+                      <button
+                        className={`signup-form__role-card ${selectedParticipation === 'responder' ? 'is-active' : ''}`}
+                        type="button"
+                        onClick={() => handleSelectParticipation('responder')}
+                      >
+                        <span className="signup-form__role-title">Responder chamados</span>
+                        <span className="signup-form__role-text">
+                          Mostra somente as empresas que atendem e respondem os chamados.
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {selectedRole === 'admin' ? (
+                  <div className="signup-form__flow-block">
+                    <span className="signup-form__role-label">Qual sera o tipo da empresa?</span>
+
+                    <div className="signup-form__role-options signup-form__role-options--two">
+                      <button
+                        className={`signup-form__role-card ${formValues.companyType === 'requester' ? 'is-active' : ''}`}
+                        type="button"
+                        onClick={() => {
+                          setFormValues((currentValues) => ({
+                            ...currentValues,
+                            companyType: 'requester',
+                          }))
+                          setSuccessMessage('')
+                        }}
+                      >
+                        <span className="signup-form__role-title">Empresa solicitante</span>
+                        <span className="signup-form__role-text">
+                          Empresa responsavel por abrir chamados e registrar duvidas.
+                        </span>
+                      </button>
+
+                      <button
+                        className={`signup-form__role-card ${formValues.companyType === 'responder' ? 'is-active' : ''}`}
+                        type="button"
+                        onClick={() => {
+                          setFormValues((currentValues) => ({
+                            ...currentValues,
+                            companyType: 'responder',
+                          }))
+                          setSuccessMessage('')
+                        }}
+                      >
+                        <span className="signup-form__role-title">Empresa prestadora</span>
+                        <span className="signup-form__role-text">
+                          Empresa responsavel por atender e responder os chamados.
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
 
                 {visibleFormFields.map((field) => (
                   <label className="form-field" htmlFor={field.id} key={field.id}>
@@ -171,20 +357,76 @@ function Register({ onNavigateHome, onNavigateLogin }) {
                     <input
                       id={field.id}
                       name={field.id}
-                      type={field.type}
+                      type={passwordVisibility[field.id] ? 'text' : field.type}
                       placeholder={field.label}
                       value={formValues[field.id]}
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        setSuccessMessage('')
                         setFormValues((currentValues) => ({
                           ...currentValues,
                           [field.id]: event.target.value,
                         }))
-                      }
+                      }}
                     />
+                    {field.type === 'password' ? (
+                      <button
+                        className="form-field__toggle"
+                        type="button"
+                        aria-label={
+                          passwordVisibility[field.id] ? 'Ocultar senha' : 'Mostrar senha'
+                        }
+                        aria-pressed={passwordVisibility[field.id]}
+                        onClick={() =>
+                          setPasswordVisibility((currentVisibility) => ({
+                            ...currentVisibility,
+                            [field.id]: !currentVisibility[field.id],
+                          }))
+                        }
+                      >
+                        {passwordVisibility[field.id] ? <EyeOffIcon /> : <EyeIcon />}
+                      </button>
+                    ) : null}
                   </label>
                 ))}
 
-                {errorMessage ? <p className="signup-form__feedback">{errorMessage}</p> : null}
+                {selectedRole === 'user' && selectedParticipation ? (
+                  <label className="form-field form-field--select" htmlFor="companyOwnerId">
+                    <span className="form-field__icon" aria-hidden="true">
+                      <BuildingIcon />
+                    </span>
+                    <select
+                      id="companyOwnerId"
+                      name="companyOwnerId"
+                      value={formValues.companyOwnerId}
+                      onChange={(event) => {
+                        setSuccessMessage('')
+                        setFormValues((currentValues) => ({
+                          ...currentValues,
+                          companyOwnerId: event.target.value,
+                        }))
+                      }}
+                      disabled={isLoadingCompanies}
+                    >
+                      <option value="">
+                        {isLoadingCompanies
+                          ? 'Carregando empresas...'
+                          : availableCompanies.length > 0
+                            ? 'Selecione a empresa'
+                            : 'Nenhuma empresa disponivel'}
+                      </option>
+                      {availableCompanies.map((company) => (
+                        <option key={company.id} value={company.id}>
+                          {company.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+
+                <div className="signup-form__feedback-slot" aria-live="polite">
+                  {successMessage ? <p className="signup-form__feedback">{successMessage}</p> : null}
+                  {errorMessage ? <p className="signup-form__feedback">{errorMessage}</p> : null}
+                </div>
 
                 <label className="terms-check" htmlFor="terms">
                   <input
@@ -192,7 +434,10 @@ function Register({ onNavigateHome, onNavigateLogin }) {
                     name="terms"
                     type="checkbox"
                     checked={acceptedTerms}
-                    onChange={(event) => setAcceptedTerms(event.target.checked)}
+                    onChange={(event) => {
+                      setSuccessMessage('')
+                      setAcceptedTerms(event.target.checked)
+                    }}
                   />
                   <span>
                     Eu li e concordo com os{' '}
@@ -218,15 +463,16 @@ function Register({ onNavigateHome, onNavigateLogin }) {
               <div className="signup-form__role-step">
                 <span className="signup-form__role-label">Escolha o tipo de cadastro</span>
 
-                <div className="signup-form__role-options">
+                <div className="signup-form__role-options signup-form__role-options--two">
                   <button
                     className="signup-form__role-card"
                     type="button"
-                    onClick={() => handleSelectRole('employee')}
+                    onClick={() => handleSelectRole('user')}
                   >
-                    <span className="signup-form__role-title">Funcionário</span>
+                    <span className="signup-form__role-title">Usuário</span>
                     <span className="signup-form__role-text">
-                      Cadastro para colaboradores que irão abrir e acompanhar chamados.
+                      Cadastro para participantes que vao criar ou responder chamados dentro de
+                      uma empresa.
                     </span>
                   </button>
 
@@ -237,18 +483,8 @@ function Register({ onNavigateHome, onNavigateLogin }) {
                   >
                     <span className="signup-form__role-title">Administrador</span>
                     <span className="signup-form__role-text">
-                      Cadastro para quem irá gerenciar usuários, filas e atendimentos.
-                    </span>
-                  </button>
-
-                  <button
-                    className="signup-form__role-card"
-                    type="button"
-                    onClick={() => handleSelectRole('user')}
-                  >
-                    <span className="signup-form__role-title">Usuário</span>
-                    <span className="signup-form__role-text">
-                      Cadastro para quem deseja acessar o sistema e acompanhar suas solicitações.
+                      Cadastro para quem vai gerenciar a empresa e definir se ela cria ou
+                      responde chamados.
                     </span>
                   </button>
                 </div>
@@ -264,6 +500,22 @@ function Register({ onNavigateHome, onNavigateLogin }) {
 }
 
 export default Register
+
+function getParticipantRole(participation) {
+  return participation === 'responder' ? 'employee' : 'user'
+}
+
+function getParticipantCompanyType(participation) {
+  if (participation === 'responder') {
+    return 'responder'
+  }
+
+  if (participation === 'requester') {
+    return 'requester'
+  }
+
+  return ''
+}
 
 function TermsOfUseModal({ onClose }) {
   return (
@@ -355,10 +607,8 @@ function TermsOfUseModal({ onClose }) {
 
 function BrandMark() {
   return (
-    <div className="brand-mark" aria-label="Lopes Consultoria">
-      <strong className="brand-mark__name">LOPES</strong>
-      <span className="brand-mark__accent">CONSULTORIA</span>
-      <span className="brand-mark__subtitle">GESTÃO PÚBLICA</span>
+    <div className="brand-mark" aria-label="ChamaAqui Helpdesk">
+      <img className="brand-mark__logo" src="/logo_chamaqui.png" alt="ChamaAqui Helpdesk" />
     </div>
   )
 }
@@ -438,6 +688,62 @@ function LockIcon() {
     <svg viewBox="0 0 24 24" fill="none">
       <path
         d="M7 11V8a5 5 0 1 1 10 0v3m-9 0h8a1 1 0 0 1 1 1v7H7v-7a1 1 0 0 1 1-1Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function EyeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none">
+      <path
+        d="M2.75 12S6.5 5.75 12 5.75 21.25 12 21.25 12 17.5 18.25 12 18.25 2.75 12 2.75 12Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M12 14.75a2.75 2.75 0 1 0 0-5.5 2.75 2.75 0 0 0 0 5.5Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function EyeOffIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none">
+      <path
+        d="M3 3 21 21"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M10.58 6.93A9.77 9.77 0 0 1 12 6.75c5.5 0 9.25 5.25 9.25 5.25a18.8 18.8 0 0 1-3.2 3.74"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M6.63 6.63A18.2 18.2 0 0 0 2.75 12s3.75 5.25 9.25 5.25c1.61 0 3.05-.45 4.31-1.09"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M9.88 9.88A3 3 0 0 0 14.12 14.12"
         stroke="currentColor"
         strokeWidth="1.7"
         strokeLinecap="round"

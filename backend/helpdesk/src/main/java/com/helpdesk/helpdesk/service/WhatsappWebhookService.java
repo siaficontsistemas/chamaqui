@@ -1,0 +1,1126 @@
+package com.helpdesk.helpdesk.service;
+
+import java.io.IOException;
+import java.text.Normalizer;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.List;
+import java.util.Locale;
+import java.util.UUID;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.helpdesk.helpdesk.common.NotFoundException;
+import com.helpdesk.helpdesk.domain.Role;
+import com.helpdesk.helpdesk.domain.Sector;
+import com.helpdesk.helpdesk.domain.Ticket;
+import com.helpdesk.helpdesk.domain.User;
+import com.helpdesk.helpdesk.domain.UserStatus;
+import com.helpdesk.helpdesk.domain.WhatsappConversation;
+import com.helpdesk.helpdesk.domain.WhatsappConversationStep;
+import com.helpdesk.helpdesk.repository.RoleRepository;
+import com.helpdesk.helpdesk.repository.SectorRepository;
+import com.helpdesk.helpdesk.repository.UserRepository;
+import com.helpdesk.helpdesk.repository.WhatsappConversationRepository;
+
+import jakarta.servlet.http.HttpServletRequest;
+
+@Service
+public class WhatsappWebhookService {
+
+	private static final Logger logger = LoggerFactory.getLogger(WhatsappWebhookService.class);
+
+	private final ObjectMapper objectMapper = new ObjectMapper();
+	private final UserRepository userRepository;
+	private final RoleRepository roleRepository;
+	private final SectorRepository sectorRepository;
+	private final TicketService ticketService;
+	private final WhatsappService whatsappService;
+	private final WhatsappConversationRepository whatsappConversationRepository;
+	private final PasswordEncoder passwordEncoder;
+
+	public WhatsappWebhookService(
+		UserRepository userRepository,
+		RoleRepository roleRepository,
+		SectorRepository sectorRepository,
+		TicketService ticketService,
+		WhatsappService whatsappService,
+		WhatsappConversationRepository whatsappConversationRepository,
+		PasswordEncoder passwordEncoder
+	) {
+		this.userRepository = userRepository;
+		this.roleRepository = roleRepository;
+		this.sectorRepository = sectorRepository;
+		this.ticketService = ticketService;
+		this.whatsappService = whatsappService;
+		this.whatsappConversationRepository = whatsappConversationRepository;
+		this.passwordEncoder = passwordEncoder;
+	}
+
+	@Transactional
+	public void receive(String payload, HttpServletRequest request) {
+		JsonNode payloadJson = parsePayload(payload);
+		String event = firstNonBlank(extractText(payloadJson, "event"), extractDeepText(payloadJson, "event"));
+		String sessionName = resolveSessionName(payloadJson);
+		String transportId = resolveIncomingTransportId(payloadJson);
+		String phone = resolveIncomingPhone(payloadJson, transportId);
+		String body = resolveIncomingBody(payloadJson);
+		List<TicketService.IncomingAttachment> attachments = resolveIncomingAttachments(payloadJson);
+		boolean fromMe = resolveFromMe(payloadJson);
+		boolean groupMessage = isGroupMessage(payloadJson);
+
+		logger.info(
+			"Webhook WhatsApp recebido: method={}, path={}, session={}, event={}, phone={}, transportId={}, fromMe={}, groupMessage={}, attachments={}, bodyPreview={}",
+			request.getMethod(),
+			request.getRequestURI(),
+			sessionName,
+			event,
+			phone,
+			transportId,
+			fromMe,
+			groupMessage,
+			attachments.size(),
+			preview(body)
+		);
+
+		if (!isMessageEvent(event)
+			|| payloadJson == null
+			|| fromMe
+			|| groupMessage
+			|| sessionName.isBlank()
+			|| (phone.isBlank() && transportId.isBlank())) {
+			return;
+		}
+
+		try {
+			User companyOwner = whatsappService.resolveCompanyAdminBySession(sessionName);
+			handleIncomingMessage(companyOwner, firstNonBlank(phone, transportId), transportId, body, attachments);
+		} catch (IllegalArgumentException exception) {
+			logger.warn("Webhook do WhatsApp ignorado por sessão inválida: session={}, reason={}", sessionName, exception.getMessage());
+		} catch (Exception exception) {
+			logger.error(
+				"Falha ao processar webhook do WhatsApp: session={}, phone={}, transportId={}, event={}",
+				sessionName,
+				phone,
+				transportId,
+				event,
+				exception
+			);
+		}
+	}
+
+	@Transactional
+	void handleIncomingMessage(
+		User companyOwner,
+		String phoneNumber,
+		String incomingTransportId,
+		String body,
+		List<TicketService.IncomingAttachment> attachments
+	) {
+		String whatsappTransportId = normalizeWhatsappTransportId(incomingTransportId);
+		String normalizedPhone = normalizePhone(firstNonBlank(phoneNumber, incomingTransportId));
+		String normalizedBody = normalizeInboundMessage(body);
+		List<TicketService.IncomingAttachment> incomingAttachments = attachments == null ? List.of() : attachments;
+
+		WhatsappConversation conversation = resolveConversation(companyOwner.getId(), normalizedPhone, whatsappTransportId)
+			.orElseGet(() -> {
+				WhatsappConversation createdConversation = new WhatsappConversation();
+				createdConversation.setCompanyOwner(companyOwner);
+				createdConversation.setPhoneNumber(normalizedPhone);
+				createdConversation.setCurrentStep(WhatsappConversationStep.ASK_SECTOR);
+				return createdConversation;
+			});
+
+		conversation.setCompanyOwner(companyOwner);
+		conversation.setPhoneNumber(normalizedPhone);
+		conversation.setWhatsappTransportId(whatsappTransportId);
+		if (conversation.getCurrentStep() == null) {
+			conversation.setCurrentStep(WhatsappConversationStep.ASK_SECTOR);
+		}
+
+		String replyTarget = resolveReplyTarget(conversation, normalizedPhone);
+		boolean isNewConversation = conversation.getId() == null;
+
+		if (hasActiveOpenTicket(conversation)) {
+			if (isOpenNewTicketCommand(normalizedBody)) {
+				startNewTicketFlow(companyOwner, conversation, replyTarget, "Vamos abrir um novo chamado.");
+				return;
+			}
+			if (isRestartCommand(normalizedBody)) {
+				replyWithMessage(
+					companyOwner,
+					replyTarget,
+					"Seu atendimento ja esta em andamento e nao pode ser reiniciado agora. Aguarde o encerramento pelo funcionario."
+				);
+				return;
+			}
+			if (!normalizedBody.isBlank() || !incomingAttachments.isEmpty()) {
+				ticketService.addWhatsappMessage(conversation.getActiveTicket().getId(), normalizedBody, incomingAttachments);
+			}
+			return;
+		}
+
+		if (isRestartCommand(normalizedBody) || isOpenNewTicketCommand(normalizedBody)) {
+			startNewTicketFlow(companyOwner, conversation, replyTarget, "Atendimento reiniciado.");
+			return;
+		}
+
+		boolean hadClosedTicket = conversation.getActiveTicket() != null;
+		if (hadClosedTicket) {
+			startNewTicketFlow(companyOwner, conversation, replyTarget, null);
+			return;
+		}
+
+		if (isNewConversation || isGreetingMessage(normalizedBody)) {
+			startNewTicketFlow(companyOwner, conversation, replyTarget, null);
+			return;
+		}
+
+		switch (conversation.getCurrentStep()) {
+			case ASK_REUSE_REQUESTER_DATA -> handleReuseRequesterDataStep(companyOwner, conversation, replyTarget, normalizedBody);
+			case ASK_SECTOR -> handleSectorStep(companyOwner, conversation, replyTarget, normalizedBody);
+			case ASK_NAME -> handleNameStep(companyOwner, conversation, replyTarget, normalizedBody);
+			case ASK_EMAIL -> handleEmailStep(companyOwner, conversation, replyTarget, normalizedBody);
+			case ASK_DOCUMENT -> handleDocumentStep(companyOwner, conversation, replyTarget);
+			case ASK_SUBJECT -> handleSubjectStep(companyOwner, conversation, replyTarget, normalizedBody);
+			case ASK_DESCRIPTION -> handleDescriptionStep(companyOwner, conversation, replyTarget, normalizedBody, incomingAttachments);
+			case ACTIVE_TICKET -> {
+				startNewTicketFlow(companyOwner, conversation, replyTarget, "Vamos abrir um novo chamado.");
+			}
+		}
+	}
+
+	private void startNewTicketFlow(
+		User companyOwner,
+		WhatsappConversation conversation,
+		String replyTarget,
+		String prefix
+	) {
+		conversation.setSector(null);
+		conversation.setPendingMessage(null);
+		conversation.setPendingSubject(null);
+		conversation.setPendingDocument(null);
+
+		if (prepareReusableRequesterData(conversation)) {
+			conversation.setActiveTicket(null);
+			conversation.setCurrentStep(WhatsappConversationStep.ASK_REUSE_REQUESTER_DATA);
+			whatsappConversationRepository.save(conversation);
+			replyWithMessage(companyOwner, replyTarget, buildReuseRequesterPrompt(prefix, conversation));
+			return;
+		}
+
+		conversation.setActiveTicket(null);
+		conversation.setPendingName(null);
+		conversation.setPendingEmail(null);
+		conversation.setCurrentStep(WhatsappConversationStep.ASK_SECTOR);
+		whatsappConversationRepository.save(conversation);
+		replyWithMessage(companyOwner, replyTarget, buildSectorPrompt(companyOwner, resolveSectorPromptPrefix(prefix)));
+	}
+
+	private void handleReuseRequesterDataStep(
+		User companyOwner,
+		WhatsappConversation conversation,
+		String replyTarget,
+		String body
+	) {
+		if (isAffirmativeAnswer(body)) {
+			conversation.setSector(null);
+			conversation.setPendingSubject(null);
+			conversation.setCurrentStep(WhatsappConversationStep.ASK_SECTOR);
+			whatsappConversationRepository.save(conversation);
+			replyWithMessage(
+				companyOwner,
+				replyTarget,
+				buildSectorPrompt(companyOwner, "Perfeito. Vamos continuar com os mesmos dados. Escolha um setor:")
+			);
+			return;
+		}
+
+		if (isNegativeAnswer(body)) {
+			conversation.setSector(null);
+			conversation.setPendingName(null);
+			conversation.setPendingEmail(null);
+			conversation.setPendingDocument(null);
+			conversation.setPendingSubject(null);
+			conversation.setCurrentStep(WhatsappConversationStep.ASK_SECTOR);
+			whatsappConversationRepository.save(conversation);
+			replyWithMessage(
+				companyOwner,
+				replyTarget,
+				buildSectorPrompt(companyOwner, "Tudo bem. Vamos cadastrar novos dados. Escolha um setor:")
+			);
+			return;
+		}
+
+		replyWithMessage(companyOwner, replyTarget, "Responda com *sim* para reutilizar os dados ou *nao* para informar tudo novamente.");
+	}
+
+	private boolean prepareReusableRequesterData(WhatsappConversation conversation) {
+		String pendingEmail = normalizeContactEmail(conversation.getPendingEmail());
+		java.util.Optional<User> requesterByEmail = pendingEmail.isBlank()
+			? java.util.Optional.empty()
+			: userRepository.findByEmailIgnoreCase(pendingEmail);
+		User previousRequester = conversation.getActiveTicket() == null ? null : conversation.getActiveTicket().getRequester();
+		User requesterByPhone = resolveExistingRequester(conversation.getPhoneNumber(), conversation.getWhatsappTransportId())
+			.orElse(null);
+
+		String reusableName = normalizePersonName(firstNonBlank(
+			requesterByEmail.map(User::getFullName).orElse(null),
+			previousRequester == null ? null : previousRequester.getFullName(),
+			conversation.getPendingName(),
+			requesterByPhone == null ? null : requesterByPhone.getFullName()
+		));
+		String reusableEmail = normalizeContactEmail(firstNonBlank(
+			requesterByEmail.map(User::getEmail).orElse(null),
+			previousRequester == null ? null : previousRequester.getEmail(),
+			conversation.getPendingEmail(),
+			requesterByPhone == null ? null : requesterByPhone.getEmail()
+		));
+
+		if (!isValidPersonName(reusableName) || reusableEmail.isBlank()) {
+			return false;
+		}
+
+		conversation.setPendingName(reusableName);
+		conversation.setPendingEmail(reusableEmail);
+		conversation.setPendingDocument(null);
+		return true;
+	}
+
+	private boolean hasReusableRequesterData(WhatsappConversation conversation) {
+		return isValidPersonName(normalizePersonName(conversation.getPendingName()))
+			&& !normalizeContactEmail(conversation.getPendingEmail()).isBlank();
+	}
+
+	private String buildReuseRequesterPrompt(String prefix, WhatsappConversation conversation) {
+		StringBuilder builder = new StringBuilder();
+		if (prefix != null && !prefix.isBlank()) {
+			builder.append(prefix.trim());
+			builder.append("\n");
+		}
+		builder.append("Esses sao os dados do ultimo chamado que voce fez:");
+		builder.append("\nNome: ").append(conversation.getPendingName());
+		builder.append("\nEmail: ").append(conversation.getPendingEmail());
+		builder.append("\n\nQuer prosseguir o proximo chamado com esses mesmos dados?");
+		builder.append("\nResponda com *sim* ou *nao*.");
+		return builder.toString();
+	}
+
+	private String resolveSectorPromptPrefix(String prefix) {
+		if (prefix == null || prefix.isBlank()) {
+			return null;
+		}
+		return prefix.trim() + " Escolha um setor para continuar:";
+	}
+
+	private boolean isAffirmativeAnswer(String value) {
+		String normalized = normalizeComparable(value);
+		return normalized.equals("sim") || normalized.equals("s");
+	}
+
+	private boolean isNegativeAnswer(String value) {
+		String normalized = normalizeComparable(value);
+		return normalized.equals("nao") || normalized.equals("não") || normalized.equals("n");
+	}
+
+	private void handleSectorStep(User companyOwner, WhatsappConversation conversation, String replyTarget, String body) {
+		List<Sector> sectors = loadCompanySectors(companyOwner);
+		Sector selectedSector = resolveSectorSelection(body, sectors);
+
+		if (selectedSector == null) {
+			whatsappConversationRepository.save(conversation);
+			replyWithMessage(
+				companyOwner,
+				replyTarget,
+				buildSectorPrompt(companyOwner, "Setor inválido. Responda com o número ou nome de uma das opções:")
+			);
+			return;
+		}
+
+		conversation.setSector(selectedSector);
+		if (hasReusableRequesterData(conversation)) {
+			conversation.setCurrentStep(WhatsappConversationStep.ASK_SUBJECT);
+			whatsappConversationRepository.save(conversation);
+			replyWithMessage(
+				companyOwner,
+				replyTarget,
+				"""
+				Perfeito. Voce escolheu o setor *%s*.
+				Vamos usar os mesmos dados do ultimo atendimento:
+				Nome: *%s*
+				Email: *%s*
+
+				Qual e o *assunto* do seu chamado?
+				""".formatted(
+					selectedSector.getName(),
+					conversation.getPendingName(),
+					conversation.getPendingEmail()
+				).trim()
+			);
+			return;
+		}
+
+		conversation.setCurrentStep(WhatsappConversationStep.ASK_NAME);
+		whatsappConversationRepository.save(conversation);
+		replyWithMessage(
+			companyOwner,
+			replyTarget,
+			"""
+			Perfeito. Voce escolheu o setor *%s*.
+			Para continuar, me informe seu *nome completo*.
+			""".formatted(selectedSector.getName()).trim()
+		);
+	}
+
+	private void handleNameStep(User companyOwner, WhatsappConversation conversation, String replyTarget, String body) {
+		String normalizedName = normalizePersonName(body);
+		if (!isValidPersonName(normalizedName)) {
+			replyWithMessage(companyOwner, replyTarget, "Nome invalido. Informe seu *nome completo* (nome e sobrenome).");
+			return;
+		}
+
+		conversation.setPendingName(normalizedName);
+		conversation.setCurrentStep(WhatsappConversationStep.ASK_EMAIL);
+		whatsappConversationRepository.save(conversation);
+		replyWithMessage(companyOwner, replyTarget, "Agora me informe seu *email*.");
+	}
+
+	private void handleEmailStep(User companyOwner, WhatsappConversation conversation, String replyTarget, String body) {
+		String normalizedEmail = normalizeContactEmail(body);
+		if (normalizedEmail.isBlank()) {
+			replyWithMessage(companyOwner, replyTarget, "Email invalido. Envie no formato *nome@dominio.com*.");
+			return;
+		}
+
+		conversation.setPendingEmail(normalizedEmail);
+		conversation.setPendingDocument(null);
+		conversation.setCurrentStep(WhatsappConversationStep.ASK_SUBJECT);
+		whatsappConversationRepository.save(conversation);
+		replyWithMessage(companyOwner, replyTarget, "Perfeito. Qual e o *assunto* do seu chamado?");
+	}
+
+	private void handleDocumentStep(User companyOwner, WhatsappConversation conversation, String replyTarget) {
+		conversation.setCurrentStep(WhatsappConversationStep.ASK_SUBJECT);
+		whatsappConversationRepository.save(conversation);
+		replyWithMessage(companyOwner, replyTarget, "Nao precisamos mais do CPF. Agora me informe o *assunto* do seu chamado.");
+	}
+
+	private void handleSubjectStep(User companyOwner, WhatsappConversation conversation, String replyTarget, String body) {
+		String normalizedSubject = normalizeSubject(body);
+		if (normalizedSubject.isBlank()) {
+			replyWithMessage(companyOwner, replyTarget, "Informe o *assunto* do chamado para continuarmos.");
+			return;
+		}
+
+		conversation.setPendingSubject(normalizedSubject);
+		conversation.setCurrentStep(WhatsappConversationStep.ASK_DESCRIPTION);
+		whatsappConversationRepository.save(conversation);
+		replyWithMessage(companyOwner, replyTarget, "Agora envie a *primeira mensagem* com os detalhes do atendimento.");
+	}
+
+	private void handleDescriptionStep(
+		User companyOwner,
+		WhatsappConversation conversation,
+		String replyTarget,
+		String body,
+		List<TicketService.IncomingAttachment> attachments
+	) {
+		if (conversation.getSector() == null) {
+			resetConversation(conversation);
+			whatsappConversationRepository.save(conversation);
+			replyWithMessage(companyOwner, replyTarget, buildSectorPrompt(companyOwner, "Escolha o setor antes de enviar a descrição:"));
+			return;
+		}
+
+		if (body.isBlank() && (attachments == null || attachments.isEmpty())) {
+			replyWithMessage(
+				companyOwner,
+				replyTarget,
+				"Envie uma descrição do problema para eu criar o chamado no setor *" + conversation.getSector().getName() + "*."
+			);
+			return;
+		}
+
+		String normalizedDescription = body.trim();
+		if (normalizedDescription.length() < 10 && attachments != null && !attachments.isEmpty()) {
+			normalizedDescription = "Arquivo enviado pelo WhatsApp.";
+		}
+		if (normalizedDescription.length() < 10) {
+			replyWithMessage(
+				companyOwner,
+				replyTarget,
+				"Envie a *primeira mensagem* com pelo menos 10 caracteres para eu abrir o chamado."
+			);
+			return;
+		}
+
+		String pendingName = normalizePersonName(conversation.getPendingName());
+		String pendingEmail = normalizeContactEmail(conversation.getPendingEmail());
+		String pendingSubject = normalizeSubject(conversation.getPendingSubject());
+		if (!isValidPersonName(pendingName)) {
+			conversation.setPendingName("");
+			conversation.setCurrentStep(WhatsappConversationStep.ASK_NAME);
+			whatsappConversationRepository.save(conversation);
+			replyWithMessage(companyOwner, replyTarget, "Nao consegui validar seu nome. Informe novamente seu *nome completo*.");
+			return;
+		}
+		if (pendingEmail.isBlank() || pendingSubject.isBlank()) {
+			resetConversation(conversation);
+			whatsappConversationRepository.save(conversation);
+			replyWithMessage(
+				companyOwner,
+				replyTarget,
+				"Nao consegui recuperar seus dados de cadastro. Vamos recomecar.\n" + buildSectorPrompt(companyOwner, "Escolha um setor:")
+			);
+			return;
+		}
+
+		conversation.setPendingMessage(normalizedDescription);
+		try {
+			User requester = resolveOrCreateRequester(
+				conversation.getPhoneNumber(),
+				conversation.getWhatsappTransportId(),
+				pendingName,
+				pendingEmail
+			)
+			;
+			Ticket createdTicket = ticketService.createFromWhatsapp(
+				new TicketService.CreateWhatsappTicketRequest(
+					requester,
+					conversation.getPhoneNumber(),
+					conversation.getWhatsappTransportId(),
+					companyOwner.getId(),
+					conversation.getSector().getId(),
+					pendingSubject,
+					normalizedDescription,
+					attachments == null ? List.of() : attachments
+				)
+			);
+			conversation.setActiveTicket(createdTicket);
+			conversation.setPendingName(requester.getFullName());
+			conversation.setPendingEmail(requester.getEmail());
+			conversation.setPendingDocument(requester.getDocumentNumber());
+			conversation.setPendingMessage(null);
+			conversation.setCurrentStep(WhatsappConversationStep.ACTIVE_TICKET);
+			whatsappConversationRepository.saveAndFlush(conversation);
+
+			replyWithMessage(
+				companyOwner,
+				replyTarget,
+				"""
+				Chamado aberto com sucesso.
+				Protocolo: %s
+				Setor: %s
+				Assunto: %s
+
+				Pode continuar enviando mensagens por aqui que elas serão adicionadas ao chamado.
+				Se quiser abrir mais um chamado, digite *abrir novo chamado*.
+				""".formatted(createdTicket.getProtocol(), conversation.getSector().getName(), pendingSubject).trim()
+			);
+		} catch (RuntimeException exception) {
+			logger.error(
+				"Falha ao criar chamado do WhatsApp: companyOwnerId={}, phoneNumber={}, transportId={}",
+				companyOwner.getId(),
+				conversation.getPhoneNumber(),
+				conversation.getWhatsappTransportId(),
+				exception
+			);
+			replyWithMessage(
+				companyOwner,
+				replyTarget,
+				"Nao consegui abrir seu chamado agora. Envie novamente a *primeira mensagem* para tentarmos de novo."
+			);
+			conversation.setCurrentStep(WhatsappConversationStep.ASK_DESCRIPTION);
+			whatsappConversationRepository.save(conversation);
+		}
+	}
+
+	private User resolveOrCreateRequester(
+		String normalizedPhone,
+		String whatsappTransportId,
+		String fullName,
+		String email
+	) {
+		java.util.Optional<User> requesterByEmail = userRepository.findByEmailIgnoreCase(email);
+		java.util.Optional<User> requesterByContact = resolveExistingRequester(normalizedPhone, whatsappTransportId);
+		User requester = requesterByEmail
+			.orElseGet(() -> requesterByContact.orElseGet(User::new));
+		boolean hasDifferentContactOwner = requesterByEmail.isPresent()
+			&& requesterByContact.isPresent()
+			&& !requesterByEmail.get().getId().equals(requesterByContact.get().getId());
+
+		if (requester.getId() == null) {
+			requester.setFullName(fullName);
+			requester.setEmail(email);
+			requester.setPasswordHash(passwordEncoder.encode(UUID.randomUUID().toString()));
+			requester.setStatus(UserStatus.ACTIVE);
+			requester.setEmailVerified(false);
+			requester.setSimplified(true);
+			requester.getRoles().add(loadDefaultUserRole());
+		}
+
+		if (requester.getFullName() == null || requester.getFullName().isBlank() || requester.isSimplified()) {
+			requester.setFullName(fullName);
+		}
+		if ((requester.getEmail() == null || requester.getEmail().isBlank() || isHelpdeskPlaceholderEmail(requester.getEmail()))
+			&& !email.isBlank()) {
+			requester.setEmail(email);
+		}
+
+		if (!hasDifferentContactOwner) {
+			requester.setPhoneNumber(normalizedPhone);
+			if (!whatsappTransportId.isBlank()) {
+				requester.setWhatsappTransportId(whatsappTransportId);
+			}
+		} else {
+			logger.info(
+				"Solicitante por email reutilizado sem sobrescrever contato do WhatsApp: requesterId={}, phone={}, transportId={}",
+				requester.getId(),
+				normalizedPhone,
+				whatsappTransportId
+			);
+		}
+
+		return userRepository.save(requester);
+	}
+
+	private java.util.Optional<User> resolveExistingRequester(String normalizedPhone, String whatsappTransportId) {
+		if (!whatsappTransportId.isBlank()) {
+			java.util.Optional<User> byTransportId = userRepository.findByWhatsappTransportId(whatsappTransportId);
+			if (byTransportId.isPresent()) {
+				return byTransportId;
+			}
+		}
+
+		if (!normalizedPhone.isBlank()) {
+			return userRepository.findByPhoneNumber(normalizedPhone);
+		}
+
+		return java.util.Optional.empty();
+	}
+
+	private Role loadDefaultUserRole() {
+		return roleRepository.findByCode("USER")
+			.orElseThrow(() -> new NotFoundException("Perfil padrão de usuário não encontrado."));
+	}
+
+	private List<Sector> loadCompanySectors(User companyOwner) {
+		List<Sector> sectors = sectorRepository.findActiveByCreatedByIdOrderByNameAsc(companyOwner.getId());
+		if (sectors.isEmpty()) {
+			throw new IllegalArgumentException("A empresa não possui setores ativos para atendimento no WhatsApp.");
+		}
+		return sectors;
+	}
+
+	private Sector resolveSectorSelection(String body, List<Sector> sectors) {
+		String normalizedBody = normalizeComparable(body);
+		if (normalizedBody.isBlank()) {
+			return null;
+		}
+
+		try {
+			int position = Integer.parseInt(normalizedBody);
+			if (position >= 1 && position <= sectors.size()) {
+				return sectors.get(position - 1);
+			}
+		} catch (NumberFormatException ignored) {
+		}
+
+		return sectors.stream()
+			.filter(sector -> normalizeComparable(sector.getName()).equals(normalizedBody))
+			.findFirst()
+			.orElse(null);
+	}
+
+	private String buildSectorPrompt(User companyOwner, String prefix) {
+		List<Sector> sectors = loadCompanySectors(companyOwner);
+		StringBuilder builder = new StringBuilder();
+
+		if (prefix == null || prefix.isBlank()) {
+			builder.append("Olá. Para abrir seu chamado, escolha o setor desejado:");
+			builder.append("\nDepois vou pedir nome, email, assunto e sua primeira mensagem.");
+			builder.append("\nSe precisar corrigir algum dado informado durante essa etapa, envie *reiniciar*.");
+		} else {
+			builder.append(prefix.trim());
+		}
+
+		for (int index = 0; index < sectors.size(); index++) {
+			builder.append("\n");
+			builder.append(index + 1);
+			builder.append(". ");
+			builder.append(sectors.get(index).getName());
+		}
+
+		return builder.toString();
+	}
+
+	private boolean hasActiveOpenTicket(WhatsappConversation conversation) {
+		return conversation.getActiveTicket() != null
+			&& conversation.getActiveTicket().getStatus() != null
+			&& !"CLOSED".equalsIgnoreCase(conversation.getActiveTicket().getStatus().getCode())
+			&& conversation.getActiveTicket().getClosedAt() == null;
+	}
+
+	private void resetConversation(WhatsappConversation conversation) {
+		conversation.setCurrentStep(WhatsappConversationStep.ASK_SECTOR);
+		conversation.setSector(null);
+		conversation.setPendingMessage(null);
+		conversation.setPendingName(null);
+		conversation.setPendingEmail(null);
+		conversation.setPendingDocument(null);
+		conversation.setPendingSubject(null);
+		conversation.setActiveTicket(null);
+	}
+
+	private boolean isRestartCommand(String body) {
+		String normalizedBody = normalizeComparable(body);
+		return normalizedBody.equals("reiniciar")
+			|| normalizedBody.equals("reiniciar atendimento");
+	}
+
+	private boolean isOpenNewTicketCommand(String body) {
+		String normalizedBody = normalizeComparable(body);
+		return normalizedBody.equals("abrir novo chamado")
+			|| normalizedBody.equals("novo chamado")
+			|| normalizedBody.equals("abrir chamado");
+	}
+
+	private boolean isGreetingMessage(String body) {
+		String normalizedBody = normalizeComparable(body);
+		return normalizedBody.equals("oi")
+			|| normalizedBody.equals("ola")
+			|| normalizedBody.equals("olá")
+			|| normalizedBody.equals("bom dia")
+			|| normalizedBody.equals("boa tarde")
+			|| normalizedBody.equals("boa noite");
+	}
+
+	private void replyWithMessage(User companyOwner, String phoneNumber, String message) {
+		logger.info(
+			"Enviando resposta automática do WhatsApp: companyOwnerId={}, recipient={}, bodyPreview={}",
+			companyOwner.getId(),
+			phoneNumber,
+			preview(message)
+		);
+		try {
+			whatsappService.sendMessage(companyOwner, phoneNumber, message);
+		} catch (RuntimeException exception) {
+			logger.error("Falha ao enviar resposta automática do WhatsApp para {}", phoneNumber, exception);
+		}
+	}
+
+	private java.util.Optional<WhatsappConversation> resolveConversation(
+		UUID companyOwnerId,
+		String normalizedPhone,
+		String whatsappTransportId
+	) {
+		if (!whatsappTransportId.isBlank()) {
+			java.util.Optional<WhatsappConversation> byTransportId =
+				whatsappConversationRepository.findByCompanyOwnerIdAndWhatsappTransportId(companyOwnerId, whatsappTransportId);
+			if (byTransportId.isPresent()) {
+				return byTransportId;
+			}
+		}
+
+		if (!normalizedPhone.isBlank()) {
+			return whatsappConversationRepository.findByCompanyOwnerIdAndPhoneNumber(companyOwnerId, normalizedPhone);
+		}
+
+		return java.util.Optional.empty();
+	}
+
+	private String resolveSessionName(JsonNode payload) {
+		return firstNonBlank(
+			extractText(payload, "session"),
+			extractText(payload, "sessionName"),
+			extractNestedText(payload, "session", "name"),
+			extractNestedText(payload, "payload", "session"),
+			extractNestedText(payload, "payload", "sessionName"),
+			extractNestedText(payload, "data", "session"),
+			extractNestedText(payload, "data", "sessionName"),
+			extractPathText(payload, "payload.session.name"),
+			extractPathText(payload, "data.session.name"),
+			extractDeepText(payload, "session"),
+			extractDeepText(payload, "sessionName")
+		);
+	}
+
+	private String resolveIncomingTransportId(JsonNode payload) {
+		return firstWhatsappAddress(
+			extractPathText(payload, "sender.id"),
+			extractPathText(payload, "chat.id"),
+			extractPathText(payload, "chatId._serialized"),
+			extractPathText(payload, "id.remote"),
+			extractPathText(payload, "payload.sender.id"),
+			extractPathText(payload, "payload.chat.id"),
+			extractPathText(payload, "payload.chatId._serialized"),
+			extractPathText(payload, "payload.id.remote"),
+			extractPathText(payload, "data.sender.id"),
+			extractPathText(payload, "data.chat.id"),
+			extractPathText(payload, "data.chatId._serialized"),
+			extractPathText(payload, "data.id.remote"),
+			extractText(payload, "chatId"),
+			extractText(payload, "sender_id"),
+			extractText(payload, "from"),
+			extractNestedText(payload, "payload", "chatId"),
+			extractNestedText(payload, "payload", "sender_id"),
+			extractNestedText(payload, "payload", "from"),
+			extractNestedText(payload, "data", "chatId"),
+			extractNestedText(payload, "data", "sender_id"),
+			extractNestedText(payload, "data", "from"),
+			extractDeepText(payload, "chat_id"),
+			extractDeepText(payload, "sender_id"),
+			extractDeepText(payload, "from")
+		);
+	}
+
+	private String resolveIncomingPhone(JsonNode payload, String transportId) {
+		String rawPhone = firstNonBlank(
+			extractText(payload, "phone"),
+			extractNestedText(payload, "payload", "phone"),
+			extractNestedText(payload, "data", "phone"),
+			extractDeepText(payload, "phone"),
+			transportId
+		);
+		return normalizeWhatsappAddress(rawPhone);
+	}
+
+	private String resolveIncomingBody(JsonNode payload) {
+		return firstNonBlank(
+			extractText(payload, "body"),
+			extractText(payload, "text"),
+			extractText(payload, "content"),
+			extractNestedText(payload, "message", "text"),
+			extractNestedText(payload, "message", "body"),
+			extractNestedText(payload, "payload", "body"),
+			extractNestedText(payload, "payload", "text"),
+			extractNestedText(payload, "data", "body"),
+			extractNestedText(payload, "data", "text"),
+			extractPathText(payload, "message.content"),
+			extractPathText(payload, "payload.message.text"),
+			extractPathText(payload, "payload.message.body"),
+			extractPathText(payload, "data.message.text"),
+			extractPathText(payload, "data.message.body"),
+			extractDeepText(payload, "body"),
+			extractDeepText(payload, "text"),
+			extractDeepText(payload, "content")
+		);
+	}
+
+	private List<TicketService.IncomingAttachment> resolveIncomingAttachments(JsonNode payload) {
+		JsonNode attachmentsNode = firstArrayNode(
+			extractPathNode(payload, "attachments"),
+			extractPathNode(payload, "payload.attachments"),
+			extractPathNode(payload, "data.attachments"),
+			extractPathNode(payload, "message.attachments")
+		);
+
+		if (attachmentsNode == null || !attachmentsNode.isArray()) {
+			return List.of();
+		}
+
+		List<TicketService.IncomingAttachment> attachments = new ArrayList<>();
+		for (JsonNode attachmentNode : attachmentsNode) {
+			String base64Content = firstNonBlank(
+				extractText(attachmentNode, "base64"),
+				extractText(attachmentNode, "data"),
+				extractText(attachmentNode, "content")
+			);
+			if (base64Content.isBlank()) {
+				continue;
+			}
+
+			try {
+				byte[] content = Base64.getDecoder().decode(base64Content);
+				if (content.length == 0) {
+					continue;
+				}
+
+				attachments.add(new TicketService.IncomingAttachment(
+					firstNonBlank(
+						extractText(attachmentNode, "originalFileName"),
+						extractText(attachmentNode, "fileName"),
+						extractText(attachmentNode, "filename")
+					),
+					firstNonBlank(
+						extractText(attachmentNode, "contentType"),
+						extractText(attachmentNode, "mimeType"),
+						extractText(attachmentNode, "mimetype")
+					),
+					content
+				));
+			} catch (IllegalArgumentException exception) {
+				logger.warn("Anexo do WhatsApp ignorado por base64 inválido.");
+			}
+		}
+
+		return attachments;
+	}
+
+	private boolean resolveFromMe(JsonNode payload) {
+		return extractBoolean(payload, "fromMe")
+			|| extractBoolean(payload, "isFromMe")
+			|| extractNestedBoolean(payload, "payload", "fromMe")
+			|| extractNestedBoolean(payload, "payload", "isFromMe")
+			|| extractNestedBoolean(payload, "data", "fromMe")
+			|| extractNestedBoolean(payload, "data", "isFromMe")
+			|| extractDeepBoolean(payload, "fromMe")
+			|| extractDeepBoolean(payload, "isFromMe");
+	}
+
+	private boolean isGroupMessage(JsonNode payload) {
+		String groupMarker = firstNonBlank(
+			extractText(payload, "chatId"),
+			extractText(payload, "from"),
+			extractPathText(payload, "chat.id"),
+			extractPathText(payload, "chatId._serialized"),
+			extractPathText(payload, "id.remote"),
+			extractNestedText(payload, "payload", "chatId"),
+			extractNestedText(payload, "payload", "from"),
+			extractNestedText(payload, "data", "chatId"),
+			extractNestedText(payload, "data", "from")
+		);
+		return groupMarker.contains("@g.us")
+			|| extractBoolean(payload, "isGroup")
+			|| extractNestedBoolean(payload, "payload", "isGroup")
+			|| extractNestedBoolean(payload, "data", "isGroup")
+			|| extractDeepBoolean(payload, "isGroup");
+	}
+
+	private JsonNode parsePayload(String payload) {
+		if (payload == null || payload.isBlank()) {
+			return null;
+		}
+
+		try {
+			return objectMapper.readTree(payload);
+		} catch (IOException exception) {
+			logger.warn("Não foi possível interpretar o payload do webhook do WhatsApp.");
+			return null;
+		}
+	}
+
+	private String extractText(JsonNode payload, String fieldName) {
+		if (payload == null || !payload.hasNonNull(fieldName)) {
+			return "";
+		}
+		return payload.get(fieldName).asText("");
+	}
+
+	private String extractNestedText(JsonNode payload, String fieldName, String nestedFieldName) {
+		if (payload == null || !payload.hasNonNull(fieldName) || !payload.get(fieldName).hasNonNull(nestedFieldName)) {
+			return "";
+		}
+		return payload.get(fieldName).get(nestedFieldName).asText("");
+	}
+
+	private String extractPathText(JsonNode payload, String path) {
+		if (payload == null || path == null || path.isBlank()) {
+			return "";
+		}
+
+		JsonNode currentNode = payload;
+		for (String pathSegment : path.split("\\.")) {
+			if (currentNode == null || !currentNode.hasNonNull(pathSegment)) {
+				return "";
+			}
+			currentNode = currentNode.get(pathSegment);
+		}
+
+		return currentNode == null ? "" : currentNode.asText("");
+	}
+
+	private JsonNode extractPathNode(JsonNode payload, String path) {
+		if (payload == null || path == null || path.isBlank()) {
+			return null;
+		}
+
+		JsonNode currentNode = payload;
+		for (String pathSegment : path.split("\\.")) {
+			if (currentNode == null || !currentNode.has(pathSegment)) {
+				return null;
+			}
+			currentNode = currentNode.get(pathSegment);
+		}
+
+		return currentNode;
+	}
+
+	private boolean extractBoolean(JsonNode payload, String fieldName) {
+		return payload != null && payload.hasNonNull(fieldName) && payload.get(fieldName).asBoolean(false);
+	}
+
+	private boolean extractNestedBoolean(JsonNode payload, String fieldName, String nestedFieldName) {
+		return payload != null
+			&& payload.hasNonNull(fieldName)
+			&& payload.get(fieldName).hasNonNull(nestedFieldName)
+			&& payload.get(fieldName).get(nestedFieldName).asBoolean(false);
+	}
+
+	private JsonNode firstArrayNode(JsonNode... nodes) {
+		if (nodes == null) {
+			return null;
+		}
+
+		for (JsonNode node : nodes) {
+			if (node != null && node.isArray()) {
+				return node;
+			}
+		}
+
+		return null;
+	}
+
+	private String extractDeepText(JsonNode payload, String fieldName) {
+		if (payload == null || fieldName == null || fieldName.isBlank()) {
+			return "";
+		}
+
+		if (payload.hasNonNull(fieldName)) {
+			return payload.get(fieldName).asText("");
+		}
+
+		for (JsonNode child : payload) {
+			String nestedResult = extractDeepText(child, fieldName);
+			if (!nestedResult.isBlank()) {
+				return nestedResult;
+			}
+		}
+
+		return "";
+	}
+
+	private boolean extractDeepBoolean(JsonNode payload, String fieldName) {
+		if (payload == null || fieldName == null || fieldName.isBlank()) {
+			return false;
+		}
+
+		if (payload.hasNonNull(fieldName)) {
+			return payload.get(fieldName).asBoolean(false);
+		}
+
+		for (JsonNode child : payload) {
+			if (extractDeepBoolean(child, fieldName)) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	private String firstWhatsappAddress(String... values) {
+		for (String value : values) {
+			String normalized = normalizeWhatsappAddress(value);
+			if (!normalized.isBlank()) {
+				return normalized;
+			}
+		}
+		return "";
+	}
+
+	private String firstNonBlank(String... values) {
+		if (values == null) {
+			return "";
+		}
+		for (String value : values) {
+			if (value != null && !value.isBlank()) {
+				return value;
+			}
+		}
+		return "";
+	}
+
+	private String normalizeInboundMessage(String body) {
+		String normalizedBody = body == null ? "" : body.trim();
+		if (normalizedBody.length() > 5000) {
+			return normalizedBody.substring(0, 5000);
+		}
+		return normalizedBody;
+	}
+
+	private String normalizePhone(String phone) {
+		return phone == null ? "" : phone.replaceAll("\\D+", "");
+	}
+
+	private String normalizeWhatsappAddress(String phone) {
+		return phone == null ? "" : phone.trim();
+	}
+
+	private String normalizeWhatsappTransportId(String phone) {
+		String normalized = normalizeWhatsappAddress(phone);
+		return normalized.contains("@") ? normalized : "";
+	}
+
+	private String resolveReplyTarget(WhatsappConversation conversation, String normalizedPhone) {
+		if (conversation.getWhatsappTransportId() != null && !conversation.getWhatsappTransportId().isBlank()) {
+			return conversation.getWhatsappTransportId();
+		}
+		if (normalizedPhone != null && !normalizedPhone.isBlank()) {
+			return normalizedPhone;
+		}
+		return normalizedPhone;
+	}
+
+	private String normalizeComparable(String value) {
+		String normalized = value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+		normalized = Normalizer.normalize(normalized, Normalizer.Form.NFD).replaceAll("\\p{M}+", "");
+		return normalized.replaceAll("\\s+", " ");
+	}
+
+	private String normalizePersonName(String value) {
+		String normalized = value == null ? "" : value.trim().replaceAll("\\s+", " ");
+		return normalized.length() <= 150 ? normalized : normalized.substring(0, 150);
+	}
+
+	private boolean isValidPersonName(String value) {
+		String normalized = normalizePersonName(value);
+		if (normalized.length() < 3 || !normalized.contains(" ")) {
+			return false;
+		}
+		return normalized.chars().filter(Character::isLetter).count() >= 3;
+	}
+
+	private String normalizeContactEmail(String value) {
+		String normalized = value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+		if (normalized.length() > 150) {
+			return "";
+		}
+		if (!normalized.matches("^[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}$")) {
+			return "";
+		}
+		return normalized;
+	}
+
+	private String normalizeSubject(String value) {
+		String normalized = value == null ? "" : value.trim().replaceAll("\\s+", " ");
+		if (normalized.isBlank()) {
+			return "";
+		}
+		return normalized.length() <= 180 ? normalized : normalized.substring(0, 180);
+	}
+
+	private boolean isHelpdeskPlaceholderEmail(String value) {
+		String normalized = value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+		return normalized.endsWith("@helpdesk.local");
+	}
+
+	private String preview(String value) {
+		String normalized = value == null ? "" : value.trim();
+		return normalized.length() <= 100 ? normalized : normalized.substring(0, 100) + "...";
+	}
+
+	private boolean isMessageEvent(String event) {
+		String normalizedEvent = normalizeComparable(event);
+		return normalizedEvent.contains("message")
+			&& !normalizedEvent.contains("ack")
+			&& !normalizedEvent.contains("reaction")
+			&& !normalizedEvent.contains("revoked")
+			&& !normalizedEvent.contains("poll");
+	}
+}

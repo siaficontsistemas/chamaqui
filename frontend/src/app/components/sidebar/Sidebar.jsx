@@ -5,7 +5,7 @@ function Sidebar({ activeSection, navigationGroups, onSectionChange }) {
   return (
     <div className="home-sidebar-column">
       <div className="home-brand-panel">
-        <BrandMark />
+        <BrandMark onClick={() => onSectionChange('tickets')} />
       </div>
 
       <aside className="home-sidebar">
@@ -43,7 +43,7 @@ function Sidebar({ activeSection, navigationGroups, onSectionChange }) {
           </div>
         ))}
 
-        <span className="home-sidebar__footer">Lopes Consultoria</span>
+        <span className="home-sidebar__footer">ChamaAqui Helpdesk</span>
       </aside>
     </div>
   )
@@ -52,6 +52,10 @@ function Sidebar({ activeSection, navigationGroups, onSectionChange }) {
 export default Sidebar
 
 function SidebarIcon({ icon, itemId }) {
+  if (icon === 'calendar' || itemId === 'calendar') {
+    return <CalendarIcon />
+  }
+
   if (itemId === 'reports') {
     return <ReportIcon />
   }
@@ -71,13 +75,16 @@ function SidebarIcon({ icon, itemId }) {
   return <PhoneIcon />
 }
 
-function BrandMark() {
+function BrandMark({ onClick }) {
   return (
-    <div className="home-brand" aria-label="Lopes Consultoria">
-      <strong className="home-brand__name">LOPES</strong>
-      <span className="home-brand__accent">CONSULTORIA</span>
-      <span className="home-brand__subtitle">GESTÃO PÚBLICA</span>
-    </div>
+    <button
+      className="home-brand"
+      type="button"
+      onClick={onClick}
+      aria-label="Voltar para a tela de tickets"
+    >
+      <img className="home-brand__logo" src="/logo_chamaqui.png" alt="ChamaAqui Helpdesk" />
+    </button>
   )
 }
 
@@ -132,6 +139,20 @@ function PlusIcon() {
     <svg viewBox="0 0 24 24" fill="none">
       <path
         d="M12 5v14M5 12h14"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function CalendarIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none">
+      <path
+        d="M7 3.5v3M17 3.5v3M4.5 9h15M6.5 5.5h11a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2v-10a2 2 0 0 1 2-2ZM8 12.5h3M8 16h5"
         stroke="currentColor"
         strokeWidth="1.8"
         strokeLinecap="round"

@@ -26,6 +26,7 @@ public class SecurityConfig {
 			.csrf(AbstractHttpConfigurer::disable)
 			.cors(Customizer.withDefaults())
 			.authorizeHttpRequests(authorize -> authorize
+				.requestMatchers("/webhook").permitAll()
 				.requestMatchers(
 					"/swagger-ui.html",
 					"/swagger-ui/**",

@@ -73,6 +73,21 @@
   min-width: 0;
 }
 
+.ticket-chat__channel-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(37, 211, 102, 0.14);
+  color: #14824a;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .ticket-chat__eyebrow {
   color: #5e6f7d;
   font-size: 0.95rem;

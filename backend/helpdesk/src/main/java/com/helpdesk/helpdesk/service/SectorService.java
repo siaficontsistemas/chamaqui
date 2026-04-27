@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.helpdesk.helpdesk.common.NotFoundException;
+import com.helpdesk.helpdesk.domain.CompanyType;
 import com.helpdesk.helpdesk.domain.Sector;
 import com.helpdesk.helpdesk.domain.User;
 import com.helpdesk.helpdesk.dto.sector.CreateSectorRequest;
@@ -49,7 +50,11 @@ public class SectorService {
 			return toResponseList(sectorRepository.findVisibleToMemberByEmail(normalizedEmail));
 		}
 
-		return toResponseList(sectorRepository.findByArchivedAtIsNullOrderByNameAsc());
+		if (hasRole(user, "USER")) {
+			return toResponseList(sectorRepository.findVisibleByCompanyType(CompanyType.RESPONDER));
+		}
+
+		return java.util.List.of();
 	}
 
 	private List<SectorResponse> toResponseList(List<Sector> sectors) {
@@ -62,6 +67,10 @@ public class SectorService {
 	public SectorResponse create(CreateSectorRequest request) {
 		User createdBy = userRepository.findByEmailIgnoreCase(request.createdByEmail().trim())
 			.orElseThrow(() -> new NotFoundException("Usuário responsável pelo setor não encontrado."));
+
+		if (!hasRole(createdBy, "ADMIN")) {
+			throw new IllegalArgumentException("Somente administradores podem criar setores.");
+		}
 
 		String baseSlug = slugService.slugify(request.name());
 		String slug = baseSlug;

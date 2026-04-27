@@ -5,6 +5,122 @@
   margin-top: 1rem;
 }
 
+.my-data__whatsapp-card {
+  margin-top: 2rem;
+  border: 1px solid rgba(19, 34, 53, 0.08);
+  border-radius: 1.25rem;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.95), #ffffff);
+  padding: 5rem;
+}
+
+.my-data__whatsapp-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+}
+
+.my-data__whatsapp-title {
+  margin: 0;
+  color: #132235;
+  font-size: 1.2rem;
+}
+
+.my-data__whatsapp-description {
+  margin: 0.45rem 0 0;
+  color: #526274;
+  line-height: 1.5;
+}
+
+.my-data__whatsapp-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0.5rem 0.9rem;
+  border-radius: 999px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.my-data__whatsapp-badge--connected {
+  background: rgba(24, 118, 87, 0.12);
+  color: #187657;
+}
+
+.my-data__whatsapp-badge--disconnected {
+  background: rgba(217, 75, 75, 0.12);
+  color: #b53b3b;
+}
+
+.my-data__whatsapp-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.my-data__whatsapp-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 1rem;
+  border-radius: 1rem;
+  background: rgba(232, 237, 243, 0.55);
+  color: #132235;
+}
+
+.my-data__whatsapp-label {
+  color: #6b7c8f;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.my-data__whatsapp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem;
+  margin-top: 1.25rem;
+}
+
+.my-data__whatsapp-feedback {
+  display: inline-block;
+  max-width: 100%;
+  width: fit-content;
+  margin-top: 1.4rem;
+  margin-bottom: 0.35rem;
+  padding: 0.55rem 0.85rem;
+  border-radius: 12px;
+  text-align: left;
+  font-size: 0.9rem;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.my-data__whatsapp-button {
+  border: 0;
+  border-radius: 999px;
+  background: #1d8f5a;
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 600;
+  padding: 0.85rem 1.4rem;
+  transition: filter 0.2s ease;
+}
+
+.my-data__whatsapp-button:hover {
+  filter: brightness(0.97);
+}
+
+.my-data__whatsapp-button--secondary {
+  background: #e8edf3;
+  color: #1b2b3d;
+}
+
 .my-data__delete-button {
   border: 0;
   border-radius: 999px;
@@ -21,65 +137,265 @@
   filter: brightness(0.95);
 }
 
-.my-data-modal {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(15, 23, 42, 0.45);
-  padding: 1.5rem;
-  z-index: 1000;
+.my-data__partnership-card {
+  margin-top: 2rem;
+  border: 1px solid rgba(19, 34, 53, 0.08);
+  border-radius: 1.25rem;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.95), #ffffff);
+  padding: 2rem;
 }
 
-.my-data-modal__card {
-  width: min(100%, 32rem);
-  border-radius: 1.5rem;
-  background: #fff;
-  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18);
-  padding: 1.5rem;
+.my-data__partnership-header {
+  margin-bottom: 1.25rem;
 }
 
-.my-data-modal__title {
+.my-data__partnership-title {
+  margin: 0;
   color: #132235;
-  font-size: 1.5rem;
-  margin: 0 0 0.75rem;
+  font-size: 1.2rem;
 }
 
-.my-data-modal__text {
+.my-data__partnership-description {
+  margin: 0.45rem 0 0;
   color: #526274;
   line-height: 1.5;
-  margin: 0 0 0.75rem;
 }
 
-.my-data-modal__actions {
+.my-data__partnership-search {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: end;
+}
+
+.my-data__partnership-results,
+.my-data__partnership-groups {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.25rem;
+}
+
+.my-data__partnership-group {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+  border-radius: 1rem;
+  background: rgba(232, 237, 243, 0.45);
+}
+
+.my-data__partnership-group h3 {
+  margin: 0;
+  color: #132235;
+  font-size: 1rem;
+}
+
+.my-data__partnership-item {
   display: flex;
-  gap: 0.75rem;
-  justify-content: flex-end;
-  margin-top: 1.5rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: 1rem;
+  background: #fff;
+  border: 1px solid rgba(19, 34, 53, 0.08);
 }
 
-.my-data-modal__button {
+.my-data__partnership-item-main {
+  min-width: 0;
+}
+
+.my-data__partnership-item p {
+  margin: 0.3rem 0 0;
+  color: #526274;
+}
+
+.my-data__partnership-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.my-data__partnership-actions--active {
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+}
+
+.my-data__partnership-status-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+}
+
+.my-data__partnership-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  background: rgba(24, 118, 87, 0.12);
+  color: #187657;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.my-data__partnership-status-badge--pending {
+  background: rgba(243, 167, 39, 0.16);
+  color: #b56b00;
+}
+
+.my-data__partnership-button {
   border: 0;
   border-radius: 999px;
+  background: #132235;
+  color: #fff;
   cursor: pointer;
   font-size: 0.95rem;
   font-weight: 600;
   padding: 0.85rem 1.4rem;
+  transition:
+    transform 0.18s ease,
+    filter 0.18s ease,
+    box-shadow 0.18s ease;
 }
 
-.my-data-modal__button:disabled,
-.my-data__delete-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.7;
+.my-data__partnership-button:hover:not(:disabled) {
+  filter: brightness(0.98);
+  transform: translateY(-1px);
 }
 
-.my-data-modal__button--secondary {
+.my-data__partnership-button--secondary {
   background: #e8edf3;
   color: #1b2b3d;
 }
 
-.my-data-modal__button--danger {
-  background: #d94b4b;
+.my-data__partnership-button--danger {
+  background: linear-gradient(135deg, #d94b4b, #c63d3d);
   color: #fff;
+  box-shadow: 0 12px 24px rgba(198, 61, 61, 0.18);
+}
+
+.my-data__partnership-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.my-data__partnership-feedback {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 1rem;
+  padding: 0.9rem 1rem;
+  border-radius: 1rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.my-data__partnership-feedback::before {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 999px;
+  font-size: 0.95rem;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.my-data__partnership-feedback--success {
+  background: rgba(24, 118, 87, 0.1);
+  color: #187657;
+}
+
+.my-data__partnership-feedback--success::before {
+  content: '✓';
+  background: rgba(24, 118, 87, 0.16);
+  color: #187657;
+}
+
+.my-data__partnership-feedback--error {
+  background: rgba(217, 75, 75, 0.1);
+  color: #b53b3b;
+}
+
+.my-data__partnership-feedback--error::before {
+  content: '!';
+  background: rgba(217, 75, 75, 0.16);
+  color: #b53b3b;
+}
+
+.my-data__partnership-feedback--info {
+  background: rgba(29, 78, 216, 0.08);
+  color: #1d4ed8;
+}
+
+.my-data__partnership-feedback--info::before {
+  content: 'i';
+  background: rgba(29, 78, 216, 0.14);
+  color: #1d4ed8;
+}
+
+.my-data__partnership-status {
+  color: #6b7c8f;
+  font-weight: 700;
+  text-align: right;
+  line-height: 1.3;
+}
+
+.my-data__partnership-status--accepted {
+  color: #205f4a;
+}
+
+.my-data__partnership-empty {
+  margin: 0;
+  color: #526274;
+}
+
+.my-data__delete-button:disabled,
+.my-data__whatsapp-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+@media (max-width: 720px) {
+  .my-data__actions,
+  .my-data__partnership-actions,
+  .my-data__whatsapp-actions,
+  .my-data__whatsapp-header {
+    flex-direction: column;
+  }
+
+  .my-data__partnership-search,
+  .my-data__partnership-item {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+
+  .my-data__partnership-actions--active,
+  .my-data__partnership-status-block {
+    align-items: stretch;
+  }
+
+  .my-data__partnership-feedback {
+    width: 100%;
+  }
+
+  .my-data__partnership-status {
+    text-align: left;
+  }
+
+  .my-data__whatsapp-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .my-data__whatsapp-badge {
+    width: 100%;
+  }
 }

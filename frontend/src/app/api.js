@@ -22,7 +22,13 @@ async function apiRequest(path, options = {}) {
     return null
   }
 
-  return response.json()
+  const responseText = await response.text()
+
+  if (!responseText.trim()) {
+    return null
+  }
+
+  return JSON.parse(responseText)
 }
 
 async function extractErrorMessage(response) {
@@ -63,6 +69,10 @@ export function registerUser(payload) {
     method: 'POST',
     body: JSON.stringify(payload),
   })
+}
+
+export function getAvailableCompanies(companyType) {
+  return apiRequest(`/api/v1/reference/companies?type=${encodeURIComponent(companyType)}`)
 }
 
 export function getProfile(email) {
@@ -166,6 +176,39 @@ export function getPersonalReport(email) {
   return apiRequest(`/api/v1/reports/personal?email=${encodeURIComponent(email)}`)
 }
 
+export function getCalendarObligations(email) {
+  return apiRequest(`/api/v1/calendar/obligations?email=${encodeURIComponent(email)}`)
+}
+
+export function createCalendarObligation(payload) {
+  return apiRequest('/api/v1/calendar/obligations', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function updateCalendarObligation(obligationId, payload) {
+  return apiRequest(`/api/v1/calendar/obligations/${obligationId}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function completeCalendarObligation(obligationId, email) {
+  return apiRequest(
+    `/api/v1/calendar/obligations/${obligationId}/complete?email=${encodeURIComponent(email)}`,
+    {
+      method: 'POST',
+    }
+  )
+}
+
+export function deleteCalendarObligation(obligationId, email) {
+  return apiRequest(`/api/v1/calendar/obligations/${obligationId}?email=${encodeURIComponent(email)}`, {
+    method: 'DELETE',
+  })
+}
+
 export function getSectors(email) {
   const searchParams = new URLSearchParams()
 
@@ -176,6 +219,48 @@ export function getSectors(email) {
   const queryString = searchParams.toString()
 
   return apiRequest(`/api/v1/sectors${queryString ? `?${queryString}` : ''}`)
+}
+
+export function searchCompanyPartnershipTargets(email, query) {
+  const searchParams = new URLSearchParams()
+  searchParams.set('email', email)
+  searchParams.set('query', query)
+  return apiRequest(`/api/v1/company-partnerships/search?${searchParams.toString()}`)
+}
+
+export function getMyCompanyPartnerships(email) {
+  return apiRequest(`/api/v1/company-partnerships/mine?email=${encodeURIComponent(email)}`)
+}
+
+export function createCompanyPartnership(payload) {
+  return apiRequest('/api/v1/company-partnerships', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function acceptCompanyPartnership(partnershipId, email) {
+  return apiRequest(`/api/v1/company-partnerships/${partnershipId}/accept`, {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  })
+}
+
+export function declineCompanyPartnership(partnershipId, email) {
+  return apiRequest(`/api/v1/company-partnerships/${partnershipId}/decline`, {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  })
+}
+
+export function unlinkCompanyPartnership(partnershipId, email) {
+  return apiRequest(`/api/v1/company-partnerships/${partnershipId}?email=${encodeURIComponent(email)}`, {
+    method: 'DELETE',
+  })
+}
+
+export function getCompanyPartnershipTicketTargets(email) {
+  return apiRequest(`/api/v1/company-partnerships/ticket-targets?email=${encodeURIComponent(email)}`)
 }
 
 export function createSector(payload) {
@@ -201,6 +286,12 @@ export function createTeamInvite(payload) {
   return apiRequest('/api/v1/team/invites', {
     method: 'POST',
     body: JSON.stringify(payload),
+  })
+}
+
+export function deleteTeamSector(sectorId, email) {
+  return apiRequest(`/api/v1/team/sectors/${sectorId}?email=${encodeURIComponent(email)}`, {
+    method: 'DELETE',
   })
 }
 
@@ -253,6 +344,18 @@ export function getTeamMembershipNotifications(email) {
   return apiRequest(`/api/v1/notifications/team-memberships?email=${encodeURIComponent(email)}`)
 }
 
+export function getCalendarReminderNotifications(email) {
+  return apiRequest(`/api/v1/notifications/calendar-reminders?email=${encodeURIComponent(email)}`)
+}
+
+export function getCompanyPartnershipNotifications(email) {
+  return apiRequest(`/api/v1/notifications/company-partnerships?email=${encodeURIComponent(email)}`)
+}
+
+export function getCompanyAccessRequestNotifications(email) {
+  return apiRequest(`/api/v1/notifications/company-access-requests?email=${encodeURIComponent(email)}`)
+}
+
 export function acceptTicketTransferNotification(notificationId, email) {
   return apiRequest(`/api/v1/notifications/ticket-transfers/${notificationId}/accept`, {
     method: 'POST',
@@ -262,6 +365,20 @@ export function acceptTicketTransferNotification(notificationId, email) {
 
 export function declineTicketTransferNotification(notificationId, email) {
   return apiRequest(`/api/v1/notifications/ticket-transfers/${notificationId}/decline`, {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  })
+}
+
+export function acceptCompanyAccessRequestNotification(requestId, email) {
+  return apiRequest(`/api/v1/notifications/company-access-requests/${requestId}/accept`, {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  })
+}
+
+export function declineCompanyAccessRequestNotification(requestId, email) {
+  return apiRequest(`/api/v1/notifications/company-access-requests/${requestId}/decline`, {
     method: 'POST',
     body: JSON.stringify({ email }),
   })
@@ -285,6 +402,24 @@ export function deleteTeamMembershipNotification(notificationId, email) {
   )
 }
 
+export function deleteCalendarReminderNotification(notificationId, email) {
+  return apiRequest(
+    `/api/v1/notifications/calendar-reminders/${notificationId}?email=${encodeURIComponent(email)}`,
+    {
+      method: 'DELETE',
+    }
+  )
+}
+
+export function deleteCompanyPartnershipNotification(notificationId, email) {
+  return apiRequest(
+    `/api/v1/notifications/company-partnerships/${notificationId}?email=${encodeURIComponent(email)}`,
+    {
+      method: 'DELETE',
+    }
+  )
+}
+
 export function updateTeamMemberSectors(userId, payload) {
   return apiRequest(`/api/v1/team/members/${userId}/sectors`, {
     method: 'PUT',
@@ -298,8 +433,17 @@ export function removeTeamMemberFromCompany(userId, email) {
   })
 }
 
-export function leaveTeamSector(sectorId, email) {
-  return apiRequest(`/api/v1/team/sectors/${sectorId}/leave?email=${encodeURIComponent(email)}`, {
-    method: 'DELETE',
+export function startWhatsappSession(payload) {
+  return apiRequest('/api/v1/whatsapp/session/start', {
+    method: 'POST',
+    body: JSON.stringify(payload),
   })
+}
+
+export function getWhatsappSessionStatus(adminEmail) {
+  return apiRequest(`/api/v1/whatsapp/session/status?adminEmail=${encodeURIComponent(adminEmail)}`)
+}
+
+export function getWhatsappQrCodeViewUrl(adminEmail) {
+  return `${API_BASE_URL}/api/v1/whatsapp/session/qrcode/view?adminEmail=${encodeURIComponent(adminEmail)}`
 }

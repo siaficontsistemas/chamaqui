@@ -7,6 +7,7 @@ export const PUBLIC_ROUTE_PATHS = {
 
 export const SECTION_ROUTE_PATHS = {
   tickets: '/tickets',
+  calendar: '/calendar',
   reports: '/reports',
   all: '/tickets/all',
   open: '/tickets/open',
@@ -18,6 +19,7 @@ export const SECTION_ROUTE_PATHS = {
 }
 
 const SECTION_MATCHERS = [
+  ['calendar', '/calendar'],
   ['reports', '/reports'],
   ['all', '/tickets/all'],
   ['open', '/tickets/open'],

@@ -60,6 +60,10 @@ public class ProfileService {
 		User user = userRepository.findByEmailIgnoreCase(normalizedEmail)
 			.orElseThrow(() -> new NotFoundException("Perfil não encontrado."));
 
+		if (userRepository.existsByCompanyOwnerIdAndIdNot(user.getId(), user.getId())) {
+			throw new IllegalArgumentException("Remova ou desvincule os participantes da empresa antes de excluir esse perfil.");
+		}
+
 		jdbcTemplate.update("delete from team_invites where email = ?", normalizedEmail);
 		jdbcTemplate.update("delete from ticket_messages where author_id = ?", user.getId());
 		jdbcTemplate.update("delete from ticket_attachments where uploaded_by = ?", user.getId());
@@ -107,6 +111,7 @@ public class ProfileService {
 		jdbcTemplate.update("delete from tickets where sector_id in (select id from sectors where created_by = ?)", admin.getId());
 		jdbcTemplate.update("delete from team_invites where invited_by = ?", admin.getId());
 		jdbcTemplate.update("delete from sectors where created_by = ?", admin.getId());
+		jdbcTemplate.update("update users set company_owner_id = null where company_owner_id = ? and id <> ?", admin.getId(), admin.getId());
 
 		updateAffectedMemberRoles(affectedMembersById.values());
 
@@ -114,6 +119,7 @@ public class ProfileService {
 		ensureHasDefaultRole(admin);
 		admin.setCompanyName(null);
 		admin.setCompanyDocument(null);
+		admin.setCompanyType(null);
 		userRepository.save(admin);
 	}
 

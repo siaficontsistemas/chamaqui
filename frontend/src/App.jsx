@@ -1,13 +1,21 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
+  acceptCompanyAccessRequestNotification,
+  acceptCompanyPartnership,
   acceptTicketTransferNotification,
   acceptTeamInvite,
   closeTicket,
+  createCompanyPartnership,
   createTicket,
   createSector,
   createTeamInvite,
+  declineCompanyAccessRequestNotification,
+  declineCompanyPartnership,
+  deleteTeamSector,
+  deleteCompanyPartnershipNotification,
   deleteTicketAssignmentNotification,
+  deleteCalendarReminderNotification,
   deleteTeamMembershipNotification,
   deleteTicketTransferNotification,
   deleteTeamNotification,
@@ -15,7 +23,12 @@ import {
   deleteProfile,
   declineTicketTransferNotification,
   declineTeamInvite,
+  getCompanyPartnershipTicketTargets,
   getProfile,
+  getMyCompanyPartnerships,
+  getCalendarReminderNotifications,
+  getCompanyAccessRequestNotifications,
+  getCompanyPartnershipNotifications,
   getTicketAssignmentNotifications,
   getTeamMembershipNotifications,
   getTicketTransferNotifications,
@@ -26,9 +39,10 @@ import {
   getTicketById,
   getTicketSummary,
   getTicketTransferCandidates,
-  leaveTeamSector,
   removeTeamMemberFromCompany,
   requestTicketTransfer,
+  searchCompanyPartnershipTargets,
+  unlinkCompanyPartnership,
   updateTeamMemberSectors,
 } from './app/api'
 import { buildNavigationGroups, getVisibleSectors } from './app/dashboardData'
@@ -42,6 +56,7 @@ import {
   getTicketPath,
 } from './app/routes'
 import AllTickets from './app/pages/AllTickets/AllTickets'
+import Calendar from './app/pages/Calendar/Calendar'
 import ClosedTickets from './app/pages/ClosedTickets/ClosedTickets'
 import CreateSector from './app/pages/CreateSector/CreateSector'
 import Home from './app/pages/Home/Home'
@@ -57,6 +72,7 @@ import TicketConversation from './app/pages/TicketConversation/TicketConversatio
 
 const dashboardPageComponents = {
   tickets: Home,
+  calendar: Calendar,
   reports: Reports,
   all: AllTickets,
   open: OpenTickets,
@@ -84,6 +100,18 @@ function normalizeSector(sector) {
   }
 }
 
+function normalizeCurrentUser(user) {
+  if (!user) {
+    return user
+  }
+
+  return {
+    ...user,
+    companyType: user.companyType || '',
+    roles: Array.isArray(user.roles) ? user.roles : [],
+  }
+}
+
 function normalizeTeamMember(member) {
   return {
     id: member.userId,
@@ -108,6 +136,23 @@ function normalizeInvite(invite) {
     updatedAt: invite.updatedAt,
     sectorIds: Array.isArray(invite.sectorIds) ? invite.sectorIds : [],
     sectorNames: Array.isArray(invite.sectorNames) ? invite.sectorNames : [],
+  }
+}
+
+function normalizeCompanyPartnership(partnership) {
+  return {
+    id: partnership.id,
+    status: partnership.status,
+    requesterCompanyId: partnership.requesterCompanyId,
+    requesterCompanyName: partnership.requesterCompanyName || 'Empresa não informada',
+    requesterCompanyDocument: partnership.requesterCompanyDocument || '',
+    targetCompanyId: partnership.targetCompanyId,
+    targetCompanyName: partnership.targetCompanyName || 'Empresa não informada',
+    targetCompanyDocument: partnership.targetCompanyDocument || '',
+    createdAt: partnership.createdAt,
+    respondedAt: partnership.respondedAt,
+    canRespond: Boolean(partnership.canRespond),
+    outgoing: Boolean(partnership.outgoing),
   }
 }
 
@@ -156,38 +201,102 @@ function normalizeTeamMembershipNotification(notification) {
   }
 }
 
+function normalizeCalendarReminderNotification(notification) {
+  return {
+    id: notification.id,
+    obligationId: notification.obligationId,
+    obligationTitle: notification.obligationTitle,
+    obligationDescription: notification.obligationDescription,
+    dueAt: notification.dueAt,
+    reminderAt: notification.reminderAt,
+    createdByName: notification.createdByName,
+    companyName: notification.companyName,
+    status: notification.status,
+    createdAt: notification.createdAt,
+    type: 'calendar-reminder',
+  }
+}
+
+function normalizeCompanyPartnershipNotification(notification) {
+  return {
+    id: notification.id,
+    partnershipId: notification.partnershipId,
+    eventType: notification.eventType,
+    actorName: notification.actorName || 'Administrador não informado',
+    actorCompanyName: notification.actorCompanyName || 'Empresa não informada',
+    requesterCompanyId: notification.requesterCompanyId,
+    requesterCompanyName: notification.requesterCompanyName || 'Empresa não informada',
+    targetCompanyId: notification.targetCompanyId,
+    targetCompanyName: notification.targetCompanyName || 'Empresa não informada',
+    status: notification.status || 'PENDING',
+    canRespond: Boolean(notification.canRespond),
+    createdAt: notification.createdAt,
+    type: 'company-partnership',
+  }
+}
+
+function normalizeCompanyAccessRequestNotification(notification) {
+  return {
+    id: notification.id,
+    requesterUserId: notification.requesterUserId,
+    requesterName: notification.requesterName || 'Usuário não informado',
+    requesterEmail: notification.requesterEmail || '',
+    requesterDocumentNumber: notification.requesterDocumentNumber || '',
+    requestedRole: notification.requestedRole || 'user',
+    companyName: notification.companyName || 'Empresa não informada',
+    companyType: notification.companyType || '',
+    status: notification.status || 'PENDING',
+    createdAt: notification.createdAt,
+    type: 'company-access-request',
+  }
+}
+
 async function fetchDashboardBundle(email) {
   const [
     nextProfile,
     nextSummary,
     nextSectors,
+    nextTicketTargets,
     nextMembers,
     nextReceivedInvites,
     nextSentInvites,
+    nextCompanyPartnerships,
     nextTicketNotifications,
     nextTicketTransferNotifications,
     nextTeamMembershipNotifications,
+    nextCalendarReminderNotifications,
+    nextCompanyPartnershipNotifications,
+    nextCompanyAccessRequestNotifications,
   ] = await Promise.all([
     getProfile(email),
     getTicketSummary(email),
     getSectors(email),
+    getCompanyPartnershipTicketTargets(email),
     getTeamMembers(email),
     getReceivedTeamInvites(email),
     getSentTeamInvites(email),
+    getMyCompanyPartnerships(email),
     getTicketAssignmentNotifications(email),
     getTicketTransferNotifications(email),
     getTeamMembershipNotifications(email),
+    getCalendarReminderNotifications(email),
+    getCompanyPartnershipNotifications(email),
+    getCompanyAccessRequestNotifications(email),
   ])
 
   return {
-    profile: nextProfile,
+    profile: normalizeCurrentUser(nextProfile),
     ticketSummary: nextSummary,
     sectors: Array.isArray(nextSectors) ? nextSectors.map(normalizeSector) : [],
+    ticketTargets: Array.isArray(nextTicketTargets) ? nextTicketTargets.map(normalizeSector) : [],
     teamMembers: Array.isArray(nextMembers) ? nextMembers.map(normalizeTeamMember) : [],
     receivedInvites: Array.isArray(nextReceivedInvites)
       ? nextReceivedInvites.map(normalizeInvite)
       : [],
     sentInvites: Array.isArray(nextSentInvites) ? nextSentInvites.map(normalizeInvite) : [],
+    companyPartnerships: Array.isArray(nextCompanyPartnerships)
+      ? nextCompanyPartnerships.map(normalizeCompanyPartnership)
+      : [],
     ticketNotifications: [
       ...(Array.isArray(nextTicketNotifications)
         ? nextTicketNotifications.map(normalizeTicketNotification)
@@ -197,6 +306,15 @@ async function fetchDashboardBundle(email) {
         : []),
       ...(Array.isArray(nextTeamMembershipNotifications)
         ? nextTeamMembershipNotifications.map(normalizeTeamMembershipNotification)
+        : []),
+      ...(Array.isArray(nextCalendarReminderNotifications)
+        ? nextCalendarReminderNotifications.map(normalizeCalendarReminderNotification)
+        : []),
+      ...(Array.isArray(nextCompanyPartnershipNotifications)
+        ? nextCompanyPartnershipNotifications.map(normalizeCompanyPartnershipNotification)
+        : []),
+      ...(Array.isArray(nextCompanyAccessRequestNotifications)
+        ? nextCompanyAccessRequestNotifications.map(normalizeCompanyAccessRequestNotification)
         : []),
     ],
   }
@@ -226,7 +344,7 @@ function loadStoredSession() {
       return null
     }
 
-    return JSON.parse(rawSession)
+    return normalizeCurrentUser(JSON.parse(rawSession))
   } catch {
     return null
   }
@@ -341,9 +459,11 @@ function App() {
   const [authUser, setAuthUser] = useState(loadStoredSession)
   const [currentUserRole, setCurrentUserRole] = useState(() => getPrimaryRole(loadStoredSession()?.roles))
   const [createdSectors, setCreatedSectors] = useState([])
+  const [ticketTargetSectors, setTicketTargetSectors] = useState([])
   const [teamMembers, setTeamMembers] = useState([])
   const [receivedInvites, setReceivedInvites] = useState([])
   const [sentInvites, setSentInvites] = useState([])
+  const [companyPartnerships, setCompanyPartnerships] = useState([])
   const [ticketNotifications, setTicketNotifications] = useState([])
   const [profile, setProfile] = useState(() => loadStoredSession())
   const [isProfileLoading, setIsProfileLoading] = useState(false)
@@ -357,7 +477,7 @@ function App() {
     () => getSectionIdFromPathname(location.pathname) ?? 'tickets',
     [location.pathname]
   )
-  const currentUser = profile || authUser
+  const currentUser = normalizeCurrentUser(profile || authUser)
   const currentUserEmail = currentUser?.email || ''
   const currentMemberId =
     teamMembers.find((member) => member.email?.toLowerCase() === currentUserEmail.toLowerCase())?.id ?? null
@@ -418,8 +538,12 @@ function App() {
     navigationGroups,
     notifications: notificationItems,
     onAcceptInvite: handleAcceptInvite,
+    onAcceptCompanyAccessRequest: handleAcceptCompanyAccessRequest,
+    onAcceptCompanyPartnership: handleAcceptCompanyPartnership,
     onAcceptTicketTransfer: handleAcceptTicketTransfer,
     onDeleteNotification: handleDeleteNotification,
+    onDeclineCompanyAccessRequest: handleDeclineCompanyAccessRequest,
+    onDeclineCompanyPartnership: handleDeclineCompanyPartnership,
     onDeclineInvite: handleDeclineInvite,
     onDeclineTicketTransfer: handleDeclineTicketTransfer,
     onNavigateLogin: handleNavigateLogin,
@@ -439,9 +563,11 @@ function App() {
     setCurrentUserRole(getPrimaryRole(bundle.profile.roles))
     setTicketSummary(bundle.ticketSummary)
     setCreatedSectors(bundle.sectors)
+    setTicketTargetSectors(bundle.ticketTargets)
     setTeamMembers(bundle.teamMembers)
     setReceivedInvites(bundle.receivedInvites)
     setSentInvites(bundle.sentInvites)
+    setCompanyPartnerships(bundle.companyPartnerships)
     setTicketNotifications(bundle.ticketNotifications)
   }
 
@@ -460,9 +586,11 @@ function App() {
       setProfileError('')
       setTicketSummary(null)
       setCreatedSectors([])
+      setTicketTargetSectors([])
       setTeamMembers([])
       setReceivedInvites([])
       setSentInvites([])
+      setCompanyPartnerships([])
       setTicketNotifications([])
       setTeamDataError('')
       setIsProfileLoading(false)
@@ -513,10 +641,11 @@ function App() {
   }, [authUser?.email])
 
   function handleAuthenticatedUser(user) {
-    setAuthUser(user)
-    setProfile(user)
+    const normalizedUser = normalizeCurrentUser(user)
+    setAuthUser(normalizedUser)
+    setProfile(normalizedUser)
     setProfileError('')
-    setCurrentUserRole(getPrimaryRole(user.roles))
+    setCurrentUserRole(getPrimaryRole(normalizedUser.roles))
     setSelectedTicket(null)
     navigate(SECTION_ROUTE_PATHS.tickets, { replace: true })
   }
@@ -527,9 +656,11 @@ function App() {
     setProfileError('')
     setTicketSummary(null)
     setCreatedSectors([])
+    setTicketTargetSectors([])
     setTeamMembers([])
     setReceivedInvites([])
     setSentInvites([])
+    setCompanyPartnerships([])
     setTicketNotifications([])
     setTeamDataError('')
     setCurrentUserRole('user')
@@ -581,6 +712,10 @@ function App() {
       return
     }
 
+    if (currentUserRole !== 'admin') {
+      throw new Error('Somente administradores podem criar setores.')
+    }
+
     const createdSector = await createSector({
       name: trimmedName,
       description: description.trim(),
@@ -630,6 +765,68 @@ function App() {
     setSelectedTicket(null)
     navigate(SECTION_ROUTE_PATHS.all)
     return createdTicket
+  }
+
+  async function handleSearchPartnershipCompanies(query) {
+    if (!currentUserEmail) {
+      return []
+    }
+
+    return searchCompanyPartnershipTargets(currentUserEmail, query)
+  }
+
+  async function handleCreateCompanyPartnership(targetCompanyId) {
+    if (!currentUserEmail || !targetCompanyId) {
+      return null
+    }
+
+    const partnership = await createCompanyPartnership({
+      requesterEmail: currentUserEmail,
+      targetCompanyId,
+    })
+    await refreshDashboardData(currentUserEmail)
+    return normalizeCompanyPartnership(partnership)
+  }
+
+  async function handleAcceptCompanyPartnership(partnershipId) {
+    if (!currentUserEmail || !partnershipId) {
+      return null
+    }
+
+    const partnership = await acceptCompanyPartnership(partnershipId, currentUserEmail)
+    await refreshDashboardData(currentUserEmail)
+    return normalizeCompanyPartnership(partnership)
+  }
+
+  async function handleDeclineCompanyPartnership(partnershipId) {
+    if (!currentUserEmail || !partnershipId) {
+      return null
+    }
+
+    const partnership = await declineCompanyPartnership(partnershipId, currentUserEmail)
+    await refreshDashboardData(currentUserEmail)
+    return normalizeCompanyPartnership(partnership)
+  }
+
+  async function handleUnlinkCompanyPartnership(partnershipId) {
+    if (!currentUserEmail || !partnershipId) {
+      return null
+    }
+
+    const previousPartnerships = companyPartnerships
+    setCompanyPartnerships((currentPartnerships) =>
+      currentPartnerships.filter((partnership) => partnership.id !== partnershipId)
+    )
+
+    try {
+      await unlinkCompanyPartnership(partnershipId, currentUserEmail)
+    } catch (error) {
+      setCompanyPartnerships(previousPartnerships)
+      throw error
+    }
+
+    await refreshDashboardData(currentUserEmail)
+    return true
   }
 
   async function handleCloseTicket(ticketId) {
@@ -695,30 +892,27 @@ function App() {
     await refreshDashboardData(currentUserEmail)
   }
 
-  async function handleLeaveSector(sectorId) {
-    if (!currentUserEmail) {
-      return
-    }
+  async function handleInviteMember({ cpf, sectors }) {
+    const trimmedCpf = cpf.trim()
 
-    await leaveTeamSector(sectorId, currentUserEmail)
-    await refreshDashboardData(currentUserEmail)
-    navigate(SECTION_ROUTE_PATHS.tickets)
-  }
-
-  async function handleInviteMember({ email, name, sectors }) {
-    const trimmedName = name.trim()
-    const trimmedEmail = email.trim()
-
-    if (!trimmedName || !trimmedEmail || sectors.length === 0 || !currentUserEmail) {
+    if (!trimmedCpf || sectors.length === 0 || !currentUserEmail) {
       return
     }
 
     await createTeamInvite({
-      email: trimmedEmail,
-      invitedName: trimmedName,
+      documentNumber: trimmedCpf,
       invitedByEmail: currentUserEmail,
       sectorIds: sectors,
     })
+    await refreshDashboardData(currentUserEmail)
+  }
+
+  async function handleDeleteSector(sectorId) {
+    if (!sectorId || !currentUserEmail) {
+      return
+    }
+
+    await deleteTeamSector(sectorId, currentUserEmail)
     await refreshDashboardData(currentUserEmail)
   }
 
@@ -737,6 +931,24 @@ function App() {
     }
 
     await declineTeamInvite(inviteId, currentUserEmail)
+    await refreshDashboardData(currentUserEmail)
+  }
+
+  async function handleAcceptCompanyAccessRequest(requestId) {
+    if (!currentUserEmail) {
+      return
+    }
+
+    await acceptCompanyAccessRequestNotification(requestId, currentUserEmail)
+    await refreshDashboardData(currentUserEmail)
+  }
+
+  async function handleDeclineCompanyAccessRequest(requestId) {
+    if (!currentUserEmail) {
+      return
+    }
+
+    await declineCompanyAccessRequestNotification(requestId, currentUserEmail)
     await refreshDashboardData(currentUserEmail)
   }
 
@@ -781,6 +993,18 @@ function App() {
         await refreshDashboardData(currentUserEmail)
         return
       }
+
+      if (notificationOrId.type === 'calendar-reminder') {
+        await deleteCalendarReminderNotification(notificationOrId.id, currentUserEmail)
+        await refreshDashboardData(currentUserEmail)
+        return
+      }
+
+      if (notificationOrId.type === 'company-partnership') {
+        await deleteCompanyPartnershipNotification(notificationOrId.id, currentUserEmail)
+        await refreshDashboardData(currentUserEmail)
+        return
+      }
     }
 
     const inviteId =
@@ -822,19 +1046,26 @@ function App() {
         onAcceptInvite={handleAcceptInvite}
         onAcceptTicketTransfer={handleAcceptTicketTransfer}
         onCreateSector={handleCreateSector}
+        onCreateCompanyPartnership={handleCreateCompanyPartnership}
         onCreateTicket={handleCreateTicket}
+        onAcceptCompanyPartnership={handleAcceptCompanyPartnership}
         onDeclineInvite={handleDeclineInvite}
+        onDeclineCompanyPartnership={handleDeclineCompanyPartnership}
         onDeclineTicketTransfer={handleDeclineTicketTransfer}
         onDeleteAccount={handleDeleteAccount}
         onDeleteCompany={handleDeleteCompany}
+        onUnlinkCompanyPartnership={handleUnlinkCompanyPartnership}
         onDeleteNotification={handleDeleteNotification}
+        onDeleteSector={handleDeleteSector}
         onInviteMember={handleInviteMember}
-        onLeaveSector={handleLeaveSector}
         onNavigatePage={handleNavigatePage}
         onOpenTicket={handleOpenTicket}
+        onRefreshDashboardData={refreshDashboardData}
         onRemoveMemberFromCompany={handleRemoveMemberFromCompany}
+        onSearchPartnershipCompanies={handleSearchPartnershipCompanies}
         onUpdateMemberSectors={handleUpdateMemberSectors}
-        availableTicketSectors={createdSectors}
+        availableTicketSectors={ticketTargetSectors}
+        companyPartnerships={companyPartnerships}
         profileError={profileError}
         receivedInvites={receivedInvites}
         sectors={visibleSectors}
@@ -848,151 +1079,178 @@ function App() {
   }
 
   return (
-    <Routes>
-      <Route
-        path="/"
-        element={
-          <Navigate
-            replace
-            to={authUser ? SECTION_ROUTE_PATHS.tickets : PUBLIC_ROUTE_PATHS.login}
-          />
-        }
-      />
-      <Route
-        path={PUBLIC_ROUTE_PATHS.login}
-        element={
-          authUser ? (
-            <Navigate replace to={SECTION_ROUTE_PATHS.tickets} />
-          ) : (
-            <Login
-              onNavigateHome={handleAuthenticatedUser}
-              onNavigateRegister={() => navigate(PUBLIC_ROUTE_PATHS.register)}
-            />
-          )
-        }
-      />
-      <Route
-        path={PUBLIC_ROUTE_PATHS.register}
-        element={
-          authUser ? (
-            <Navigate replace to={SECTION_ROUTE_PATHS.tickets} />
-          ) : (
-            <Register
-              onNavigateHome={handleAuthenticatedUser}
-              onNavigateLogin={() => navigate(PUBLIC_ROUTE_PATHS.login)}
-            />
-          )
-        }
-      />
-      <Route
-        path={SECTION_ROUTE_PATHS.tickets}
-        element={authUser ? renderDashboardPage('tickets') : <Navigate replace to={PUBLIC_ROUTE_PATHS.login} />}
-      />
-      <Route
-        path={SECTION_ROUTE_PATHS.reports}
-        element={authUser ? renderDashboardPage('reports') : <Navigate replace to={PUBLIC_ROUTE_PATHS.login} />}
-      />
-      <Route
-        path={SECTION_ROUTE_PATHS.all}
-        element={authUser ? renderDashboardPage('all') : <Navigate replace to={PUBLIC_ROUTE_PATHS.login} />}
-      />
-      <Route
-        path={SECTION_ROUTE_PATHS.open}
-        element={authUser ? renderDashboardPage('open') : <Navigate replace to={PUBLIC_ROUTE_PATHS.login} />}
-      />
-      <Route
-        path={SECTION_ROUTE_PATHS.closed}
-        element={authUser ? renderDashboardPage('closed') : <Navigate replace to={PUBLIC_ROUTE_PATHS.login} />}
-      />
-      <Route
-        path={SECTION_ROUTE_PATHS.newTicket}
-        element={authUser ? renderDashboardPage('newTicket') : <Navigate replace to={PUBLIC_ROUTE_PATHS.login} />}
-      />
-      <Route
-        path={SECTION_ROUTE_PATHS.myData}
-        element={authUser ? renderDashboardPage('myData') : <Navigate replace to={PUBLIC_ROUTE_PATHS.login} />}
-      />
-      <Route
-        path={SECTION_ROUTE_PATHS.team}
-        element={
-          authUser ? (
-            canAccessTeamPage ? (
-              renderDashboardPage('team')
-            ) : (
-              <Navigate replace to={SECTION_ROUTE_PATHS.tickets} />
-            )
-          ) : (
-            <Navigate replace to={PUBLIC_ROUTE_PATHS.login} />
-          )
-        }
-      />
-      <Route
-        path={SECTION_ROUTE_PATHS.createSector}
-        element={
-          authUser ? (
-            canAccessCreateSector ? (
-              renderDashboardPage('createSector')
-            ) : (
-              <Navigate replace to={SECTION_ROUTE_PATHS.tickets} />
-            )
-          ) : (
-            <Navigate replace to={PUBLIC_ROUTE_PATHS.login} />
-          )
-        }
-      />
-      <Route
-        path="/sectors/:sectorId"
-        element={
-          authUser ? (
-            sectorPage ? (
-              <Sector
-                headerProps={headerProps}
-                navigationGroups={navigationGroups}
-                onLeaveSector={handleLeaveSector}
-                onNavigatePage={handleNavigatePage}
-                sector={sectorPage}
-                teamMembers={teamMembers}
-                userRole={currentUserRole}
+    <div className="app-shell">
+      <div className="app-shell__routes">
+        <Routes>
+          <Route
+            path="/"
+            element={
+              <Navigate
+                replace
+                to={authUser ? SECTION_ROUTE_PATHS.tickets : PUBLIC_ROUTE_PATHS.login}
               />
-            ) : (
-              <Navigate replace to={SECTION_ROUTE_PATHS.tickets} />
-            )
-          ) : (
-            <Navigate replace to={PUBLIC_ROUTE_PATHS.login} />
-          )
-        }
-      />
-      <Route
-        path="/tickets/:ticketId"
-        element={
-          authUser ? (
-            <TicketConversationRoute
-              currentUser={currentUser}
-              headerProps={headerProps}
-              navigationGroups={navigationGroups}
-              onCloseTicket={handleCloseTicket}
-              onLoadTransferCandidates={handleLoadTransferCandidates}
-              onNavigatePage={handleNavigatePage}
-              onRequestTicketTransfer={handleRequestTicketTransfer}
-              selectedTicket={selectedTicket}
-              setSelectedTicket={setSelectedTicket}
-              userRole={effectiveUserRole}
-            />
-          ) : (
-            <Navigate replace to={PUBLIC_ROUTE_PATHS.login} />
-          )
-        }
-      />
-      <Route
-        path="*"
-        element={
-          <Navigate
-            replace
-            to={authUser ? SECTION_ROUTE_PATHS.tickets : PUBLIC_ROUTE_PATHS.login}
+            }
           />
-        }
-      />
-    </Routes>
+          <Route
+            path={PUBLIC_ROUTE_PATHS.login}
+            element={
+              authUser ? (
+                <Navigate replace to={SECTION_ROUTE_PATHS.tickets} />
+              ) : (
+                <Login
+                  onNavigateHome={handleAuthenticatedUser}
+                  onNavigateRegister={() => navigate(PUBLIC_ROUTE_PATHS.register)}
+                />
+              )
+            }
+          />
+          <Route
+            path={PUBLIC_ROUTE_PATHS.register}
+            element={
+              authUser ? (
+                <Navigate replace to={SECTION_ROUTE_PATHS.tickets} />
+              ) : (
+                <Register
+                  onNavigateHome={handleAuthenticatedUser}
+                  onNavigateLogin={() => navigate(PUBLIC_ROUTE_PATHS.login)}
+                />
+              )
+            }
+          />
+          <Route
+            path={SECTION_ROUTE_PATHS.tickets}
+            element={
+              authUser ? renderDashboardPage('tickets') : <Navigate replace to={PUBLIC_ROUTE_PATHS.login} />
+            }
+          />
+          <Route
+            path={SECTION_ROUTE_PATHS.calendar}
+            element={
+              authUser ? renderDashboardPage('calendar') : <Navigate replace to={PUBLIC_ROUTE_PATHS.login} />
+            }
+          />
+          <Route
+            path={SECTION_ROUTE_PATHS.reports}
+            element={
+              authUser ? renderDashboardPage('reports') : <Navigate replace to={PUBLIC_ROUTE_PATHS.login} />
+            }
+          />
+          <Route
+            path={SECTION_ROUTE_PATHS.all}
+            element={
+              authUser ? renderDashboardPage('all') : <Navigate replace to={PUBLIC_ROUTE_PATHS.login} />
+            }
+          />
+          <Route
+            path={SECTION_ROUTE_PATHS.open}
+            element={
+              authUser ? renderDashboardPage('open') : <Navigate replace to={PUBLIC_ROUTE_PATHS.login} />
+            }
+          />
+          <Route
+            path={SECTION_ROUTE_PATHS.closed}
+            element={
+              authUser ? renderDashboardPage('closed') : <Navigate replace to={PUBLIC_ROUTE_PATHS.login} />
+            }
+          />
+          <Route
+            path={SECTION_ROUTE_PATHS.newTicket}
+            element={
+              authUser ? renderDashboardPage('newTicket') : <Navigate replace to={PUBLIC_ROUTE_PATHS.login} />
+            }
+          />
+          <Route
+            path={SECTION_ROUTE_PATHS.myData}
+            element={
+              authUser ? renderDashboardPage('myData') : <Navigate replace to={PUBLIC_ROUTE_PATHS.login} />
+            }
+          />
+          <Route
+            path={SECTION_ROUTE_PATHS.team}
+            element={
+              authUser ? (
+                canAccessTeamPage ? (
+                  renderDashboardPage('team')
+                ) : (
+                  <Navigate replace to={SECTION_ROUTE_PATHS.tickets} />
+                )
+              ) : (
+                <Navigate replace to={PUBLIC_ROUTE_PATHS.login} />
+              )
+            }
+          />
+          <Route
+            path={SECTION_ROUTE_PATHS.createSector}
+            element={
+              authUser ? (
+                canAccessCreateSector ? (
+                  renderDashboardPage('createSector')
+                ) : (
+                  <Navigate replace to={SECTION_ROUTE_PATHS.tickets} />
+                )
+              ) : (
+                <Navigate replace to={PUBLIC_ROUTE_PATHS.login} />
+              )
+            }
+          />
+          <Route
+            path="/sectors/:sectorId"
+            element={
+              authUser ? (
+                sectorPage ? (
+                  <Sector
+                    headerProps={headerProps}
+                    navigationGroups={navigationGroups}
+                    onNavigatePage={handleNavigatePage}
+                    sector={sectorPage}
+                    teamMembers={teamMembers}
+                    userRole={currentUserRole}
+                  />
+                ) : (
+                  <Navigate replace to={SECTION_ROUTE_PATHS.tickets} />
+                )
+              ) : (
+                <Navigate replace to={PUBLIC_ROUTE_PATHS.login} />
+              )
+            }
+          />
+          <Route
+            path="/tickets/:ticketId"
+            element={
+              authUser ? (
+                <TicketConversationRoute
+                  currentUser={currentUser}
+                  headerProps={headerProps}
+                  navigationGroups={navigationGroups}
+                  onCloseTicket={handleCloseTicket}
+                  onLoadTransferCandidates={handleLoadTransferCandidates}
+                  onNavigatePage={handleNavigatePage}
+                  onRequestTicketTransfer={handleRequestTicketTransfer}
+                  selectedTicket={selectedTicket}
+                  setSelectedTicket={setSelectedTicket}
+                  userRole={effectiveUserRole}
+                />
+              ) : (
+                <Navigate replace to={PUBLIC_ROUTE_PATHS.login} />
+              )
+            }
+          />
+          <Route
+            path="*"
+            element={
+              <Navigate
+                replace
+                to={authUser ? SECTION_ROUTE_PATHS.tickets : PUBLIC_ROUTE_PATHS.login}
+              />
+            }
+          />
+        </Routes>
+      </div>
+
+      <footer className="app-shell__footer">
+        <span>&copy; 2026 Siaficont Sistemas. Todos os direitos reservados.</span>
+      </footer>
+    </div>
   )
 }
 

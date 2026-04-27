@@ -11,11 +11,11 @@ function Team({
   isTeamDataLoading,
   navigationGroups,
   onInviteMember,
-  onLeaveSector,
   onNavigatePage,
   onAcceptInvite,
   onAcceptTicketTransfer,
   onDeleteNotification,
+  onDeleteSector,
   onDeclineInvite,
   onDeclineTicketTransfer,
   onRemoveMemberFromCompany,
@@ -31,15 +31,14 @@ function Team({
   const roleLabel = getRoleLabel(userRole)
   const activeContent = getTeamContent(userRole)
   const visibleTeamMembers = getTeamMembers(userRole, teamMembers)
-  const [inviteName, setInviteName] = useState('')
-  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteCpf, setInviteCpf] = useState('')
   const [inviteSectorIds, setInviteSectorIds] = useState([])
   const [feedbackMessage, setFeedbackMessage] = useState('')
   const [isSubmittingInvite, setIsSubmittingInvite] = useState(false)
   const [processingInviteId, setProcessingInviteId] = useState('')
   const [deletingInviteId, setDeletingInviteId] = useState('')
+  const [processingSectorId, setProcessingSectorId] = useState('')
   const [processingMemberId, setProcessingMemberId] = useState('')
-  const [leavingSectorId, setLeavingSectorId] = useState('')
   const [pendingConfirmation, setPendingConfirmation] = useState(null)
   const [isConfirmingAction, setIsConfirmingAction] = useState(false)
   const sectorNameById = useMemo(
@@ -119,7 +118,7 @@ function Team({
   async function handleInviteSubmit(event) {
     event.preventDefault()
 
-    if (!inviteName.trim() || !inviteEmail.trim() || inviteSectorIds.length === 0) {
+    if (!inviteCpf.trim() || inviteSectorIds.length === 0) {
       return
     }
 
@@ -128,18 +127,34 @@ function Team({
 
     try {
       await onInviteMember({
-        email: inviteEmail,
-        name: inviteName,
+        cpf: inviteCpf,
         sectors: inviteSectorIds,
       })
-      setInviteName('')
-      setInviteEmail('')
+      setInviteCpf('')
       setInviteSectorIds([])
       setFeedbackMessage('Convite enviado com sucesso. O funcionário já pode responder pela central de notificações.')
     } catch (error) {
       setFeedbackMessage(error.message)
     } finally {
       setIsSubmittingInvite(false)
+    }
+  }
+
+  async function handleDeleteSector(sector) {
+    if (!onDeleteSector) {
+      return
+    }
+
+    setProcessingSectorId(sector.id)
+    setFeedbackMessage('')
+
+    try {
+      await onDeleteSector(sector.id)
+      setFeedbackMessage(`O setor ${sector.name} foi excluído com sucesso.`)
+    } catch (error) {
+      setFeedbackMessage(error.message)
+    } finally {
+      setProcessingSectorId('')
     }
   }
 
@@ -189,24 +204,6 @@ function Team({
       setFeedbackMessage(error.message)
     } finally {
       setDeletingInviteId('')
-    }
-  }
-
-  async function handleLeaveSector(sector) {
-    if (!onLeaveSector) {
-      return
-    }
-
-    setLeavingSectorId(sector.id)
-    setFeedbackMessage('')
-
-    try {
-      await onLeaveSector(sector.id)
-      setFeedbackMessage(`Você saiu do setor ${sector.name} com sucesso.`)
-    } catch (error) {
-      setFeedbackMessage(error.message)
-    } finally {
-      setLeavingSectorId('')
     }
   }
 
@@ -260,6 +257,19 @@ function Team({
     })
   }
 
+  function requestDeleteSectorConfirmation(sector) {
+    openConfirmation({
+      title: 'Excluir setor',
+      description: [
+        `Tem certeza que deseja excluir o setor ${sector.name}?`,
+        'Os funcionários serão removidos desse setor e não poderão mais acessá-lo.',
+      ],
+      confirmLabel: 'Excluir',
+      confirmVariant: 'danger',
+      onConfirm: () => handleDeleteSector(sector),
+    })
+  }
+
   function requestDecisionConfirmation(notification, action) {
     const isAccepting = action === 'accept'
 
@@ -287,16 +297,6 @@ function Team({
     })
   }
 
-  function requestLeaveSectorConfirmation(sector) {
-    openConfirmation({
-      title: 'Sair do setor',
-      description: `Tem certeza que deseja sair do setor ${sector.name}?`,
-      confirmLabel: 'Sair do setor',
-      confirmVariant: 'danger',
-      onConfirm: () => handleLeaveSector(sector),
-    })
-  }
-
   function getEmployeeNotificationTitle(notification) {
     if (notification.type === 'ticket-assignment') {
       return `Novo chamado ${notification.ticketProtocol}`
@@ -314,6 +314,10 @@ function Team({
       return notification.removalType === 'COMPANY_REMOVED'
         ? 'Você foi removido da empresa'
         : `Você foi removido do setor ${notification.sectorName}`
+    }
+
+    if (notification.type === 'calendar-reminder') {
+      return `Prazo: ${notification.obligationTitle}`
     }
 
     return notification.invitedByName
@@ -340,6 +344,10 @@ function Team({
       return `O chamado "${notification.ticketTitle}" foi transferido para você por ${notification.senderName}.`
     }
 
+    if (notification.type === 'calendar-reminder') {
+      return `A obrigação "${notification.obligationTitle}" vence em ${formatNotificationDate(notification.dueAt)}.`
+    }
+
     return notification.sectorNames.join(', ')
   }
 
@@ -356,7 +364,30 @@ function Team({
       return 'Novo chamado'
     }
 
+    if (notification.type === 'calendar-reminder') {
+      if (notification.status === 'OVERDUE') {
+        return 'Atrasado'
+      }
+
+      if (notification.status === 'DUE_TODAY') {
+        return 'Vence hoje'
+      }
+
+      return 'Lembrete'
+    }
+
     return getInviteStatusLabel(notification.status)
+  }
+
+  function formatNotificationDate(value) {
+    if (!value) {
+      return 'data não informada'
+    }
+
+    return new Intl.DateTimeFormat('pt-BR', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    }).format(new Date(value))
   }
 
   function formatMemberStatus(status) {
@@ -567,25 +598,13 @@ function Team({
 
                   <div className="ticket-form__grid">
                     <label className="ticket-field">
-                      <span>Nome do funcionário</span>
+                      <span>CPF do funcionário</span>
                       <div className="ticket-field__control">
                         <input
-                          placeholder="Digite o nome do funcionário"
+                          placeholder="Digite o CPF do funcionário"
                           type="text"
-                          value={inviteName}
-                          onChange={(event) => setInviteName(event.target.value)}
-                        />
-                      </div>
-                    </label>
-
-                    <label className="ticket-field">
-                      <span>Email do funcionário</span>
-                      <div className="ticket-field__control">
-                        <input
-                          placeholder="Digite o email de convite"
-                          type="email"
-                          value={inviteEmail}
-                          onChange={(event) => setInviteEmail(event.target.value)}
+                          value={inviteCpf}
+                          onChange={(event) => setInviteCpf(event.target.value)}
                         />
                       </div>
                     </label>
@@ -628,7 +647,7 @@ function Team({
                       type="submit"
                       disabled={
                         isSubmittingInvite ||
-                        !inviteName.trim() || !inviteEmail.trim() || inviteSectorIds.length === 0
+                        !inviteCpf.trim() || inviteSectorIds.length === 0
                       }
                     >
                       {isSubmittingInvite ? 'Enviando...' : 'Convidar funcionário'}
@@ -655,9 +674,7 @@ function Team({
                     >
                       Criar setor
                     </button>
-                  ) : (
-                    <span className="home-panel__badge">Você pode sair</span>
-                  )}
+                  ) : null}
                 </div>
 
                 {sectors.length > 0 ? (
@@ -666,18 +683,15 @@ function Team({
                       <div className="team-sectors__item is-active" key={sector.id}>
                         <span>{sector.name}</span>
                         <strong>{sector.description}</strong>
-                        {userRole === 'employee' ? (
-                          <>
-                            <p className="team-sectors__hint">Clique abaixo para sair deste setor.</p>
-                            <button
-                              className="team-panel__action-button team-panel__action-button--danger team-sectors__leave-button"
-                              type="button"
-                              onClick={() => requestLeaveSectorConfirmation(sector)}
-                              disabled={leavingSectorId === sector.id}
-                            >
-                              {leavingSectorId === sector.id ? 'Saindo...' : 'Sair do setor'}
-                            </button>
-                          </>
+                        {userRole === 'admin' ? (
+                          <button
+                            className="team-panel__action-button team-panel__action-button--danger"
+                            type="button"
+                            onClick={() => requestDeleteSectorConfirmation(sector)}
+                            disabled={isTeamDataLoading || processingSectorId === sector.id}
+                          >
+                            {processingSectorId === sector.id ? 'Excluindo...' : 'Excluir setor'}
+                          </button>
                         ) : null}
                       </div>
                     ))}

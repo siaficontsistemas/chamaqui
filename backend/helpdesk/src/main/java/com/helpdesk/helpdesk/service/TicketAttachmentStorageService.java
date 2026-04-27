@@ -28,14 +28,7 @@ public class TicketAttachmentStorageService {
 
 	public StoredAttachment store(MultipartFile file) {
 		String originalFileName = sanitizeFileName(file.getOriginalFilename());
-		String storageKey = UUID.randomUUID() + "-" + originalFileName;
-		Path targetPath = rootDirectory.resolve(storageKey).normalize();
-
-		ensureRootDirectory();
-
-		if (!targetPath.startsWith(rootDirectory)) {
-			throw new IllegalArgumentException("Nome de arquivo inválido.");
-		}
+		Path targetPath = prepareTargetPath(originalFileName);
 
 		try {
 			Files.copy(file.getInputStream(), targetPath, StandardCopyOption.REPLACE_EXISTING);
@@ -45,9 +38,31 @@ public class TicketAttachmentStorageService {
 
 		return new StoredAttachment(
 			originalFileName,
-			storageKey,
+			targetPath.getFileName().toString(),
 			Objects.requireNonNullElse(file.getContentType(), "application/octet-stream"),
 			file.getSize()
+		);
+	}
+
+	public StoredAttachment store(String originalFileName, String contentType, byte[] content) {
+		if (content == null || content.length == 0) {
+			throw new IllegalArgumentException("Os anexos enviados devem conter conteúdo.");
+		}
+
+		String sanitizedFileName = sanitizeFileName(originalFileName);
+		Path targetPath = prepareTargetPath(sanitizedFileName);
+
+		try {
+			Files.write(targetPath, content);
+		} catch (IOException exception) {
+			throw new IllegalStateException("Não foi possível salvar o arquivo enviado.");
+		}
+
+		return new StoredAttachment(
+			sanitizedFileName,
+			targetPath.getFileName().toString(),
+			Objects.requireNonNullElse(contentType, "application/octet-stream"),
+			content.length
 		);
 	}
 
@@ -75,6 +90,19 @@ public class TicketAttachmentStorageService {
 		} catch (IOException exception) {
 			throw new IllegalStateException("Não foi possível preparar o diretório de anexos.");
 		}
+	}
+
+	private Path prepareTargetPath(String originalFileName) {
+		String storageKey = UUID.randomUUID() + "-" + originalFileName;
+		Path targetPath = rootDirectory.resolve(storageKey).normalize();
+
+		ensureRootDirectory();
+
+		if (!targetPath.startsWith(rootDirectory)) {
+			throw new IllegalArgumentException("Nome de arquivo inválido.");
+		}
+
+		return targetPath;
 	}
 
 	private String sanitizeFileName(String value) {

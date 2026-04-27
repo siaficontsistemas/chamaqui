@@ -122,6 +122,10 @@ public class Sector {
 		return archivedAt;
 	}
 
+	public void setArchivedAt(OffsetDateTime archivedAt) {
+		this.archivedAt = archivedAt;
+	}
+
 	public Set<SectorMember> getMembers() {
 		return members;
 	}

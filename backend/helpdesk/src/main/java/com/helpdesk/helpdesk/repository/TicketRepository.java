@@ -16,9 +16,15 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
 	@Query("""
 		select distinct ticket
 		from Ticket ticket
-		where lower(ticket.requester.email) = lower(:email)
-			or lower(ticket.sector.createdBy.email) = lower(:email)
-			or lower(ticket.assignedTo.email) = lower(:email)
+		left join ticket.requester requester
+		left join requester.companyOwner requesterCompanyOwner
+		left join ticket.sector sector
+		left join sector.createdBy sectorOwner
+		left join ticket.assignedTo assignedTo
+		where lower(requester.email) = lower(:email)
+			or lower(requesterCompanyOwner.email) = lower(:email)
+			or lower(sectorOwner.email) = lower(:email)
+			or lower(assignedTo.email) = lower(:email)
 		order by ticket.createdAt desc
 		""")
 	@EntityGraph(attributePaths = {
@@ -35,11 +41,17 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
 	@Query("""
 		select distinct ticket
 		from Ticket ticket
+		left join ticket.requester requester
+		left join requester.companyOwner requesterCompanyOwner
+		left join ticket.sector sector
+		left join sector.createdBy sectorOwner
+		left join ticket.assignedTo assignedTo
 		where ticket.status.code in :statusCodes
 			and (
-				lower(ticket.requester.email) = lower(:email)
-				or lower(ticket.sector.createdBy.email) = lower(:email)
-				or lower(ticket.assignedTo.email) = lower(:email)
+				lower(requester.email) = lower(:email)
+				or lower(requesterCompanyOwner.email) = lower(:email)
+				or lower(sectorOwner.email) = lower(:email)
+				or lower(assignedTo.email) = lower(:email)
 			)
 		order by ticket.createdAt desc
 		""")
@@ -60,11 +72,17 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
 	@Query("""
 		select distinct ticket
 		from Ticket ticket
+		left join ticket.requester requester
+		left join requester.companyOwner requesterCompanyOwner
+		left join ticket.sector sector
+		left join sector.createdBy sectorOwner
+		left join ticket.assignedTo assignedTo
 		where ticket.id = :id
 			and (
-				lower(ticket.requester.email) = lower(:email)
-				or lower(ticket.sector.createdBy.email) = lower(:email)
-				or lower(ticket.assignedTo.email) = lower(:email)
+				lower(requester.email) = lower(:email)
+				or lower(requesterCompanyOwner.email) = lower(:email)
+				or lower(sectorOwner.email) = lower(:email)
+				or lower(assignedTo.email) = lower(:email)
 			)
 		""")
 	@EntityGraph(attributePaths = {

@@ -15,26 +15,55 @@ function CreateSector({
   const roleLabel = getRoleLabel(userRole)
   const [sectorName, setSectorName] = useState('')
   const [sectorDescription, setSectorDescription] = useState('')
+  const [feedbackMessage, setFeedbackMessage] = useState('')
+  const [feedbackType, setFeedbackType] = useState('error')
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const existingSectorNames = useMemo(
     () => sectors.map((sector) => sector.name.toLowerCase()),
     [sectors]
   )
   const normalizedName = sectorName.trim().toLowerCase()
   const hasDuplicate = normalizedName.length > 0 && existingSectorNames.includes(normalizedName)
+  const canCreateSector = userRole === 'admin'
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault()
 
-    if (!sectorName.trim() || hasDuplicate) {
+    if (!sectorName.trim()) {
+      setFeedbackType('error')
+      setFeedbackMessage('Informe o nome do setor antes de continuar.')
       return
     }
 
-    onCreateSector({
-      name: sectorName,
-      description: sectorDescription,
-    })
-    setSectorName('')
-    setSectorDescription('')
+    if (hasDuplicate) {
+      setFeedbackType('error')
+      setFeedbackMessage('Já existe um setor com esse nome.')
+      return
+    }
+
+    if (!canCreateSector) {
+      setFeedbackType('error')
+      setFeedbackMessage('Somente administradores podem criar setores.')
+      return
+    }
+
+    try {
+      setIsSubmitting(true)
+      setFeedbackMessage('')
+      await onCreateSector({
+        name: sectorName,
+        description: sectorDescription,
+      })
+      setSectorName('')
+      setSectorDescription('')
+      setFeedbackType('success')
+      setFeedbackMessage('Setor criado com sucesso.')
+    } catch (error) {
+      setFeedbackType('error')
+      setFeedbackMessage(error.message || 'Não foi possível criar o setor.')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -84,6 +113,16 @@ function CreateSector({
                   </div>
                 </div>
 
+                {feedbackMessage ? (
+                  <p
+                    className={`profile-form__feedback${
+                      feedbackType === 'success' ? ' profile-form__feedback--success' : ''
+                    }`}
+                  >
+                    {feedbackMessage}
+                  </p>
+                ) : null}
+
                 <div className="ticket-form__grid">
                   <label className="ticket-field">
                     <span>Nome do setor</span>
@@ -92,6 +131,7 @@ function CreateSector({
                         placeholder="Digite o nome do setor"
                         type="text"
                         value={sectorName}
+                        disabled={!canCreateSector || isSubmitting}
                         onChange={(event) => setSectorName(event.target.value)}
                       />
                     </div>
@@ -104,6 +144,7 @@ function CreateSector({
                         placeholder="Descreva o objetivo do setor"
                         type="text"
                         value={sectorDescription}
+                        disabled={!canCreateSector || isSubmitting}
                         onChange={(event) => setSectorDescription(event.target.value)}
                       />
                     </div>
@@ -114,10 +155,16 @@ function CreateSector({
                   <span>
                     {hasDuplicate
                       ? 'Já existe um setor com esse nome.'
+                      : isSubmitting
+                        ? 'Criando setor...'
                       : 'Depois de criar, vincule os funcionários a esse setor na tela de equipe.'}
                   </span>
-                  <button className="team-invite__button" type="submit" disabled={hasDuplicate}>
-                    Criar setor
+                  <button
+                    className="team-invite__button"
+                    type="submit"
+                    disabled={hasDuplicate || !canCreateSector || isSubmitting}
+                  >
+                    {isSubmitting ? 'Criando...' : 'Criar setor'}
                   </button>
                 </div>
               </form>

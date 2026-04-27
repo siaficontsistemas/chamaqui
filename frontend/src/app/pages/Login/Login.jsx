@@ -12,6 +12,7 @@ function Login({ onNavigateHome, onNavigateRegister }) {
     email: '',
     password: '',
   })
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -44,7 +45,7 @@ function Login({ onNavigateHome, onNavigateRegister }) {
         <aside className="auth-card__brand">
           <BrandMark />
           <div className="auth-card__welcome">
-            <h1>Bem-vindo ao helpdesk da Lopes Consultoria</h1>
+            <h1>Bem-vindo ao ChamAqui Helpdesk</h1>
             <p>
               Entre na sua conta para acompanhar chamados e centralizar o seu
               atendimento.
@@ -73,7 +74,7 @@ function Login({ onNavigateHome, onNavigateRegister }) {
                 <input
                   id={field.id}
                   name={field.id}
-                  type={field.type}
+                  type={field.id === 'password' && isPasswordVisible ? 'text' : field.type}
                   placeholder={field.label}
                   value={credentials[field.id]}
                   onChange={(event) =>
@@ -83,6 +84,17 @@ function Login({ onNavigateHome, onNavigateRegister }) {
                     }))
                   }
                 />
+                {field.id === 'password' ? (
+                  <button
+                    className="form-field__toggle"
+                    type="button"
+                    aria-label={isPasswordVisible ? 'Ocultar senha' : 'Mostrar senha'}
+                    aria-pressed={isPasswordVisible}
+                    onClick={() => setIsPasswordVisible((currentValue) => !currentValue)}
+                  >
+                    {isPasswordVisible ? <EyeOffIcon /> : <EyeIcon />}
+                  </button>
+                ) : null}
               </label>
             ))}
 
@@ -118,10 +130,8 @@ export default Login
 
 function BrandMark() {
   return (
-    <div className="brand-mark" aria-label="Lopes Consultoria">
-      <strong className="brand-mark__name">LOPES</strong>
-      <span className="brand-mark__accent">CONSULTORIA</span>
-      <span className="brand-mark__subtitle">GESTÃO PÚBLICA</span>
+    <div className="brand-mark" aria-label="ChamaAqui Helpdesk">
+      <img className="brand-mark__logo" src="/logo_chamaqui.png" alt="ChamaAqui Helpdesk" />
     </div>
   )
 }
@@ -145,6 +155,62 @@ function LockIcon() {
     <svg viewBox="0 0 24 24" fill="none">
       <path
         d="M7 11V8a5 5 0 1 1 10 0v3m-9 0h8a1 1 0 0 1 1 1v7H7v-7a1 1 0 0 1 1-1Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function EyeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none">
+      <path
+        d="M2.75 12S6.5 5.75 12 5.75 21.25 12 21.25 12 17.5 18.25 12 18.25 2.75 12 2.75 12Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M12 14.75a2.75 2.75 0 1 0 0-5.5 2.75 2.75 0 0 0 0 5.5Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function EyeOffIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none">
+      <path
+        d="M3 3 21 21"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M10.58 6.93A9.77 9.77 0 0 1 12 6.75c5.5 0 9.25 5.25 9.25 5.25a18.8 18.8 0 0 1-3.2 3.74"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M6.63 6.63A18.2 18.2 0 0 0 2.75 12s3.75 5.25 9.25 5.25c1.61 0 3.05-.45 4.31-1.09"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M9.88 9.88A3 3 0 0 0 14.12 14.12"
         stroke="currentColor"
         strokeWidth="1.7"
         strokeLinecap="round"

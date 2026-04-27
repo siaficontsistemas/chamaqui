@@ -95,9 +95,9 @@ public class TeamController {
 		return teamService.removeMemberFromCompany(userId, email);
 	}
 
-	@DeleteMapping("/sectors/{sectorId}/leave")
+	@DeleteMapping("/sectors/{sectorId}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
-	public void leaveSector(@PathVariable UUID sectorId, @RequestParam String email) {
-		teamService.leaveSector(sectorId, email);
+	public void deleteSector(@PathVariable UUID sectorId, @RequestParam String email) {
+		teamService.deleteSector(sectorId, email);
 	}
 }

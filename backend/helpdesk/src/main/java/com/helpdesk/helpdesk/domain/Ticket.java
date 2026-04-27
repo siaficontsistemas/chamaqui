@@ -5,6 +5,8 @@ import java.util.UUID;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -62,6 +64,10 @@ public class Ticket {
 	@ManyToOne(fetch = FetchType.LAZY, optional = false)
 	@JoinColumn(name = "priority_id", nullable = false)
 	private TicketPriority priority;
+
+	@Enumerated(EnumType.STRING)
+	@Column(nullable = false, length = 20)
+	private TicketChannel channel = TicketChannel.PORTAL;
 
 	@Column(name = "opened_at", nullable = false)
 	private OffsetDateTime openedAt;
@@ -195,6 +201,14 @@ public class Ticket {
 
 	public void setPriority(TicketPriority priority) {
 		this.priority = priority;
+	}
+
+	public TicketChannel getChannel() {
+		return channel;
+	}
+
+	public void setChannel(TicketChannel channel) {
+		this.channel = channel;
 	}
 
 	public OffsetDateTime getOpenedAt() {

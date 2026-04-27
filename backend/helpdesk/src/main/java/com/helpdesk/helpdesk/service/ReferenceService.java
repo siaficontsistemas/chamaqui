@@ -5,10 +5,13 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.helpdesk.helpdesk.domain.CompanyType;
 import com.helpdesk.helpdesk.dto.reference.ReferenceItemResponse;
 import com.helpdesk.helpdesk.repository.RoleRepository;
+import com.helpdesk.helpdesk.repository.SectorRepository;
 import com.helpdesk.helpdesk.repository.TicketPriorityRepository;
 import com.helpdesk.helpdesk.repository.TicketStatusRepository;
+import com.helpdesk.helpdesk.repository.UserRepository;
 
 @Service
 public class ReferenceService {
@@ -16,15 +19,21 @@ public class ReferenceService {
 	private final RoleRepository roleRepository;
 	private final TicketStatusRepository ticketStatusRepository;
 	private final TicketPriorityRepository ticketPriorityRepository;
+	private final UserRepository userRepository;
+	private final SectorRepository sectorRepository;
 
 	public ReferenceService(
 		RoleRepository roleRepository,
 		TicketStatusRepository ticketStatusRepository,
-		TicketPriorityRepository ticketPriorityRepository
+		TicketPriorityRepository ticketPriorityRepository,
+		UserRepository userRepository,
+		SectorRepository sectorRepository
 	) {
 		this.roleRepository = roleRepository;
 		this.ticketStatusRepository = ticketStatusRepository;
 		this.ticketPriorityRepository = ticketPriorityRepository;
+		this.userRepository = userRepository;
+		this.sectorRepository = sectorRepository;
 	}
 
 	@Transactional(readOnly = true)
@@ -46,6 +55,25 @@ public class ReferenceService {
 	public List<ReferenceItemResponse> getTicketPriorities() {
 		return ticketPriorityRepository.findAllByOrderBySortOrderAsc().stream()
 			.map(priority -> new ReferenceItemResponse(priority.getId(), priority.getCode(), priority.getName(), priority.getSortOrder()))
+			.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public List<ReferenceItemResponse> getCompanies(String companyTypeValue) {
+		CompanyType companyType = CompanyType.fromValue(companyTypeValue);
+		if (companyType == null) {
+			throw new IllegalArgumentException("Informe o tipo de empresa para listar as empresas disponíveis.");
+		}
+
+		return userRepository.findVisibleCompaniesByType(companyType).stream()
+			.map(user -> new ReferenceItemResponse(user.getId(), user.getCompanyDocument(), user.getCompanyName(), null))
+			.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public List<ReferenceItemResponse> getCompanySectors(java.util.UUID companyOwnerId) {
+		return sectorRepository.findActiveByCreatedByIdOrderByNameAsc(companyOwnerId).stream()
+			.map(sector -> new ReferenceItemResponse(sector.getId(), sector.getSlug(), sector.getName(), null))
 			.toList();
 	}
 }

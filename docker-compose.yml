@@ -30,8 +30,27 @@ services:
       SPRING_MAIL_SMTP_AUTH: ${SPRING_MAIL_SMTP_AUTH}
       SPRING_MAIL_SMTP_STARTTLS_ENABLE: ${SPRING_MAIL_SMTP_STARTTLS_ENABLE}
       APP_MAIL_TICKET_CLOSURE_FROM: ${APP_MAIL_TICKET_CLOSURE_FROM}
+      APP_WHATSAPP_BASE_URL: ${APP_WHATSAPP_BASE_URL:-http://baileys:21465}
+      APP_WHATSAPP_API_KEY: ${APP_WHATSAPP_API_KEY:-}
+      APP_WHATSAPP_WEBHOOK_URL: ${APP_WHATSAPP_WEBHOOK_URL:-http://backend:4200/webhook}
     ports:
       - "4200:4200"
+
+  baileys:
+    build:
+      context: ./baileys-service
+      dockerfile: Dockerfile
+    container_name: helpdesk-baileys
+    restart: unless-stopped
+    environment:
+      PORT: "21465"
+      BAILEYS_API_KEY: ${APP_WHATSAPP_API_KEY:-}
+      APP_WHATSAPP_WEBHOOK_URL: ${APP_WHATSAPP_WEBHOOK_URL:-http://backend:4200/webhook}
+      BAILEYS_LOG_LEVEL: ${BAILEYS_LOG_LEVEL:-silent}
+    ports:
+      - "21465:21465"
+    volumes:
+      - baileys_auth:/data/auth
 
   postgres:
     image: postgres:17-alpine
@@ -52,3 +71,4 @@ services:
 
 volumes:
   postgres_data:
+  baileys_auth:

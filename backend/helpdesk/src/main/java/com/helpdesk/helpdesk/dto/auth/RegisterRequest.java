@@ -1,5 +1,7 @@
 package com.helpdesk.helpdesk.dto.auth;
 
+import java.util.UUID;
+
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
@@ -10,8 +12,11 @@ public record RegisterRequest(
 	@NotBlank @Email @Size(max = 150) String email,
 	@Size(max = 30) String phoneNumber,
 	@NotBlank @Size(min = 11, max = 20) String documentNumber,
+	UUID companyOwnerId,
 	@Size(max = 150) String companyName,
 	@Size(max = 20) String companyDocument,
+	@Pattern(regexp = "requester|responder|REQUESTER|RESPONDER", message = "O tipo de empresa informado é inválido.")
+	String companyType,
 	@NotBlank @Size(min = 8, max = 60) String password,
 	@NotBlank
 	@Pattern(regexp = "admin|employee|user", message = "O perfil informado é inválido.")

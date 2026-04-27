@@ -1,5 +1,3 @@
-import { useState } from 'react'
-import ConfirmActionModal from '../../components/confirm-action-modal/ConfirmActionModal'
 import Header from '../../components/header/Header'
 import Sidebar from '../../components/sidebar/Sidebar'
 import { getRoleLabel } from '../../dashboardData'
@@ -8,7 +6,6 @@ import '../Home/Home.css'
 function Sector({
   headerProps,
   navigationGroups,
-  onLeaveSector,
   onNavigatePage,
   sector,
   teamMembers = [],
@@ -16,8 +13,6 @@ function Sector({
 }) {
   const roleLabel = getRoleLabel(userRole)
   const assignedMembers = teamMembers.filter((member) => (member.sectors ?? []).includes(sector.id))
-  const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false)
-  const [isLeavingSector, setIsLeavingSector] = useState(false)
   const summaryCards = [
     {
       id: 'sector',
@@ -51,21 +46,6 @@ function Sector({
           : 'Visualiza somente o setor em que participa',
     },
   ]
-
-  async function handleLeaveSector() {
-    if (!onLeaveSector) {
-      return
-    }
-
-    setIsLeavingSector(true)
-
-    try {
-      await onLeaveSector(sector.id)
-      setIsLeaveModalOpen(false)
-    } finally {
-      setIsLeavingSector(false)
-    }
-  }
 
   return (
     <main className="home-page">
@@ -104,17 +84,6 @@ function Sector({
                     onClick={() => onNavigatePage('createSector')}
                   >
                     Criar setor
-                  </button>
-                </div>
-              ) : userRole === 'employee' ? (
-                <div className="home-content__actions">
-                  <button
-                    className="home-content__button home-content__button--danger"
-                    type="button"
-                    onClick={() => setIsLeaveModalOpen(true)}
-                    disabled={isLeavingSector}
-                  >
-                    {isLeavingSector ? 'Saindo...' : 'Sair do setor'}
                   </button>
                 </div>
               ) : null}
@@ -170,16 +139,6 @@ function Sector({
         </section>
       </div>
 
-      <ConfirmActionModal
-        isOpen={isLeaveModalOpen}
-        isProcessing={isLeavingSector}
-        title="Sair do setor"
-        description={`Tem certeza que deseja sair do setor ${sector.name}?`}
-        confirmLabel="Sair do setor"
-        confirmVariant="danger"
-        onCancel={() => setIsLeaveModalOpen(false)}
-        onConfirm={handleLeaveSector}
-      />
     </main>
   )
 }

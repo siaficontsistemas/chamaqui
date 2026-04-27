@@ -15,5 +15,8 @@ public interface TicketAttachmentRepository extends JpaRepository<TicketAttachme
 	List<TicketAttachment> findByTicketIdOrderByCreatedAtAsc(UUID ticketId);
 
 	@EntityGraph(attributePaths = {"uploadedBy", "message", "ticket"})
+	List<TicketAttachment> findByMessageIdOrderByCreatedAtAsc(UUID messageId);
+
+	@EntityGraph(attributePaths = {"uploadedBy", "message", "ticket"})
 	Optional<TicketAttachment> findByIdAndTicketId(UUID id, UUID ticketId);
 }

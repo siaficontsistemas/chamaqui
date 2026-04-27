@@ -15,6 +15,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.JoinTable;
 import jakarta.persistence.ManyToMany;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
@@ -39,6 +40,9 @@ public class User {
 	@Column(name = "phone_number", length = 30)
 	private String phoneNumber;
 
+	@Column(name = "whatsapp_transport_id", length = 80)
+	private String whatsappTransportId;
+
 	@Column(name = "document_number", length = 20)
 	private String documentNumber;
 
@@ -49,11 +53,22 @@ public class User {
 	private String companyDocument;
 
 	@Enumerated(EnumType.STRING)
+	@Column(name = "company_type", length = 20)
+	private CompanyType companyType;
+
+	@ManyToOne
+	@JoinColumn(name = "company_owner_id")
+	private User companyOwner;
+
+	@Enumerated(EnumType.STRING)
 	@Column(nullable = false, length = 20)
 	private UserStatus status = UserStatus.ACTIVE;
 
 	@Column(name = "is_email_verified", nullable = false)
 	private boolean emailVerified;
+
+	@Column(name = "is_simplified", nullable = false)
+	private boolean simplified;
 
 	@Column(name = "last_login_at")
 	private OffsetDateTime lastLoginAt;
@@ -123,6 +138,14 @@ public class User {
 		this.phoneNumber = phoneNumber;
 	}
 
+	public String getWhatsappTransportId() {
+		return whatsappTransportId;
+	}
+
+	public void setWhatsappTransportId(String whatsappTransportId) {
+		this.whatsappTransportId = whatsappTransportId;
+	}
+
 	public String getDocumentNumber() {
 		return documentNumber;
 	}
@@ -147,6 +170,22 @@ public class User {
 		this.companyDocument = companyDocument;
 	}
 
+	public CompanyType getCompanyType() {
+		return companyType;
+	}
+
+	public void setCompanyType(CompanyType companyType) {
+		this.companyType = companyType;
+	}
+
+	public User getCompanyOwner() {
+		return companyOwner;
+	}
+
+	public void setCompanyOwner(User companyOwner) {
+		this.companyOwner = companyOwner;
+	}
+
 	public UserStatus getStatus() {
 		return status;
 	}
@@ -161,6 +200,14 @@ public class User {
 
 	public void setEmailVerified(boolean emailVerified) {
 		this.emailVerified = emailVerified;
+	}
+
+	public boolean isSimplified() {
+		return simplified;
+	}
+
+	public void setSimplified(boolean simplified) {
+		this.simplified = simplified;
 	}
 
 	public OffsetDateTime getLastLoginAt() {

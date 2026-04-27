@@ -9,8 +9,12 @@ function Header({
   navigationGroups = [],
   onNavigateLogin,
   onAcceptInvite,
+  onAcceptCompanyAccessRequest,
+  onAcceptCompanyPartnership,
   onAcceptTicketTransfer,
   onDeleteNotification,
+  onDeclineCompanyAccessRequest,
+  onDeclineCompanyPartnership,
   onDeclineInvite,
   onDeclineTicketTransfer,
   onSectionChange,
@@ -70,6 +74,26 @@ function Header({
         : `Você foi removido do setor ${notification.sectorName}`
     }
 
+    if (notification.type === 'calendar-reminder') {
+      return `Prazo: ${notification.obligationTitle}`
+    }
+
+    if (notification.type === 'company-partnership') {
+      if (notification.eventType === 'REQUESTED') {
+        return `${notification.actorCompanyName} solicitou parceria`
+      }
+
+      if (notification.eventType === 'ACCEPTED') {
+        return `${notification.actorCompanyName} aceitou a parceria`
+      }
+
+      return `${notification.actorCompanyName} desfez a parceria`
+    }
+
+    if (notification.type === 'company-access-request') {
+      return `${notification.requesterName} solicitou entrada na empresa`
+    }
+
     if (notification.type === 'received') {
       return `${notification.invitedByName} convidou você`
     }
@@ -104,6 +128,31 @@ function Header({
       }
 
       return `${notification.removedByName} removeu sua participação do setor ${notification.sectorName}.`
+    }
+
+    if (notification.type === 'calendar-reminder') {
+      return `A obrigação "${notification.obligationTitle}" da empresa ${notification.companyName || 'informada'} vence em ${formatNotificationDate(notification.dueAt)}.`
+    }
+
+    if (notification.type === 'company-partnership') {
+      if (notification.eventType === 'REQUESTED') {
+        return `${notification.actorName} enviou uma solicitação entre ${notification.requesterCompanyName} e ${notification.targetCompanyName}.`
+      }
+
+      if (notification.eventType === 'ACCEPTED') {
+        return `${notification.actorName} confirmou o vínculo entre ${notification.requesterCompanyName} e ${notification.targetCompanyName}.`
+      }
+
+      return `${notification.actorName} removeu o vínculo entre ${notification.requesterCompanyName} e ${notification.targetCompanyName}.`
+    }
+
+    if (notification.type === 'company-access-request') {
+      const participationLabel =
+        notification.requestedRole === 'employee' ? 'responder chamados' : 'criar chamados'
+      const documentLabel = notification.requesterDocumentNumber
+        ? ` CPF ${notification.requesterDocumentNumber}.`
+        : ''
+      return `${notification.requesterName} (${notification.requesterEmail}) pediu acesso à empresa ${notification.companyName} para ${participationLabel}.${documentLabel}`
     }
 
     const sectorNames = notification.sectorNames?.join(', ') || 'setor não informado'
@@ -146,6 +195,34 @@ function Header({
       return 'Removido'
     }
 
+    if (notification.type === 'calendar-reminder') {
+      if (notification.status === 'OVERDUE') {
+        return 'Atrasado'
+      }
+
+      if (notification.status === 'DUE_TODAY') {
+        return 'Vence hoje'
+      }
+
+      return 'Lembrete'
+    }
+
+    if (notification.type === 'company-partnership') {
+      if (notification.eventType === 'REQUESTED') {
+        return 'Pendente'
+      }
+
+      if (notification.eventType === 'ACCEPTED') {
+        return 'Aceito'
+      }
+
+      return 'Removido'
+    }
+
+    if (notification.type === 'company-access-request') {
+      return 'Pendente'
+    }
+
     if (notification.status === 'PENDING') {
       return 'Pendente'
     }
@@ -162,7 +239,21 @@ function Header({
   }
 
   function canDeleteNotification(notification) {
-    return !(notification.type === 'ticket-transfer' && notification.status === 'PENDING')
+    return !(
+      (notification.type === 'ticket-transfer' && notification.status === 'PENDING') ||
+      notification.type === 'company-access-request'
+    )
+  }
+
+  function formatNotificationDate(value) {
+    if (!value) {
+      return 'data não informada'
+    }
+
+    return new Intl.DateTimeFormat('pt-BR', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    }).format(new Date(value))
   }
 
   async function handleNotificationAction(inviteId, type, action) {
@@ -256,6 +347,42 @@ function Header({
           notification.id,
           isAccepting ? 'accept-transfer' : 'decline-transfer',
           isAccepting ? onAcceptTicketTransfer : onDeclineTicketTransfer
+        ),
+    })
+  }
+
+  function requestPartnershipConfirmation(notification, actionType) {
+    const isAccepting = actionType === 'accept'
+    const actionLabel = isAccepting ? 'aceitar' : 'recusar'
+
+    openConfirmation({
+      title: isAccepting ? 'Aceitar parceria' : 'Recusar parceria',
+      description: `Tem certeza que deseja ${actionLabel} a solicitação de parceria da empresa ${notification.actorCompanyName}?`,
+      confirmLabel: isAccepting ? 'Aceitar' : 'Recusar',
+      confirmVariant: isAccepting ? 'primary' : 'danger',
+      onConfirm: () =>
+        handleNotificationAction(
+          notification.partnershipId,
+          isAccepting ? 'accept-partnership' : 'decline-partnership',
+          isAccepting ? onAcceptCompanyPartnership : onDeclineCompanyPartnership
+        ),
+    })
+  }
+
+  function requestCompanyAccessConfirmation(notification, actionType) {
+    const isAccepting = actionType === 'accept'
+    const actionLabel = isAccepting ? 'aceitar' : 'recusar'
+
+    openConfirmation({
+      title: isAccepting ? 'Aprovar acesso' : 'Recusar acesso',
+      description: `Tem certeza que deseja ${actionLabel} a solicitação de ${notification.requesterName} para entrar na empresa ${notification.companyName}?`,
+      confirmLabel: isAccepting ? 'Aprovar' : 'Recusar',
+      confirmVariant: isAccepting ? 'primary' : 'danger',
+      onConfirm: () =>
+        handleNotificationAction(
+          notification.id,
+          isAccepting ? 'accept-company-access' : 'decline-company-access',
+          isAccepting ? onAcceptCompanyAccessRequest : onDeclineCompanyAccessRequest
         ),
     })
   }
@@ -543,6 +670,61 @@ function Header({
                       >
                         {processingNotificationAction.inviteId === notification.id
                         && processingNotificationAction.type === 'decline-transfer'
+                          ? 'Processando...'
+                          : 'Recusar'}
+                      </button>
+                    </div>
+                  ) : null}
+                  {notification.type === 'company-partnership' &&
+                  notification.eventType === 'REQUESTED' &&
+                  notification.canRespond ? (
+                    <div className="home-notification-card__actions">
+                      <button
+                        className="home-notification-card__button"
+                        type="button"
+                        onClick={() => requestPartnershipConfirmation(notification, 'accept')}
+                        disabled={processingNotificationAction.inviteId === notification.partnershipId}
+                      >
+                        {processingNotificationAction.inviteId === notification.partnershipId &&
+                        processingNotificationAction.type === 'accept-partnership'
+                          ? 'Processando...'
+                          : 'Aceitar'}
+                      </button>
+                      <button
+                        className="home-notification-card__button home-notification-card__button--ghost"
+                        type="button"
+                        onClick={() => requestPartnershipConfirmation(notification, 'decline')}
+                        disabled={processingNotificationAction.inviteId === notification.partnershipId}
+                      >
+                        {processingNotificationAction.inviteId === notification.partnershipId &&
+                        processingNotificationAction.type === 'decline-partnership'
+                          ? 'Processando...'
+                          : 'Recusar'}
+                      </button>
+                    </div>
+                  ) : null}
+                  {notification.type === 'company-access-request' &&
+                  notification.status === 'PENDING' ? (
+                    <div className="home-notification-card__actions">
+                      <button
+                        className="home-notification-card__button"
+                        type="button"
+                        onClick={() => requestCompanyAccessConfirmation(notification, 'accept')}
+                        disabled={processingNotificationAction.inviteId === notification.id}
+                      >
+                        {processingNotificationAction.inviteId === notification.id &&
+                        processingNotificationAction.type === 'accept-company-access'
+                          ? 'Processando...'
+                          : 'Aprovar'}
+                      </button>
+                      <button
+                        className="home-notification-card__button home-notification-card__button--ghost"
+                        type="button"
+                        onClick={() => requestCompanyAccessConfirmation(notification, 'decline')}
+                        disabled={processingNotificationAction.inviteId === notification.id}
+                      >
+                        {processingNotificationAction.inviteId === notification.id &&
+                        processingNotificationAction.type === 'decline-company-access'
                           ? 'Processando...'
                           : 'Recusar'}
                       </button>
