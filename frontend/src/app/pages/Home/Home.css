@@ -1805,6 +1805,11 @@
   padding: 0;
 }
 
+.ticket-list__nav:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 .ticket-list__nav svg {
   width: 24px;
   height: 24px;

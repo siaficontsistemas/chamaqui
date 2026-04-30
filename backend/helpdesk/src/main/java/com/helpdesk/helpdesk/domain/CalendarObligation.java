@@ -1,6 +1,8 @@
 package com.helpdesk.helpdesk.domain;
 
 import java.time.OffsetDateTime;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.UUID;
 
 import jakarta.persistence.Column;
@@ -10,7 +12,9 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.JoinTable;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.ManyToMany;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
@@ -31,9 +35,13 @@ public class CalendarObligation {
 	@JoinColumn(name = "created_by", nullable = false)
 	private User createdBy;
 
-	@ManyToOne(fetch = FetchType.LAZY, optional = false)
-	@JoinColumn(name = "recipient_id", nullable = false)
-	private User recipient;
+	@ManyToMany(fetch = FetchType.LAZY)
+	@JoinTable(
+		name = "calendar_obligation_recipients",
+		joinColumns = @JoinColumn(name = "obligation_id"),
+		inverseJoinColumns = @JoinColumn(name = "recipient_id")
+	)
+	private Set<User> recipients = new LinkedHashSet<>();
 
 	@Column(nullable = false, length = 180)
 	private String title;
@@ -90,12 +98,12 @@ public class CalendarObligation {
 		this.createdBy = createdBy;
 	}
 
-	public User getRecipient() {
-		return recipient;
+	public Set<User> getRecipients() {
+		return recipients;
 	}
 
-	public void setRecipient(User recipient) {
-		this.recipient = recipient;
+	public void setRecipients(Set<User> recipients) {
+		this.recipients = recipients == null ? new LinkedHashSet<>() : new LinkedHashSet<>(recipients);
 	}
 
 	public String getTitle() {

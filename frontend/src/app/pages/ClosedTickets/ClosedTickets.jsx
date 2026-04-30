@@ -2,13 +2,17 @@ import { useEffect, useMemo, useState } from 'react'
 import { getTickets } from '../../api'
 import Header from '../../components/header/Header'
 import Sidebar from '../../components/sidebar/Sidebar'
+import TicketListPagination from '../../components/TicketListPagination/TicketListPagination'
 
 import { SearchIcon } from '../../dashboardIcons'
 import '../Home/Home.css'
 
+const ITEMS_PER_PAGE = 20
+
 function ClosedTickets({ currentUser, headerProps, navigationGroups, onNavigatePage, onOpenTicket }) {
   const [tickets, setTickets] = useState([])
   const [searchValue, setSearchValue] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
   const [isLoading, setIsLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const normalizedSearchValue = searchValue.trim().toLowerCase()
@@ -31,6 +35,12 @@ function ClosedTickets({ currentUser, headerProps, navigationGroups, onNavigateP
       )
     )
   }, [normalizedSearchValue, tickets])
+  const totalPages = Math.max(1, Math.ceil(filteredTickets.length / ITEMS_PER_PAGE))
+  const safeCurrentPage = Math.min(currentPage, totalPages)
+  const paginatedTickets = useMemo(() => {
+    const startIndex = (safeCurrentPage - 1) * ITEMS_PER_PAGE
+    return filteredTickets.slice(startIndex, startIndex + ITEMS_PER_PAGE)
+  }, [filteredTickets, safeCurrentPage])
 
   useEffect(() => {
     if (!currentUser?.email) {
@@ -75,6 +85,16 @@ function ClosedTickets({ currentUser, headerProps, navigationGroups, onNavigateP
     }
   }, [currentUser?.email])
 
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [normalizedSearchValue])
+
+  useEffect(() => {
+    if (currentPage !== safeCurrentPage) {
+      setCurrentPage(safeCurrentPage)
+    }
+  }, [currentPage, safeCurrentPage])
+
   function formatDate(value) {
     if (!value) {
       return 'Não informado'
@@ -114,14 +134,17 @@ function ClosedTickets({ currentUser, headerProps, navigationGroups, onNavigateP
                 </label>
 
                 {!isLoading && !errorMessage ? (
-                  <div className="ticket-list__pagination">
-                    <span>{filteredTickets.length} chamado(s)</span>
-                  </div>
+                  <TicketListPagination
+                    currentPage={safeCurrentPage}
+                    onPageChange={setCurrentPage}
+                    pageSize={ITEMS_PER_PAGE}
+                    totalItems={filteredTickets.length}
+                  />
                 ) : null}
               </div>
 
               <div className="ticket-list__table">
-                {filteredTickets.length > 0 ? (
+                {paginatedTickets.length > 0 ? (
                   <>
                     <div className="ticket-list__head">
                       <span>Protocolo</span>
@@ -131,7 +154,7 @@ function ClosedTickets({ currentUser, headerProps, navigationGroups, onNavigateP
                       <span>Ação</span>
                     </div>
 
-                    {filteredTickets.map((ticket) => (
+                    {paginatedTickets.map((ticket) => (
                       <div className="ticket-list__row" key={ticket.id}>
                         <span>{ticket.protocol}</span>
                         <span>{ticket.title}</span>

@@ -19,7 +19,7 @@ const EMPTY_FORM_VALUES = {
   description: '',
   dueAt: '',
   reminderAt: '',
-  recipientDocumentNumber: '',
+  recipientDocumentNumbers: '',
 }
 
 function Calendar({
@@ -244,7 +244,9 @@ function Calendar({
       description: obligation.description || '',
       dueAt: formatDateTimeLocal(obligation.dueAt),
       reminderAt: formatDateTimeLocal(obligation.reminderAt),
-      recipientDocumentNumber: obligation.recipientDocumentNumber || '',
+      recipientDocumentNumbers: formatRecipientDocumentNumbers(
+        obligation.recipientDocumentNumbers || []
+      ),
     })
     setSelectedMonth(formatMonthInput(new Date(obligation.dueAt)))
     setFeedbackMessage('')
@@ -278,12 +280,15 @@ function Calendar({
     setFeedbackMessage('')
 
     try {
+      const recipientDocumentNumbers = parseRecipientDocumentNumbers(
+        formValues.recipientDocumentNumbers
+      )
       const payload = {
         title: formValues.title.trim(),
         description: formValues.description.trim() || null,
         dueAt: new Date(formValues.dueAt).toISOString(),
         reminderAt: formValues.reminderAt ? new Date(formValues.reminderAt).toISOString() : null,
-        recipientDocumentNumber: formValues.recipientDocumentNumber.trim(),
+        recipientDocumentNumbers,
       }
 
       if (editingObligationId) {
@@ -456,14 +461,14 @@ function Calendar({
                   </label>
 
                   <label className="ticket-field">
-                    <span>CPF do destinatário</span>
+                    <span>CPF dos destinatários</span>
                     <div className="ticket-field__control">
                       <input
-                        placeholder="Digite o CPF de qualquer usuário cadastrado"
+                        placeholder="Digite um ou mais CPFs, separados por vírgula"
                         type="text"
-                        value={formValues.recipientDocumentNumber}
+                        value={formValues.recipientDocumentNumbers}
                         onChange={(event) =>
-                          updateFormValue('recipientDocumentNumber', event.target.value)
+                          updateFormValue('recipientDocumentNumbers', event.target.value)
                         }
                       />
                     </div>
@@ -495,8 +500,8 @@ function Calendar({
 
                 <div className="calendar-form__footer">
                   <span>
-                    Cadastre pelo CPF de qualquer usuário ativo no sistema. O lembrete aparece para
-                    o destinatário quando a data de aviso for alcançada.
+                    Cadastre um ou mais CPFs de usuários ativos no sistema. O lembrete aparece para
+                    todos os destinatários quando a data de aviso for alcançada.
                   </span>
                   <div className="calendar-form__buttons">
                     {editingObligationId ? (
@@ -516,7 +521,7 @@ function Calendar({
                         isSubmitting ||
                         !formValues.title.trim() ||
                         !formValues.dueAt ||
-                        !formValues.recipientDocumentNumber.trim()
+                        !formValues.recipientDocumentNumbers.trim()
                       }
                     >
                       {isSubmitting
@@ -621,9 +626,9 @@ function Calendar({
                           </div>
                           <span>{formatDateTime(obligation.dueAt)}</span>
                           <small>
-                            Destinatário: {obligation.recipientName}
-                            {obligation.recipientDocumentNumber
-                              ? ` • CPF ${formatCpf(obligation.recipientDocumentNumber)}`
+                            Destinatários: {formatRecipientNames(obligation.recipientNames)}
+                            {obligation.recipientDocumentNumbers?.length
+                              ? ` • CPF ${formatRecipientCpfList(obligation.recipientDocumentNumbers)}`
                               : ''}
                           </small>
                           {obligation.description ? <p>{obligation.description}</p> : null}
@@ -687,8 +692,8 @@ function Calendar({
                           </div>
                           <span>{dateFormatter.format(new Date(obligation.dueAt))}</span>
                           <small>
-                            Cadastro por {obligation.createdByName} • Destinatário:{' '}
-                            {obligation.recipientName}
+                            Cadastro por {obligation.createdByName} • Destinatários:{' '}
+                            {formatRecipientNames(obligation.recipientNames)}
                           </small>
                           <div className="calendar-task-card__actions">
                             {isAdmin ? (
@@ -809,6 +814,30 @@ function formatCpf(value) {
   }
 
   return digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')
+}
+
+function parseRecipientDocumentNumbers(value) {
+  return Array.from(
+    new Set(
+      String(value || '')
+        .split(/[,\n;]+/)
+        .map((item) => item.replace(/\D/g, ''))
+        .filter(Boolean)
+    )
+  )
+}
+
+function formatRecipientDocumentNumbers(values) {
+  return (Array.isArray(values) ? values : []).map((value) => formatCpf(value)).join(', ')
+}
+
+function formatRecipientCpfList(values) {
+  return (Array.isArray(values) ? values : []).map((value) => formatCpf(value)).join(', ')
+}
+
+function formatRecipientNames(values) {
+  const names = (Array.isArray(values) ? values : []).filter(Boolean)
+  return names.length > 0 ? names.join(', ') : 'Não informado'
 }
 
 export default Calendar

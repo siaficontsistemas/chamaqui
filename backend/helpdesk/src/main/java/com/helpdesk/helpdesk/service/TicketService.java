@@ -964,10 +964,25 @@ public class TicketService {
 			return "";
 		}
 
-		return whatsappConversationRepository.findByActiveTicketId(ticket.getId())
+		String requesterRecipient = hasWhatsappRecipient(ticket.getRequester())
+			? resolveWhatsappRecipient(ticket.getRequester())
+			: "";
+		User companyOwner = resolveWhatsappCompanyOwner(ticket);
+
+		String conversationRecipient = whatsappConversationRepository.findByActiveTicketId(ticket.getId())
 			.map(conversation -> firstNonBlank(conversation.getWhatsappTransportId(), conversation.getPhoneNumber()))
 			.filter(value -> value != null && !value.isBlank())
-			.orElseGet(() -> hasWhatsappRecipient(ticket.getRequester()) ? resolveWhatsappRecipient(ticket.getRequester()) : "");
+			.orElseGet(() -> {
+				if (!requesterRecipient.isBlank()) {
+					return whatsappConversationRepository.findByCompanyOwnerIdAndWhatsappTransportId(companyOwner.getId(), requesterRecipient)
+						.map(conversation -> firstNonBlank(conversation.getWhatsappTransportId(), conversation.getPhoneNumber()))
+						.filter(value -> value != null && !value.isBlank())
+						.orElse("");
+				}
+				return "";
+			});
+
+		return firstNonBlank(conversationRecipient, requesterRecipient);
 	}
 
 	private String buildWhatsappTicketTitle(String subject, String fullName) {

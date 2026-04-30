@@ -1,6 +1,7 @@
 package com.helpdesk.helpdesk.dto.calendar;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 public record CalendarObligationResponse(
@@ -12,8 +13,8 @@ public record CalendarObligationResponse(
 	OffsetDateTime completedAt,
 	OffsetDateTime createdAt,
 	String createdByName,
-	String recipientName,
-	String recipientDocumentNumber,
+	List<String> recipientNames,
+	List<String> recipientDocumentNumbers,
 	String companyName,
 	String status,
 	boolean reminderActive

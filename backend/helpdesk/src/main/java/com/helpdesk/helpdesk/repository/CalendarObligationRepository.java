@@ -22,21 +22,22 @@ public interface CalendarObligationRepository extends JpaRepository<CalendarObli
 			obligation.dueAt asc,
 			obligation.createdAt desc
 		""")
-	@EntityGraph(attributePaths = {"companyOwner", "createdBy", "recipient"})
+	@EntityGraph(attributePaths = {"companyOwner", "createdBy", "recipients"})
 	List<CalendarObligation> findVisibleByCompanyOwnerIdOrderByDueAtAsc(@Param("companyOwnerId") UUID companyOwnerId);
 
 	@Query("""
 		select obligation
 		from CalendarObligation obligation
-		where obligation.recipient.id = :recipientId
+		join obligation.recipients recipient
+		where recipient.id = :recipientId
 		order by
 			case when obligation.completedAt is null then 0 else 1 end,
 			obligation.dueAt asc,
 			obligation.createdAt desc
 		""")
-	@EntityGraph(attributePaths = {"companyOwner", "createdBy", "recipient"})
+	@EntityGraph(attributePaths = {"companyOwner", "createdBy", "recipients"})
 	List<CalendarObligation> findVisibleByRecipientIdOrderByDueAtAsc(@Param("recipientId") UUID recipientId);
 
-	@EntityGraph(attributePaths = {"companyOwner", "createdBy", "recipient"})
+	@EntityGraph(attributePaths = {"companyOwner", "createdBy", "recipients"})
 	Optional<CalendarObligation> findDetailedById(UUID id);
 }

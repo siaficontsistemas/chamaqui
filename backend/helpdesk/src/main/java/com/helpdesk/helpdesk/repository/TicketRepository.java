@@ -136,4 +136,36 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
 		@Param("userId") UUID userId,
 		@Param("sectorIds") List<UUID> sectorIds
 	);
+
+	@Query("""
+		select distinct ticket
+		from Ticket ticket
+		join ticket.requester requester
+		join ticket.sector sector
+		join ticket.status status
+		where sector.createdBy.id = :companyOwnerId
+			and ticket.deletedAt is null
+			and ticket.closedAt is null
+			and upper(status.code) <> 'CLOSED'
+			and (
+				(:requesterId is not null and requester.id = :requesterId)
+				or (:email <> '' and lower(requester.email) = lower(:email))
+				or (:phoneNumber <> '' and requester.phoneNumber = :phoneNumber)
+				or (:whatsappTransportId <> '' and requester.whatsappTransportId = :whatsappTransportId)
+			)
+		order by ticket.createdAt desc
+		""")
+	@EntityGraph(attributePaths = {
+		"requester",
+		"assignedTo",
+		"sector",
+		"status"
+	})
+	List<Ticket> findOpenWhatsappTicketsForRouting(
+		@Param("companyOwnerId") UUID companyOwnerId,
+		@Param("requesterId") UUID requesterId,
+		@Param("email") String email,
+		@Param("phoneNumber") String phoneNumber,
+		@Param("whatsappTransportId") String whatsappTransportId
+	);
 }

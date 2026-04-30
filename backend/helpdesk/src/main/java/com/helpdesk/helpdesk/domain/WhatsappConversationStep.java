@@ -2,6 +2,7 @@ package com.helpdesk.helpdesk.domain;
 
 public enum WhatsappConversationStep {
 	ASK_REUSE_REQUESTER_DATA,
+	ASK_ACTIVE_TICKET_SELECTION,
 	ASK_SECTOR,
 	ASK_NAME,
 	ASK_EMAIL,

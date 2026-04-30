@@ -71,6 +71,12 @@ public class WhatsappConversation {
 	@JoinColumn(name = "active_ticket_id")
 	private Ticket activeTicket;
 
+	@Column(name = "last_inbound_message_at")
+	private OffsetDateTime lastInboundMessageAt;
+
+	@Column(name = "last_ticket_selection_prompt_at")
+	private OffsetDateTime lastTicketSelectionPromptAt;
+
 	@Column(name = "created_at", nullable = false)
 	private OffsetDateTime createdAt;
 
@@ -179,6 +185,22 @@ public class WhatsappConversation {
 
 	public void setActiveTicket(Ticket activeTicket) {
 		this.activeTicket = activeTicket;
+	}
+
+	public OffsetDateTime getLastInboundMessageAt() {
+		return lastInboundMessageAt;
+	}
+
+	public void setLastInboundMessageAt(OffsetDateTime lastInboundMessageAt) {
+		this.lastInboundMessageAt = lastInboundMessageAt;
+	}
+
+	public OffsetDateTime getLastTicketSelectionPromptAt() {
+		return lastTicketSelectionPromptAt;
+	}
+
+	public void setLastTicketSelectionPromptAt(OffsetDateTime lastTicketSelectionPromptAt) {
+		this.lastTicketSelectionPromptAt = lastTicketSelectionPromptAt;
 	}
 
 	public OffsetDateTime getCreatedAt() {

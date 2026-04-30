@@ -6,9 +6,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
@@ -18,12 +23,17 @@ import org.springframework.web.multipart.MultipartFile;
 @Service
 public class TicketAttachmentStorageService {
 
+	private static final Logger logger = LoggerFactory.getLogger(TicketAttachmentStorageService.class);
+
 	private final Path rootDirectory;
+	private final List<Path> readableDirectories;
 
 	public TicketAttachmentStorageService(
-		@Value("${app.storage.attachments-dir:${user.dir}/uploads/ticket-attachments}") String rootDirectory
+		@Value("${app.storage.attachments-dir:${user.home}/.helpdesk/uploads/ticket-attachments}") String rootDirectory,
+		@Value("${app.storage.attachments-legacy-dirs:${user.dir}/uploads/ticket-attachments}") String legacyDirectories
 	) {
 		this.rootDirectory = Paths.get(rootDirectory).toAbsolutePath().normalize();
+		this.readableDirectories = buildReadableDirectories(this.rootDirectory, legacyDirectories);
 	}
 
 	public StoredAttachment store(MultipartFile file) {
@@ -67,11 +77,7 @@ public class TicketAttachmentStorageService {
 	}
 
 	public Resource loadAsResource(String storageKey) {
-		Path filePath = rootDirectory.resolve(storageKey).normalize();
-
-		if (!filePath.startsWith(rootDirectory)) {
-			throw new IllegalArgumentException("Arquivo inválido.");
-		}
+		Path filePath = resolveReadablePath(storageKey);
 
 		try {
 			Resource resource = new UrlResource(filePath.toUri());
@@ -103,6 +109,42 @@ public class TicketAttachmentStorageService {
 		}
 
 		return targetPath;
+	}
+
+	private List<Path> buildReadableDirectories(Path primaryDirectory, String legacyDirectories) {
+		Set<Path> directories = new LinkedHashSet<>();
+		directories.add(primaryDirectory);
+
+		if (legacyDirectories == null || legacyDirectories.isBlank()) {
+			return List.copyOf(directories);
+		}
+
+		for (String directory : legacyDirectories.split(",")) {
+			String trimmedDirectory = directory == null ? "" : directory.trim();
+			if (trimmedDirectory.isEmpty()) {
+				continue;
+			}
+			directories.add(Paths.get(trimmedDirectory).toAbsolutePath().normalize());
+		}
+
+		return List.copyOf(directories);
+	}
+
+	private Path resolveReadablePath(String storageKey) {
+		for (Path directory : readableDirectories) {
+			Path candidate = directory.resolve(storageKey).normalize();
+
+			if (!candidate.startsWith(directory)) {
+				continue;
+			}
+
+			if (Files.exists(candidate) && Files.isReadable(candidate)) {
+				return candidate;
+			}
+		}
+
+		logger.warn("Anexo não encontrado nos diretórios configurados: storageKey={}, directories={}", storageKey, readableDirectories);
+		throw new IllegalArgumentException("Arquivo não encontrado para download.");
 	}
 
 	private String sanitizeFileName(String value) {

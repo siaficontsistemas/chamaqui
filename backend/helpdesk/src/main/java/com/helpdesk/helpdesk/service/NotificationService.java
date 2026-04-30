@@ -369,20 +369,21 @@ public class NotificationService {
 				continue;
 			}
 
-			User recipient = obligation.getRecipient();
-			if (recipient == null) {
-				continue;
-			}
+			for (User recipient : obligation.getRecipients()) {
+				if (recipient == null) {
+					continue;
+				}
 
-			if (calendarReminderNotificationRepository
-				.existsByObligationIdAndRecipientId(obligation.getId(), recipient.getId())) {
-				continue;
-			}
+				if (calendarReminderNotificationRepository
+					.existsByObligationIdAndRecipientId(obligation.getId(), recipient.getId())) {
+					continue;
+				}
 
-			CalendarReminderNotification notification = new CalendarReminderNotification();
-			notification.setObligation(obligation);
-			notification.setRecipient(recipient);
-			calendarReminderNotificationRepository.save(notification);
+				CalendarReminderNotification notification = new CalendarReminderNotification();
+				notification.setObligation(obligation);
+				notification.setRecipient(recipient);
+				calendarReminderNotificationRepository.save(notification);
+			}
 		}
 	}
 

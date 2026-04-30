@@ -1,8 +1,11 @@
 package com.helpdesk.helpdesk.service;
 
 import java.time.OffsetDateTime;
+import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -52,12 +55,12 @@ public class CalendarService {
 			.orElseThrow(() -> new NotFoundException("Usuário responsável pela obrigação não encontrado."));
 		ensureAdmin(createdBy, "Somente administradores podem criar obrigações no calendário.");
 		validateDates(request.dueAt(), request.reminderAt());
-		User recipient = resolveRecipient(request.recipientDocumentNumber());
+		Set<User> recipients = resolveRecipients(request.recipientDocumentNumbers());
 
 		CalendarObligation obligation = new CalendarObligation();
 		obligation.setCompanyOwner(createdBy);
 		obligation.setCreatedBy(createdBy);
-		obligation.setRecipient(recipient);
+		obligation.setRecipients(recipients);
 		obligation.setTitle(request.title().trim());
 		obligation.setDescription(blankToNull(request.description()));
 		obligation.setDueAt(request.dueAt());
@@ -91,17 +94,17 @@ public class CalendarService {
 		CalendarObligation obligation = calendarObligationRepository.findDetailedById(obligationId)
 			.orElseThrow(() -> new NotFoundException("Obrigação não encontrada."));
 		ensureAdminOwnsObligation(updatedBy, obligation);
-		User recipient = resolveRecipient(request.recipientDocumentNumber());
+		Set<User> recipients = resolveRecipients(request.recipientDocumentNumbers());
 
 		boolean scheduleChanged = !obligation.getDueAt().isEqual(request.dueAt())
 			|| isDifferent(obligation.getReminderAt(), request.reminderAt())
-			|| !obligation.getRecipient().getId().equals(recipient.getId());
+			|| !hasSameRecipients(obligation.getRecipients(), recipients);
 
 		obligation.setTitle(request.title().trim());
 		obligation.setDescription(blankToNull(request.description()));
 		obligation.setDueAt(request.dueAt());
 		obligation.setReminderAt(request.reminderAt());
-		obligation.setRecipient(recipient);
+		obligation.setRecipients(recipients);
 
 		CalendarObligation savedObligation = calendarObligationRepository.save(obligation);
 
@@ -140,8 +143,14 @@ public class CalendarService {
 			obligation.getCompletedAt(),
 			obligation.getCreatedAt(),
 			obligation.getCreatedBy().getFullName(),
-			obligation.getRecipient().getFullName(),
-			obligation.getRecipient().getDocumentNumber(),
+			obligation.getRecipients().stream()
+				.map(User::getFullName)
+				.filter(name -> name != null && !name.isBlank())
+				.toList(),
+			obligation.getRecipients().stream()
+				.map(User::getDocumentNumber)
+				.filter(document -> document != null && !document.isBlank())
+				.toList(),
 			companyName,
 			resolveStatus(obligation, now),
 			isReminderActive(obligation, now)
@@ -189,7 +198,9 @@ public class CalendarService {
 			return;
 		}
 
-		if (!obligation.getRecipient().getId().equals(user.getId())) {
+		boolean isRecipient = obligation.getRecipients().stream()
+			.anyMatch(recipient -> recipient.getId().equals(user.getId()));
+		if (!isRecipient) {
 			throw new IllegalArgumentException("Você só pode concluir as obrigações atribuídas ao seu CPF.");
 		}
 	}
@@ -208,20 +219,40 @@ public class CalendarService {
 		return calendarObligationRepository.findVisibleByRecipientIdOrderByDueAtAsc(user.getId());
 	}
 
-	private User resolveRecipient(String recipientDocumentNumber) {
-		String normalizedDocumentNumber = normalizeDocumentNumber(recipientDocumentNumber);
-		User recipient = userRepository.findByDocumentNumber(normalizedDocumentNumber)
+	private Set<User> resolveRecipients(List<String> recipientDocumentNumbers) {
+		if (recipientDocumentNumbers == null || recipientDocumentNumbers.isEmpty()) {
+			throw new IllegalArgumentException("Informe pelo menos um CPF de destinatário.");
+		}
+
+		Set<User> recipients = new LinkedHashSet<>();
+		Set<String> normalizedDocumentNumbers = new LinkedHashSet<>();
+		for (String recipientDocumentNumber : recipientDocumentNumbers) {
+			String normalizedDocumentNumber = normalizeDocumentNumber(recipientDocumentNumber);
+			if (!normalizedDocumentNumbers.add(normalizedDocumentNumber)) {
+				continue;
+			}
+
+			User recipient = userRepository.findByDocumentNumber(normalizedDocumentNumber)
 			.or(() -> userRepository.findAll().stream()
 				.filter(user -> normalizedDocumentNumber.equals(normalizeDocumentNumber(user.getDocumentNumber())))
 				.findFirst()
 				.flatMap(user -> userRepository.findById(user.getId())))
 			.orElseThrow(() -> new NotFoundException("Nenhum usuário encontrado com o CPF informado."));
 
-		if (recipient.getDeletedAt() != null || recipient.getStatus() == null || !"ACTIVE".equals(recipient.getStatus().name())) {
-			throw new IllegalArgumentException("O usuário informado pelo CPF não está ativo no sistema.");
+			if (
+				recipient.getDeletedAt() != null || recipient.getStatus() == null || !"ACTIVE".equals(recipient.getStatus().name())
+			) {
+				throw new IllegalArgumentException("Um dos usuários informados pelo CPF não está ativo no sistema.");
+			}
+
+			recipients.add(recipient);
 		}
 
-		return recipient;
+		if (recipients.isEmpty()) {
+			throw new IllegalArgumentException("Informe pelo menos um CPF de destinatário.");
+		}
+
+		return recipients;
 	}
 
 	private boolean hasRole(User user, String roleCode) {
@@ -263,5 +294,15 @@ public class CalendarService {
 		}
 
 		return !firstValue.isEqual(secondValue);
+	}
+
+	private boolean hasSameRecipients(Collection<User> currentRecipients, Collection<User> nextRecipients) {
+		Set<UUID> currentRecipientIds = currentRecipients == null
+			? Set.of()
+			: currentRecipients.stream().map(User::getId).collect(java.util.stream.Collectors.toSet());
+		Set<UUID> nextRecipientIds = nextRecipients == null
+			? Set.of()
+			: nextRecipients.stream().map(User::getId).collect(java.util.stream.Collectors.toSet());
+		return currentRecipientIds.equals(nextRecipientIds);
 	}
 }

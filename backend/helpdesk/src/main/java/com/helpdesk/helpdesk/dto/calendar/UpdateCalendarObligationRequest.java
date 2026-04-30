@@ -1,6 +1,7 @@
 package com.helpdesk.helpdesk.dto.calendar;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -11,7 +12,7 @@ public record UpdateCalendarObligationRequest(
 	@Size(max = 2000) String description,
 	@NotNull OffsetDateTime dueAt,
 	OffsetDateTime reminderAt,
-	@NotBlank String recipientDocumentNumber,
+	@NotNull List<String> recipientDocumentNumbers,
 	@NotBlank String updatedByEmail
 ) {
 }

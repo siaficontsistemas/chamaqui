@@ -96,7 +96,7 @@ public class WhatsappService {
 				buildSessionName(companyOwner),
 				qrCode,
 				"QRCODE",
-				"QRCode disponível para leitura.",
+				"QR Code disponível para leitura.",
 				"{\"contentType\":\"" + rawResponse.contentTypeValue() + "\"}"
 			);
 		}
