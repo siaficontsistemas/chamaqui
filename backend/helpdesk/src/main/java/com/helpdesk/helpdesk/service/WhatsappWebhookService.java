@@ -132,7 +132,10 @@ public class WhatsappWebhookService {
 		List<TicketService.IncomingAttachment> attachments
 	) {
 		String whatsappTransportId = normalizeWhatsappTransportId(incomingTransportId);
-		String normalizedPhone = normalizePhone(firstNonBlank(phoneNumber, incomingTransportId));
+		String normalizedProvidedPhone = normalizePhone(phoneNumber);
+		String normalizedPhone = normalizedProvidedPhone.isBlank()
+			? normalizePhone(incomingTransportId)
+			: normalizedProvidedPhone;
 		String normalizedBody = normalizeInboundMessage(body);
 		List<TicketService.IncomingAttachment> incomingAttachments = attachments == null ? List.of() : attachments;
 
@@ -819,7 +822,9 @@ public class WhatsappWebhookService {
 		}
 
 		if (!hasDifferentContactOwner) {
-			requester.setPhoneNumber(normalizedPhone);
+			if (looksLikeHumanPhoneNumber(normalizedPhone)) {
+				requester.setPhoneNumber(normalizedPhone);
+			}
 			if (!whatsappTransportId.isBlank()) {
 				requester.setWhatsappTransportId(whatsappTransportId);
 			}
@@ -1336,6 +1341,19 @@ public class WhatsappWebhookService {
 
 	private String normalizePhone(String phone) {
 		return phone == null ? "" : phone.replaceAll("\\D+", "");
+	}
+
+	private boolean looksLikeHumanPhoneNumber(String phone) {
+		if (phone == null || phone.isBlank()) {
+			return false;
+		}
+
+		String digits = phone.replaceAll("\\D+", "");
+		if (digits.startsWith("55") && digits.length() == 13) {
+			digits = digits.substring(2);
+		}
+
+		return digits.length() == 10 || digits.length() == 11;
 	}
 
 	private String normalizeWhatsappAddress(String phone) {

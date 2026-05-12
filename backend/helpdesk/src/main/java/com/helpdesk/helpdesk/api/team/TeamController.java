@@ -20,6 +20,9 @@ import com.helpdesk.helpdesk.dto.team.RespondTeamInviteRequest;
 import com.helpdesk.helpdesk.dto.team.TeamInviteResponse;
 import com.helpdesk.helpdesk.dto.team.TeamMemberResponse;
 import com.helpdesk.helpdesk.dto.team.UpdateMemberSectorsRequest;
+import com.helpdesk.helpdesk.dto.company.CompanyAdminInviteResponse;
+import com.helpdesk.helpdesk.dto.company.CreateCompanyAdminInviteRequest;
+import com.helpdesk.helpdesk.service.CompanyAccessRequestService;
 import com.helpdesk.helpdesk.service.TeamService;
 
 import jakarta.validation.Valid;
@@ -29,9 +32,11 @@ import jakarta.validation.Valid;
 public class TeamController {
 
 	private final TeamService teamService;
+	private final CompanyAccessRequestService companyAccessRequestService;
 
-	public TeamController(TeamService teamService) {
+	public TeamController(TeamService teamService, CompanyAccessRequestService companyAccessRequestService) {
 		this.teamService = teamService;
+		this.companyAccessRequestService = companyAccessRequestService;
 	}
 
 	@GetMapping("/members")
@@ -58,6 +63,12 @@ public class TeamController {
 	@ResponseStatus(HttpStatus.CREATED)
 	public TeamInviteResponse invite(@Valid @RequestBody InviteTeamMemberRequest request) {
 		return teamService.invite(request);
+	}
+
+	@PostMapping("/company-invites")
+	@ResponseStatus(HttpStatus.CREATED)
+	public CompanyAdminInviteResponse createCompanyInvite(@Valid @RequestBody CreateCompanyAdminInviteRequest request) {
+		return companyAccessRequestService.createAdminInvite(request);
 	}
 
 	@PostMapping("/invites/{inviteId}/accept")
