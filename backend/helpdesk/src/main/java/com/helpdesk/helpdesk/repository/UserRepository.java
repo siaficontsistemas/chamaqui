@@ -34,7 +34,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 	Optional<User> findByEmailIgnoreCase(String email);
 
 	@EntityGraph(attributePaths = {"roles", "companyOwner"})
-	Optional<User> findByDocumentNumber(String documentNumber);
+	java.util.List<User> findAllByDocumentNumberOrderByCreatedAtAsc(String documentNumber);
 
 	@EntityGraph(attributePaths = {"roles", "companyOwner"})
 	Optional<User> findByPhoneNumber(String phoneNumber);
@@ -59,6 +59,9 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 		""")
 	@EntityGraph(attributePaths = {"roles", "companyOwner"})
 	java.util.List<User> findActiveByCompanyOwnerId(@Param("companyOwnerId") UUID companyOwnerId);
+
+	@EntityGraph(attributePaths = {"roles", "companyOwner"})
+	java.util.List<User> findByCompanyOwnerIdAndIdNotOrderByFullNameAsc(UUID companyOwnerId, UUID excludedUserId);
 
 	@EntityGraph(attributePaths = "roles")
 	java.util.List<User> findDistinctByRolesCodeInOrderByFullNameAsc(java.util.Collection<String> roleCodes);

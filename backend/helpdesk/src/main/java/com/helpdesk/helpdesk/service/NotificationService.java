@@ -279,12 +279,20 @@ public class NotificationService {
 			companyName = notification.getRemovedBy().getFullName();
 		}
 
+		String removedByName = notification.getRemovedBy().getFullName();
+		if (notification.getType() == com.helpdesk.helpdesk.domain.TeamMembershipNotificationType.COMPANY_DELETED
+			&& notification.getRecipient() != null
+			&& notification.getRemovedBy() != null
+			&& notification.getRecipient().getId().equals(notification.getRemovedBy().getId())) {
+			removedByName = "Sistema";
+		}
+
 		return new TeamMembershipNotificationResponse(
 			notification.getId(),
 			notification.getType().name(),
 			notification.getSector() == null ? null : notification.getSector().getName(),
 			companyName,
-			notification.getRemovedBy().getFullName(),
+			removedByName,
 			notification.getCreatedAt()
 		);
 	}

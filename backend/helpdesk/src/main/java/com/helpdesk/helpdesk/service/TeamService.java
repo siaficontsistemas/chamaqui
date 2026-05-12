@@ -31,6 +31,7 @@ import com.helpdesk.helpdesk.dto.team.RespondTeamInviteRequest;
 import com.helpdesk.helpdesk.dto.team.TeamInviteResponse;
 import com.helpdesk.helpdesk.dto.team.TeamMemberResponse;
 import com.helpdesk.helpdesk.dto.team.UpdateMemberSectorsRequest;
+import com.helpdesk.helpdesk.repository.CompanyMembershipRepository;
 import com.helpdesk.helpdesk.repository.RoleRepository;
 import com.helpdesk.helpdesk.repository.SectorMemberRepository;
 import com.helpdesk.helpdesk.repository.SectorRepository;
@@ -44,6 +45,7 @@ import com.helpdesk.helpdesk.repository.UserRepository;
 public class TeamService {
 
 	private final UserRepository userRepository;
+	private final CompanyMembershipRepository companyMembershipRepository;
 	private final RoleRepository roleRepository;
 	private final SectorRepository sectorRepository;
 	private final SectorMemberRepository sectorMemberRepository;
@@ -54,6 +56,7 @@ public class TeamService {
 
 	public TeamService(
 		UserRepository userRepository,
+		CompanyMembershipRepository companyMembershipRepository,
 		RoleRepository roleRepository,
 		SectorRepository sectorRepository,
 		SectorMemberRepository sectorMemberRepository,
@@ -63,6 +66,7 @@ public class TeamService {
 		TicketTransferNotificationRepository ticketTransferNotificationRepository
 	) {
 		this.userRepository = userRepository;
+		this.companyMembershipRepository = companyMembershipRepository;
 		this.roleRepository = roleRepository;
 		this.sectorRepository = sectorRepository;
 		this.sectorMemberRepository = sectorMemberRepository;
@@ -81,7 +85,13 @@ public class TeamService {
 		Map<UUID, List<UUID>> sectorsByUserId = sectorMembers.stream()
 			.collect(Collectors.groupingBy(
 				member -> member.getUser().getId(),
-				Collectors.mapping(member -> member.getSector().getId(), Collectors.toList())
+				Collectors.collectingAndThen(
+					Collectors.mapping(
+						member -> member.getSector().getId(),
+						Collectors.toCollection(LinkedHashSet::new)
+					),
+					List::copyOf
+				)
 			));
 		Map<UUID, User> teamUsersById = loadVisibleTeamUsers(viewer, sectorMembers).stream()
 			.filter(user -> hasRole(user, "EMPLOYEE"))
@@ -93,6 +103,7 @@ public class TeamService {
 				user.getId(),
 				user.getFullName(),
 				user.getEmail(),
+				user.getDocumentNumber(),
 				primaryRole(user),
 				user.getStatus().name(),
 				sectorsByUserId.getOrDefault(user.getId(), List.of())
@@ -120,9 +131,21 @@ public class TeamService {
 
 	private List<User> loadVisibleTeamUsers(User viewer, List<SectorMember> sectorMembers) {
 		if (hasRole(viewer, "ADMIN")) {
-			return userRepository.findActiveByCompanyOwnerId(viewer.getId()).stream()
+			Map<UUID, User> usersById = companyMembershipRepository.findByCompanyOwnerIdOrderByJoinedAtAsc(viewer.getId())
+				.stream()
+				.map(com.helpdesk.helpdesk.domain.CompanyMembership::getUser)
 				.filter(user -> !user.getId().equals(viewer.getId()))
-				.toList();
+				.collect(Collectors.toMap(User::getId, Function.identity(), (firstUser, ignoredUser) -> firstUser));
+
+			for (SectorMember sectorMember : sectorMembers) {
+				User user = sectorMember.getUser();
+				if (user == null || user.getId().equals(viewer.getId())) {
+					continue;
+				}
+				usersById.putIfAbsent(user.getId(), user);
+			}
+
+			return List.copyOf(usersById.values());
 		}
 
 		return sectorMembers.stream()
@@ -161,12 +184,12 @@ public class TeamService {
 			request.documentNumber(),
 			"Nenhum usuário encontrado com o CPF informado para receber o convite."
 		);
-		ensureManagedEmployee(invitedBy, invitedUser, "Esse funcionário não pertence à empresa administrada por você.");
 		String invitedEmail = normalizeEmail(invitedUser.getEmail());
 
 		if (invitedByEmail.equals(invitedEmail)) {
 			throw new IllegalArgumentException("Você não pode convidar a si mesmo para participar da equipe.");
 		}
+		ensureInvitableUser(invitedUser);
 		if (teamInviteRepository.existsByEmailIgnoreCaseAndStatusAndInviteeHiddenFalse(invitedEmail, InviteStatus.PENDING)) {
 			throw new IllegalArgumentException("Já existe um convite pendente para esse funcionário.");
 		}
@@ -192,10 +215,16 @@ public class TeamService {
 			.orElseThrow(() -> new NotFoundException("Usuário convidado não encontrado."));
 
 		ensureInviteCanBeAnswered(invite, invitedUser);
+		ensureCanJoinInvitingCompany(invitedUser);
 
 		Role employeeRole = roleRepository.findByCode("EMPLOYEE")
 			.orElseThrow(() -> new NotFoundException("Perfil de funcionário não encontrado."));
+		ensureCompanyMembership(invitedUser, invite.getInvitedBy());
+		if (invitedUser.getStatus() != null && !com.helpdesk.helpdesk.domain.UserStatus.ACTIVE.equals(invitedUser.getStatus())) {
+			invitedUser.setStatus(com.helpdesk.helpdesk.domain.UserStatus.ACTIVE);
+		}
 		invitedUser.getRoles().add(employeeRole);
+		userRepository.save(invitedUser);
 
 		Set<UUID> assignedSectorIds = sectorMemberRepository.findByUserIdOrderByAssignedAtAsc(invitedUser.getId()).stream()
 			.map(member -> member.getSector().getId())
@@ -264,14 +293,17 @@ public class TeamService {
 		if (!hasRole(member, "EMPLOYEE")) {
 			throw new IllegalArgumentException("Somente funcionários podem ter setores atualizados.");
 		}
-		if (request.sectorIds().isEmpty()) {
-			throw new IllegalArgumentException(
-				"Para remover o funcionário da empresa inteira, use a ação de remoção da empresa."
-			);
-		}
 
-		List<SectorMember> currentMemberships = sectorMemberRepository.findByUserIdOrderByAssignedAtAsc(member.getId());
+		List<SectorMember> currentMemberships = sectorMemberRepository.findByUserIdOrderByAssignedAtAsc(member.getId()).stream()
+			.filter(currentMembership -> assignedBy.getId().equals(currentMembership.getSector().getCreatedBy().getId()))
+			.toList();
 		Set<UUID> nextSectorIds = request.sectorIds().stream().collect(Collectors.toCollection(LinkedHashSet::new));
+		Map<UUID, SectorMember> currentMembershipBySectorId = currentMemberships.stream()
+			.collect(Collectors.toMap(
+				currentMembership -> currentMembership.getSector().getId(),
+				Function.identity(),
+				(firstMembership, ignoredMembership) -> firstMembership
+			));
 		List<Sector> removedSectors = currentMemberships.stream()
 			.map(SectorMember::getSector)
 			.filter(sector -> !nextSectorIds.contains(sector.getId()))
@@ -279,9 +311,18 @@ public class TeamService {
 		List<Sector> sectors = loadSectors(request.sectorIds());
 		ensureAdminOwnsSectors(assignedBy, sectors);
 
-		sectorMemberRepository.deleteByUserId(member.getId());
+		List<SectorMember> membershipsToRemove = currentMemberships.stream()
+			.filter(currentMembership -> !nextSectorIds.contains(currentMembership.getSector().getId()))
+			.toList();
+		if (!membershipsToRemove.isEmpty()) {
+			sectorMemberRepository.deleteAll(membershipsToRemove);
+		}
 
 		for (Sector sector : sectors) {
+			if (currentMembershipBySectorId.containsKey(sector.getId())) {
+				continue;
+			}
+
 			SectorMember sectorMember = new SectorMember();
 			sectorMember.setSector(sector);
 			sectorMember.setUser(member);
@@ -311,9 +352,19 @@ public class TeamService {
 			throw new IllegalArgumentException("Você não pode remover a si mesmo da empresa.");
 		}
 
-		sectorMemberRepository.deleteByUserId(member.getId());
-		clearTicketAccessForUser(member, List.of());
-		member.getRoles().removeIf(role -> "EMPLOYEE".equalsIgnoreCase(role.getCode()));
+		List<SectorMember> membershipsToRemove = sectorMemberRepository.findByUserIdOrderByAssignedAtAsc(member.getId()).stream()
+			.filter(currentMembership -> removedBy.getId().equals(currentMembership.getSector().getCreatedBy().getId()))
+			.toList();
+		List<UUID> removedSectorIds = membershipsToRemove.stream()
+			.map(currentMembership -> currentMembership.getSector().getId())
+			.toList();
+		if (!membershipsToRemove.isEmpty()) {
+			sectorMemberRepository.deleteAll(membershipsToRemove);
+		}
+		companyMembershipRepository.deleteByUserIdAndCompanyOwnerId(member.getId(), removedBy.getId());
+		clearTicketAccessForUser(member, removedSectorIds);
+		refreshPrimaryCompanyOwner(member);
+		removeEmployeeRoleIfWithoutCompanyMembershipsOrSectors(member);
 		userRepository.save(member);
 		createCompanyRemovalNotification(member, removedBy);
 
@@ -361,13 +412,17 @@ public class TeamService {
 	}
 
 	private List<Sector> loadSectors(List<UUID> sectorIds) {
-		List<Sector> sectors = sectorRepository.findAllById(sectorIds);
+		List<UUID> uniqueSectorIds = sectorIds.stream()
+			.collect(Collectors.toCollection(LinkedHashSet::new))
+			.stream()
+			.toList();
+		List<Sector> sectors = sectorRepository.findAllById(uniqueSectorIds);
 		Map<UUID, Sector> sectorById = sectors.stream()
 			.collect(Collectors.toMap(Sector::getId, Function.identity()));
-		if (sectorById.size() != sectorIds.size()) {
+		if (sectorById.size() != uniqueSectorIds.size()) {
 			throw new NotFoundException("Um ou mais setores informados não foram encontrados.");
 		}
-		return sectorIds.stream()
+		return uniqueSectorIds.stream()
 			.map(sectorById::get)
 			.toList();
 	}
@@ -500,8 +555,17 @@ public class TeamService {
 	}
 
 	private void ensureManagedEmployee(User admin, User member, String message) {
-		if (member.getCompanyOwner() == null || !admin.getId().equals(member.getCompanyOwner().getId())) {
+		boolean managesMember = companyMembershipRepository.existsByUserIdAndCompanyOwnerId(member.getId(), admin.getId())
+			|| sectorMemberRepository.findByUserIdOrderByAssignedAtAsc(member.getId()).stream()
+				.anyMatch(sectorMember -> admin.getId().equals(sectorMember.getSector().getCreatedBy().getId()));
+		if (!managesMember) {
 			throw new IllegalArgumentException(message);
+		}
+	}
+
+	private void ensureInvitableUser(User invitedUser) {
+		if (hasRole(invitedUser, "ADMIN")) {
+			throw new IllegalArgumentException("Administradores não podem ser convidados para entrar em setores como funcionários.");
 		}
 	}
 
@@ -519,12 +583,12 @@ public class TeamService {
 
 	private User findUserByDocumentNumber(String documentNumber, String notFoundMessage) {
 		String normalizedDocumentNumber = normalizeDocumentNumber(documentNumber);
+		List<User> users = userRepository.findAllByDocumentNumberOrderByCreatedAtAsc(normalizedDocumentNumber);
 
-		return userRepository.findByDocumentNumber(normalizedDocumentNumber)
-			.or(() -> userRepository.findAll().stream()
-				.filter(user -> normalizedDocumentNumber.equals(normalizeDocumentNumber(user.getDocumentNumber())))
-				.findFirst()
-				.flatMap(user -> userRepository.findById(user.getId())))
+		return users.stream()
+			.filter(user -> !hasRole(user, "ADMIN"))
+			.findFirst()
+			.or(() -> users.stream().findFirst())
 			.orElseThrow(() -> new NotFoundException(notFoundMessage));
 	}
 
@@ -537,6 +601,10 @@ public class TeamService {
 
 	private void removeEmployeeRoleIfWithoutSectors(User member) {
 		if (!sectorMemberRepository.findByUserIdOrderByAssignedAtAsc(member.getId()).isEmpty()) {
+			return;
+		}
+
+		if (companyMembershipRepository.existsByUserIdAndCompanyType(member.getId(), com.helpdesk.helpdesk.domain.CompanyType.RESPONDER)) {
 			return;
 		}
 
@@ -568,6 +636,12 @@ public class TeamService {
 		}
 		if (inviteStatus != InviteStatus.PENDING) {
 			throw new IllegalArgumentException("Esse convite já foi respondido anteriormente.");
+		}
+	}
+
+	private void ensureCanJoinInvitingCompany(User invitedUser) {
+		if (hasRole(invitedUser, "ADMIN")) {
+			throw new IllegalArgumentException("Administradores não podem aceitar convites para atuar como funcionários.");
 		}
 	}
 
@@ -613,5 +687,49 @@ public class TeamService {
 	private boolean hasRole(User user, String roleCode) {
 		return user.getRoles().stream()
 			.anyMatch(role -> roleCode.equalsIgnoreCase(role.getCode()));
+	}
+
+	private void ensureCompanyMembership(User user, User companyOwner) {
+		if (companyMembershipRepository.existsByUserIdAndCompanyOwnerId(user.getId(), companyOwner.getId())) {
+			if (user.getCompanyOwner() == null) {
+				user.setCompanyOwner(companyOwner);
+			}
+			return;
+		}
+
+		com.helpdesk.helpdesk.domain.CompanyMembership membership = new com.helpdesk.helpdesk.domain.CompanyMembership();
+		membership.setUser(user);
+		membership.setCompanyOwner(companyOwner);
+		companyMembershipRepository.save(membership);
+
+		if (user.getCompanyOwner() == null) {
+			user.setCompanyOwner(companyOwner);
+		}
+	}
+
+	private void refreshPrimaryCompanyOwner(User user) {
+		User currentCompanyOwner = user.getCompanyOwner();
+		if (currentCompanyOwner != null
+			&& companyMembershipRepository.existsByUserIdAndCompanyOwnerId(user.getId(), currentCompanyOwner.getId())) {
+			return;
+		}
+
+		User nextCompanyOwner = companyMembershipRepository.findByUserIdOrderByJoinedAtAsc(user.getId()).stream()
+			.map(com.helpdesk.helpdesk.domain.CompanyMembership::getCompanyOwner)
+			.findFirst()
+			.orElse(null);
+		user.setCompanyOwner(nextCompanyOwner);
+	}
+
+	private void removeEmployeeRoleIfWithoutCompanyMembershipsOrSectors(User member) {
+		if (!sectorMemberRepository.findByUserIdOrderByAssignedAtAsc(member.getId()).isEmpty()) {
+			return;
+		}
+		if (companyMembershipRepository.existsByUserIdAndCompanyType(member.getId(), com.helpdesk.helpdesk.domain.CompanyType.RESPONDER)) {
+			return;
+		}
+
+		member.getRoles().removeIf(role -> "EMPLOYEE".equalsIgnoreCase(role.getCode()));
+		ensureHasDefaultRole(member);
 	}
 }

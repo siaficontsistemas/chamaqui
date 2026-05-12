@@ -232,12 +232,17 @@ public class CalendarService {
 				continue;
 			}
 
-			User recipient = userRepository.findByDocumentNumber(normalizedDocumentNumber)
-			.or(() -> userRepository.findAll().stream()
-				.filter(user -> normalizedDocumentNumber.equals(normalizeDocumentNumber(user.getDocumentNumber())))
+			List<User> users = userRepository.findAllByDocumentNumberOrderByCreatedAtAsc(normalizedDocumentNumber);
+			User recipient = users.stream()
+				.filter(user -> user.getDeletedAt() == null)
+				.filter(user -> user.getStatus() != null && "ACTIVE".equals(user.getStatus().name()))
+				.filter(user -> !hasRole(user, "ADMIN"))
 				.findFirst()
-				.flatMap(user -> userRepository.findById(user.getId())))
-			.orElseThrow(() -> new NotFoundException("Nenhum usuário encontrado com o CPF informado."));
+				.or(() -> users.stream()
+					.filter(user -> user.getDeletedAt() == null)
+					.filter(user -> user.getStatus() != null && "ACTIVE".equals(user.getStatus().name()))
+					.findFirst())
+				.orElseThrow(() -> new NotFoundException("Nenhum usuário encontrado com o CPF informado."));
 
 			if (
 				recipient.getDeletedAt() != null || recipient.getStatus() == null || !"ACTIVE".equals(recipient.getStatus().name())
