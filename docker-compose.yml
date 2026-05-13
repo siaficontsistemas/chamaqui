@@ -1,8 +1,8 @@
 services:
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./frontend/Dockerfile
     container_name: helpdesk-frontend
     depends_on:
       - backend
@@ -29,7 +29,11 @@ services:
       SPRING_MAIL_PASSWORD: ${SPRING_MAIL_PASSWORD}
       SPRING_MAIL_SMTP_AUTH: ${SPRING_MAIL_SMTP_AUTH}
       SPRING_MAIL_SMTP_STARTTLS_ENABLE: ${SPRING_MAIL_SMTP_STARTTLS_ENABLE}
+      SPRING_MAIL_SMTP_SSL_ENABLE: ${SPRING_MAIL_SMTP_SSL_ENABLE:-false}
+      APP_MAIL_FROM: ${APP_MAIL_FROM:-chamaqui@siaficont.com.br}
       APP_MAIL_TICKET_CLOSURE_FROM: ${APP_MAIL_TICKET_CLOSURE_FROM}
+      APP_MAIL_COMPANY_INVITE_FROM: ${APP_MAIL_COMPANY_INVITE_FROM}
+      APP_FRONTEND_BASE_URL: ${APP_FRONTEND_BASE_URL:-http://localhost:5173}
       APP_WHATSAPP_BASE_URL: ${APP_WHATSAPP_BASE_URL:-http://baileys:21465}
       APP_WHATSAPP_API_KEY: ${APP_WHATSAPP_API_KEY:-}
       APP_WHATSAPP_WEBHOOK_URL: ${APP_WHATSAPP_WEBHOOK_URL:-http://backend:4200/webhook}

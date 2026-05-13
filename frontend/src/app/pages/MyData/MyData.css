@@ -3,6 +3,86 @@
   gap: 1.25rem;
   justify-content: flex-end;
   margin-top: 1rem;
+  flex-wrap: wrap;
+}
+
+.my-data__profile-feedback {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: fit-content;
+  max-width: 100%;
+  margin: 1rem 0 0;
+  padding: 0.9rem 1rem;
+  border-radius: 1rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.my-data__profile-feedback::before {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 999px;
+  font-size: 0.95rem;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.my-data__profile-feedback--success {
+  background: rgba(24, 118, 87, 0.1);
+  color: #187657;
+}
+
+.my-data__profile-feedback--success::before {
+  content: '✓';
+  background: rgba(24, 118, 87, 0.16);
+  color: #187657;
+}
+
+.my-data__profile-feedback--error {
+  background: rgba(217, 75, 75, 0.1);
+  color: #b53b3b;
+}
+
+.my-data__profile-feedback--error::before {
+  content: '!';
+  background: rgba(217, 75, 75, 0.16);
+  color: #b53b3b;
+}
+
+.my-data__profile-feedback--info {
+  background: rgba(29, 78, 216, 0.08);
+  color: #1d4ed8;
+}
+
+.my-data__profile-feedback--info::before {
+  content: 'i';
+  background: rgba(29, 78, 216, 0.14);
+  color: #1d4ed8;
+}
+
+.my-data__edit-button {
+  border: 0;
+  border-radius: 999px;
+  background: #132235;
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 600;
+  padding: 0.85rem 1.4rem;
+  transition: filter 0.2s ease;
+}
+
+.my-data__edit-button:hover {
+  filter: brightness(0.97);
+}
+
+.my-data__edit-button--secondary {
+  background: #e8edf3;
+  color: #1b2b3d;
 }
 
 .my-data__whatsapp-card {
@@ -359,7 +439,8 @@
 }
 
 .my-data__delete-button:disabled,
-.my-data__whatsapp-button:disabled {
+.my-data__whatsapp-button:disabled,
+.my-data__edit-button:disabled {
   cursor: not-allowed;
   opacity: 0.7;
 }
@@ -370,6 +451,10 @@
   .my-data__whatsapp-actions,
   .my-data__whatsapp-header {
     flex-direction: column;
+  }
+
+  .my-data__profile-feedback {
+    width: 100%;
   }
 
   .my-data__partnership-search,

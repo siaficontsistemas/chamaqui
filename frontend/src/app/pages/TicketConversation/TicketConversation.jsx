@@ -6,6 +6,39 @@ import Sidebar from '../../components/sidebar/Sidebar'
 import { PlusCircleIcon } from '../../dashboardIcons'
 import './TicketConversation.css'
 
+function mergeUniqueFiles(currentFiles, nextFiles) {
+  const existingKeys = new Set(
+    currentFiles.map((file) => `${file.name}-${file.size}-${file.lastModified}`)
+  )
+
+  const uniqueFiles = nextFiles.filter((file) => {
+    const fileKey = `${file.name}-${file.size}-${file.lastModified}`
+
+    if (existingKeys.has(fileKey)) {
+      return false
+    }
+
+    existingKeys.add(fileKey)
+    return true
+  })
+
+  return [...currentFiles, ...uniqueFiles]
+}
+
+function buildPastedImageFile(item, index) {
+  const blob = item.getAsFile()
+
+  if (!blob) {
+    return null
+  }
+
+  const extension = blob.type?.split('/')[1] || 'png'
+  return new File([blob], `${Date.now()}${index}.${extension}`, {
+    type: blob.type || 'image/png',
+    lastModified: Date.now(),
+  })
+}
+
 function TicketConversation({
   currentUser,
   headerProps,
@@ -286,26 +319,24 @@ function TicketConversation({
   function handleFileSelection(event) {
     const nextFiles = Array.from(event.target.files || [])
 
-    setAttachedFiles((currentFiles) => {
-      const existingKeys = new Set(
-        currentFiles.map((file) => `${file.name}-${file.size}-${file.lastModified}`)
-      )
-
-      const uniqueFiles = nextFiles.filter((file) => {
-        const fileKey = `${file.name}-${file.size}-${file.lastModified}`
-
-        if (existingKeys.has(fileKey)) {
-          return false
-        }
-
-        existingKeys.add(fileKey)
-        return true
-      })
-
-      return [...currentFiles, ...uniqueFiles]
-    })
+    setAttachedFiles((currentFiles) => mergeUniqueFiles(currentFiles, nextFiles))
 
     event.target.value = ''
+  }
+
+  function handlePasteFiles(event) {
+    const clipboardItems = Array.from(event.clipboardData?.items || [])
+    const pastedImageFiles = clipboardItems
+      .filter((item) => item.type?.startsWith('image/'))
+      .map((item, index) => buildPastedImageFile(item, index))
+      .filter(Boolean)
+
+    if (pastedImageFiles.length === 0) {
+      return
+    }
+
+    event.preventDefault()
+    setAttachedFiles((currentFiles) => mergeUniqueFiles(currentFiles, pastedImageFiles))
   }
 
   function handleRemoveFile(fileToRemove) {
@@ -551,6 +582,7 @@ function TicketConversation({
                   rows={3}
                   value={draftMessage}
                   onChange={(event) => setDraftMessage(event.target.value)}
+                  onPaste={handlePasteFiles}
                   disabled={isSendingMessage || isTicketClosed}
                 />
                 {attachedFiles.length > 0 ? (

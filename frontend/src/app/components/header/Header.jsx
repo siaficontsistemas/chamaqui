@@ -10,10 +10,12 @@ function Header({
   onNavigateLogin,
   onAcceptInvite,
   onAcceptCompanyAccessRequest,
+  onAcceptCompanyInvite,
   onAcceptCompanyPartnership,
   onAcceptTicketTransfer,
   onDeleteNotification,
   onDeclineCompanyAccessRequest,
+  onDeclineCompanyInvite,
   onDeclineCompanyPartnership,
   onDeclineInvite,
   onDeclineTicketTransfer,
@@ -56,15 +58,27 @@ function Header({
   const notificationCount = notifications.length
 
   function getNotificationTitle(notification) {
+    if (notification.type === 'app-feedback') {
+      return notification.title
+    }
+
     if (notification.type === 'ticket-assignment') {
-      return `Novo chamado ${notification.ticketProtocol}`
+      return `Novo chamado ${notification.ticketProtocol} em ${notification.companyName}`
     }
 
     if (notification.type === 'ticket-transfer') {
-      return `${notification.senderName} quer transferir o chamado ${notification.ticketProtocol}`
+      return `${notification.senderName} transferiu ${notification.ticketProtocol} em ${notification.companyName}`
+    }
+
+    if (notification.type === 'ticket-closure') {
+      return `Chamado ${notification.ticketProtocol} foi fechado`
     }
 
     if (notification.type === 'team-membership-removed') {
+      if (notification.removalType === 'COMPANY_JOINED') {
+        return 'Você entrou na empresa'
+      }
+
       if (notification.removalType === 'COMPANY_DELETED') {
         return 'A empresa foi excluída'
       }
@@ -94,6 +108,10 @@ function Header({
       return `${notification.requesterName} solicitou entrada na empresa`
     }
 
+    if (notification.type === 'company-invite') {
+      return `${notification.companyName} convidou você para entrar na empresa`
+    }
+
     if (notification.type === 'received') {
       return `${notification.invitedByName} convidou você`
     }
@@ -110,15 +128,33 @@ function Header({
   }
 
   function getNotificationDescription(notification) {
+    if (notification.type === 'app-feedback') {
+      return notification.description
+    }
+
     if (notification.type === 'ticket-assignment') {
-      return `${notification.requesterName} abriu "${notification.ticketTitle}" para o setor ${notification.sectorName}.`
+      const requesterCompanyLabel = notification.requesterCompanyName
+        ? ` Empresa solicitante: ${notification.requesterCompanyName}.`
+        : ''
+      return `${notification.requesterName} abriu "${notification.ticketTitle}" para o setor ${notification.sectorName} da empresa ${notification.companyName}.${requesterCompanyLabel}`
     }
 
     if (notification.type === 'ticket-transfer') {
-      return `O chamado "${notification.ticketTitle}" do setor ${notification.sectorName} foi transferido para você por ${notification.senderName}.`
+      const requesterCompanyLabel = notification.requesterCompanyName
+        ? ` Empresa solicitante: ${notification.requesterCompanyName}.`
+        : ''
+      return `O chamado "${notification.ticketTitle}" do setor ${notification.sectorName} da empresa ${notification.companyName} foi transferido para você por ${notification.senderName}.${requesterCompanyLabel}`
+    }
+
+    if (notification.type === 'ticket-closure') {
+      return `O seu chamado "${notification.ticketTitle}" no setor ${notification.sectorName} da empresa ${notification.companyName} foi fechado por ${notification.closedByName}.`
     }
 
     if (notification.type === 'team-membership-removed') {
+      if (notification.removalType === 'COMPANY_JOINED') {
+        return `${notification.removedByName} vinculou seu cadastro à empresa ${notification.companyName || 'informada'}.`
+      }
+
       if (notification.removalType === 'COMPANY_DELETED') {
         return `${notification.removedByName} excluiu a empresa ${notification.companyName || 'informada'}. Os setores dessa empresa não existem mais para você.`
       }
@@ -155,6 +191,15 @@ function Header({
       return `${notification.requesterName} (${notification.requesterEmail}) pediu acesso à empresa ${notification.companyName} para ${participationLabel}.${documentLabel}`
     }
 
+    if (notification.type === 'company-invite') {
+      const participationLabel =
+        notification.requestedRole === 'employee' ? 'responder chamados' : 'criar chamados'
+      const documentLabel = notification.requesterDocumentNumber
+        ? ` CPF ${notification.requesterDocumentNumber}.`
+        : ''
+      return `${notification.companyName} convidou você para entrar na empresa e ${participationLabel}.${documentLabel}`
+    }
+
     const sectorNames = notification.sectorNames?.join(', ') || 'setor não informado'
 
     if (notification.type === 'received') {
@@ -173,6 +218,14 @@ function Header({
   }
 
   function getNotificationStatusLabel(notification) {
+    if (notification.type === 'app-feedback') {
+      if (notification.status === 'DECLINED') {
+        return 'Atenção'
+      }
+
+      return 'Atualização'
+    }
+
     if (notification.type === 'ticket-assignment') {
       return 'Novo'
     }
@@ -191,7 +244,15 @@ function Header({
       }
     }
 
+    if (notification.type === 'ticket-closure') {
+      return 'Fechado'
+    }
+
     if (notification.type === 'team-membership-removed') {
+      if (notification.removalType === 'COMPANY_JOINED') {
+        return 'Novo acesso'
+      }
+
       return 'Removido'
     }
 
@@ -223,6 +284,10 @@ function Header({
       return 'Pendente'
     }
 
+    if (notification.type === 'company-invite') {
+      return 'Pendente'
+    }
+
     if (notification.status === 'PENDING') {
       return 'Pendente'
     }
@@ -239,9 +304,14 @@ function Header({
   }
 
   function canDeleteNotification(notification) {
+    if (notification.type === 'app-feedback') {
+      return true
+    }
+
     return !(
       (notification.type === 'ticket-transfer' && notification.status === 'PENDING') ||
-      notification.type === 'company-access-request'
+      notification.type === 'company-access-request' ||
+      notification.type === 'company-invite'
     )
   }
 
@@ -383,6 +453,24 @@ function Header({
           notification.id,
           isAccepting ? 'accept-company-access' : 'decline-company-access',
           isAccepting ? onAcceptCompanyAccessRequest : onDeclineCompanyAccessRequest
+        ),
+    })
+  }
+
+  function requestCompanyInviteConfirmation(notification, actionType) {
+    const isAccepting = actionType === 'accept'
+    const actionLabel = isAccepting ? 'aceitar' : 'recusar'
+
+    openConfirmation({
+      title: isAccepting ? 'Aceitar convite da empresa' : 'Recusar convite da empresa',
+      description: `Tem certeza que deseja ${actionLabel} o convite da empresa ${notification.companyName}?`,
+      confirmLabel: isAccepting ? 'Aceitar' : 'Recusar',
+      confirmVariant: isAccepting ? 'primary' : 'danger',
+      onConfirm: () =>
+        handleNotificationAction(
+          notification.id,
+          isAccepting ? 'accept-company-invite' : 'decline-company-invite',
+          isAccepting ? onAcceptCompanyInvite : onDeclineCompanyInvite
         ),
     })
   }
@@ -730,6 +818,33 @@ function Header({
                       </button>
                     </div>
                   ) : null}
+                  {notification.type === 'company-invite' &&
+                  notification.status === 'PENDING' ? (
+                    <div className="home-notification-card__actions">
+                      <button
+                        className="home-notification-card__button"
+                        type="button"
+                        onClick={() => requestCompanyInviteConfirmation(notification, 'accept')}
+                        disabled={processingNotificationAction.inviteId === notification.id}
+                      >
+                        {processingNotificationAction.inviteId === notification.id &&
+                        processingNotificationAction.type === 'accept-company-invite'
+                          ? 'Processando...'
+                          : 'Aceitar'}
+                      </button>
+                      <button
+                        className="home-notification-card__button home-notification-card__button--ghost"
+                        type="button"
+                        onClick={() => requestCompanyInviteConfirmation(notification, 'decline')}
+                        disabled={processingNotificationAction.inviteId === notification.id}
+                      >
+                        {processingNotificationAction.inviteId === notification.id &&
+                        processingNotificationAction.type === 'decline-company-invite'
+                          ? 'Processando...'
+                          : 'Recusar'}
+                      </button>
+                    </div>
+                  ) : null}
                 </article>
               ))
             ) : (
@@ -843,6 +958,10 @@ function CloseIcon() {
 }
 
 function SidebarIcon({ icon, itemId }) {
+  if (icon === 'calendar' || itemId === 'calendar') {
+    return <CalendarIcon />
+  }
+
   if (itemId === 'reports') {
     return <ReportIcon />
   }
@@ -941,6 +1060,20 @@ function PlusIcon() {
     <svg viewBox="0 0 24 24" fill="none">
       <path
         d="M12 5v14M5 12h14"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function CalendarIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none">
+      <path
+        d="M7 3.5v3M17 3.5v3M4.5 9h15M6.5 5.5h11a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2v-10a2 2 0 0 1 2-2ZM8 12.5h3M8 16h5"
         stroke="currentColor"
         strokeWidth="1.8"
         strokeLinecap="round"
