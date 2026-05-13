@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import ConfirmActionModal from '../../components/confirm-action-modal/ConfirmActionModal'
 import Header from '../../components/header/Header'
 import Sidebar from '../../components/sidebar/Sidebar'
 import { getRoleLabel } from '../../dashboardData'
@@ -5,14 +7,19 @@ import '../Home/Home.css'
 
 function Sector({
   headerProps,
+  isTeamDataLoading,
   navigationGroups,
   onNavigatePage,
+  onUpdateMemberSectors,
   sector,
   teamMembers = [],
   userRole = 'user',
 }) {
   const roleLabel = getRoleLabel(userRole)
   const assignedMembers = teamMembers.filter((member) => (member.sectors ?? []).includes(sector.id))
+  const [memberPendingRemoval, setMemberPendingRemoval] = useState(null)
+  const [processingMemberId, setProcessingMemberId] = useState('')
+  const [feedbackMessage, setFeedbackMessage] = useState('')
   const summaryCards = [
     {
       id: 'sector',
@@ -46,6 +53,41 @@ function Sector({
           : 'Visualiza somente o setor em que participa',
     },
   ]
+
+  function requestRemoveMemberFromSector(member) {
+    setMemberPendingRemoval(member)
+  }
+
+  function closeRemoveMemberModal() {
+    if (processingMemberId) {
+      return
+    }
+    setMemberPendingRemoval(null)
+  }
+
+  async function handleConfirmRemoveMember() {
+    if (!memberPendingRemoval || !onUpdateMemberSectors) {
+      return
+    }
+
+    setProcessingMemberId(memberPendingRemoval.id)
+    setFeedbackMessage('')
+
+    try {
+      const nextSectors = (memberPendingRemoval.sectors ?? []).filter(
+        (sectorId) => sectorId !== sector.id
+      )
+      await onUpdateMemberSectors(memberPendingRemoval.id, nextSectors)
+      setFeedbackMessage(
+        `${memberPendingRemoval.name} foi removido(a) apenas do setor ${sector.name}.`
+      )
+      setMemberPendingRemoval(null)
+    } catch (error) {
+      setFeedbackMessage(error.message)
+    } finally {
+      setProcessingMemberId('')
+    }
+  }
 
   return (
     <main className="home-page">
@@ -108,20 +150,41 @@ function Sector({
                 <span className="home-panel__badge">{assignedMembers.length} integrante(s)</span>
               </div>
 
+              {feedbackMessage ? <p className="profile-form__feedback">{feedbackMessage}</p> : null}
+
               <div className="home-panel__table">
-                <div className="home-panel__table-head">
+                <div className={`home-panel__table-head${userRole === 'admin' ? ' team-panel__head--admin' : ''}`}>
                   <span>Nome</span>
                   <span>Função</span>
                   <span>Status</span>
                   <span>Setores</span>
+                  {userRole === 'admin' ? <span>Ações</span> : null}
                 </div>
 
                 {assignedMembers.map((member) => (
-                  <div className="home-panel__table-row" key={member.id}>
+                  <div
+                    className={`home-panel__table-row${userRole === 'admin' ? ' team-panel__row--admin' : ''}`}
+                    key={member.id}
+                  >
                     <span>{member.name}</span>
                     <span>{member.role}</span>
                     <span>{member.status}</span>
                     <span>{member.sectors.length}</span>
+                    {userRole === 'admin' ? (
+                      <span>
+                        <button
+                          className="team-panel__action-button team-panel__action-button--danger"
+                          type="button"
+                          onClick={() => requestRemoveMemberFromSector(member)}
+                          disabled={
+                            isTeamDataLoading ||
+                            processingMemberId === member.id
+                          }
+                        >
+                          {processingMemberId === member.id ? 'Removendo...' : 'Remover funcionário'}
+                        </button>
+                      </span>
+                    ) : null}
                   </div>
                 ))}
 
@@ -131,6 +194,7 @@ function Sector({
                     <span>Aguardando vínculo</span>
                     <span>Sem participação</span>
                     <span>0</span>
+                    {userRole === 'admin' ? <span>Sem ações</span> : null}
                   </div>
                 ) : null}
               </div>
@@ -138,6 +202,24 @@ function Sector({
           </div>
         </section>
       </div>
+
+      <ConfirmActionModal
+        title="Remover funcionário do setor"
+        description={
+          memberPendingRemoval
+            ? [
+                `Tem certeza que deseja remover ${memberPendingRemoval.name} do setor ${sector.name}?`,
+                'Essa ação remove apenas o vínculo com este setor específico.',
+              ].filter(Boolean)
+            : []
+        }
+        isOpen={Boolean(memberPendingRemoval)}
+        isProcessing={Boolean(processingMemberId)}
+        confirmLabel={processingMemberId ? 'Removendo...' : 'Confirmar'}
+        confirmVariant="danger"
+        onCancel={closeRemoveMemberModal}
+        onConfirm={handleConfirmRemoveMember}
+      />
 
     </main>
   )

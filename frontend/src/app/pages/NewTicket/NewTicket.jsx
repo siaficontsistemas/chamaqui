@@ -13,6 +13,39 @@ function normalizeText(value) {
     .toLowerCase()
 }
 
+function mergeUniqueFiles(currentFiles, nextFiles) {
+  const existingKeys = new Set(
+    currentFiles.map((file) => `${file.name}-${file.size}-${file.lastModified}`)
+  )
+
+  const uniqueFiles = nextFiles.filter((file) => {
+    const fileKey = `${file.name}-${file.size}-${file.lastModified}`
+
+    if (existingKeys.has(fileKey)) {
+      return false
+    }
+
+    existingKeys.add(fileKey)
+    return true
+  })
+
+  return [...currentFiles, ...uniqueFiles]
+}
+
+function buildPastedImageFile(item, index) {
+  const blob = item.getAsFile()
+
+  if (!blob) {
+    return null
+  }
+
+  const extension = blob.type?.split('/')[1] || 'png'
+  return new File([blob], `${Date.now()}${index}.${extension}`, {
+    type: blob.type || 'image/png',
+    lastModified: Date.now(),
+  })
+}
+
 function NewTicket({
   availableTicketSectors = [],
   currentUser,
@@ -31,6 +64,7 @@ function NewTicket({
     companyName: '',
     companyOwnerId: '',
     sectorId: '',
+    assignedToUserId: '',
     priorityCode: '',
     title: '',
     copyEmail: '',
@@ -73,6 +107,14 @@ function NewTicket({
       availableSectors.filter((sector) => sector.companyOwnerId === selectedCompany?.id),
     [availableSectors, selectedCompany]
   )
+  const selectedSector = useMemo(
+    () => companySectors.find((sector) => sector.id === formValues.sectorId) ?? null,
+    [companySectors, formValues.sectorId]
+  )
+  const sectorAssignees = useMemo(
+    () => (Array.isArray(selectedSector?.assignees) ? selectedSector.assignees : []),
+    [selectedSector]
+  )
   const filteredCompanies = useMemo(() => {
     const normalizedCompanyName = normalizeText(formValues.companyName)
 
@@ -98,10 +140,19 @@ function NewTicket({
           ...currentValues,
           companyName: value,
           companyOwnerId: matchedCompany?.id || '',
+          assignedToUserId: '',
           sectorId:
             matchedCompany?.id && currentValues.companyOwnerId === matchedCompany.id
               ? currentValues.sectorId
               : '',
+        }
+      }
+
+      if (field === 'sectorId') {
+        return {
+          ...currentValues,
+          sectorId: value,
+          assignedToUserId: '',
         }
       }
 
@@ -117,6 +168,7 @@ function NewTicket({
       ...currentValues,
       companyName: selectedOption?.name || '',
       companyOwnerId: selectedOption?.id || '',
+      assignedToUserId: '',
       sectorId:
         selectedOption?.id && currentValues.companyOwnerId === selectedOption.id
           ? currentValues.sectorId
@@ -128,25 +180,24 @@ function NewTicket({
   function handleFileSelection(event) {
     const nextFiles = Array.from(event.target.files || [])
 
-    setAttachedFiles((currentFiles) => {
-      const existingKeys = new Set(
-        currentFiles.map((file) => `${file.name}-${file.size}-${file.lastModified}`)
-      )
-      const uniqueFiles = nextFiles.filter((file) => {
-        const fileKey = `${file.name}-${file.size}-${file.lastModified}`
-
-        if (existingKeys.has(fileKey)) {
-          return false
-        }
-
-        existingKeys.add(fileKey)
-        return true
-      })
-
-      return [...currentFiles, ...uniqueFiles]
-    })
+    setAttachedFiles((currentFiles) => mergeUniqueFiles(currentFiles, nextFiles))
 
     event.target.value = ''
+  }
+
+  function handlePasteFiles(event) {
+    const clipboardItems = Array.from(event.clipboardData?.items || [])
+    const pastedImageFiles = clipboardItems
+      .filter((item) => item.type?.startsWith('image/'))
+      .map((item, index) => buildPastedImageFile(item, index))
+      .filter(Boolean)
+
+    if (pastedImageFiles.length === 0) {
+      return
+    }
+
+    event.preventDefault()
+    setAttachedFiles((currentFiles) => mergeUniqueFiles(currentFiles, pastedImageFiles))
   }
 
   function handleRemoveFile(fileToRemove) {
@@ -200,12 +251,14 @@ function NewTicket({
         priorityCode: formValues.priorityCode,
         companyOwnerId: formValues.companyOwnerId,
         sectorId: formValues.sectorId,
+        assignedToUserId: formValues.assignedToUserId || undefined,
         copyEmail: formValues.copyEmail,
       })
       setFormValues({
         companyName: '',
         companyOwnerId: '',
         sectorId: '',
+        assignedToUserId: '',
         priorityCode: '',
         title: '',
         copyEmail: '',
@@ -372,6 +425,33 @@ function NewTicket({
                     <ChevronDownIcon />
                   </div>
                 </label>
+
+                <label className="ticket-field">
+                  <span>Destinatário</span>
+                  <div className="ticket-field__control ticket-field__control--select">
+                    <select
+                      value={formValues.assignedToUserId}
+                      onChange={(event) => handleChange('assignedToUserId', event.target.value)}
+                      disabled={!formValues.sectorId}
+                    >
+                      {!selectedSector ? (
+                        <option disabled value="">
+                          Selecione um setor primeiro
+                        </option>
+                      ) : (
+                        <>
+                          <option value="">Aleatoriamente</option>
+                          {sectorAssignees.map((assignee) => (
+                            <option key={assignee.id} value={assignee.id}>
+                              {assignee.fullName}
+                            </option>
+                          ))}
+                        </>
+                      )}
+                    </select>
+                    <ChevronDownIcon />
+                  </div>
+                </label>
               </div>
 
               <label className="ticket-field">
@@ -406,6 +486,7 @@ function NewTicket({
                     rows="6"
                     value={formValues.description}
                     onChange={(event) => handleChange('description', event.target.value)}
+                    onPaste={handlePasteFiles}
                   />
                 </div>
               </label>

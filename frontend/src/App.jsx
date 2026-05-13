@@ -2,18 +2,22 @@ import { useEffect, useMemo, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   acceptCompanyAccessRequestNotification,
+  acceptCompanyInviteNotification,
   acceptCompanyPartnership,
   acceptTicketTransferNotification,
   acceptTeamInvite,
   closeTicket,
+  createCompanyInvite,
   createCompanyPartnership,
   createTicket,
   createSector,
   createTeamInvite,
   declineCompanyAccessRequestNotification,
+  declineCompanyInviteNotification,
   declineCompanyPartnership,
   deleteTeamSector,
   deleteCompanyPartnershipNotification,
+  deleteTicketClosureNotification,
   deleteTicketAssignmentNotification,
   deleteCalendarReminderNotification,
   deleteTeamMembershipNotification,
@@ -21,6 +25,7 @@ import {
   deleteTeamNotification,
   deleteCompanyProfile,
   deleteProfile,
+  deleteTickets,
   declineTicketTransferNotification,
   declineTeamInvite,
   getCompanyPartnershipTicketTargets,
@@ -28,7 +33,9 @@ import {
   getMyCompanyPartnerships,
   getCalendarReminderNotifications,
   getCompanyAccessRequestNotifications,
+  getCompanyInviteNotifications,
   getCompanyPartnershipNotifications,
+  getTicketClosureNotifications,
   getTicketAssignmentNotifications,
   getTeamMembershipNotifications,
   getTicketTransferNotifications,
@@ -43,6 +50,7 @@ import {
   requestTicketTransfer,
   searchCompanyPartnershipTargets,
   unlinkCompanyPartnership,
+  updateProfile as updateProfileRequest,
   updateTeamMemberSectors,
 } from './app/api'
 import { buildNavigationGroups, getVisibleSectors } from './app/dashboardData'
@@ -84,6 +92,7 @@ const dashboardPageComponents = {
 }
 
 const SESSION_STORAGE_KEY = 'helpdesk.session'
+const AUTO_REFRESH_INTERVAL_MS = 5000
 
 function normalizeSector(sector) {
   return {
@@ -117,9 +126,10 @@ function normalizeTeamMember(member) {
     id: member.userId,
     name: member.fullName,
     email: member.email,
+    documentNumber: member.documentNumber || '',
     role: member.role,
     status: member.status,
-    sectors: Array.isArray(member.sectorIds) ? member.sectorIds : [],
+    sectors: Array.isArray(member.sectorIds) ? Array.from(new Set(member.sectorIds)) : [],
   }
 }
 
@@ -164,6 +174,8 @@ function normalizeTicketNotification(notification) {
     ticketTitle: notification.ticketTitle,
     requesterName: notification.requesterName,
     sectorName: notification.sectorName,
+    companyName: notification.companyName || 'Empresa não informada',
+    requesterCompanyName: notification.requesterCompanyName || '',
     status: notification.status,
     createdAt: notification.createdAt,
     type: 'ticket-assignment',
@@ -178,6 +190,8 @@ function normalizeTicketTransferNotification(notification) {
     ticketTitle: notification.ticketTitle,
     requesterName: notification.requesterName,
     sectorName: notification.sectorName,
+    companyName: notification.companyName || 'Empresa não informada',
+    requesterCompanyName: notification.requesterCompanyName || '',
     senderName: notification.senderName,
     recipientName: notification.recipientName,
     status: notification.status,
@@ -185,6 +199,21 @@ function normalizeTicketTransferNotification(notification) {
     updatedAt: notification.updatedAt,
     respondedAt: notification.respondedAt,
     type: 'ticket-transfer',
+  }
+}
+
+function normalizeTicketClosureNotification(notification) {
+  return {
+    id: notification.id,
+    ticketId: notification.ticketId,
+    ticketProtocol: notification.ticketProtocol,
+    ticketTitle: notification.ticketTitle,
+    sectorName: notification.sectorName,
+    companyName: notification.companyName || 'Empresa não informada',
+    closedByName: notification.closedByName || 'Usuário não informado',
+    createdAt: notification.createdAt,
+    status: 'CLOSED',
+    type: 'ticket-closure',
   }
 }
 
@@ -251,9 +280,47 @@ function normalizeCompanyAccessRequestNotification(notification) {
   }
 }
 
+function normalizeCompanyInviteNotification(notification) {
+  return {
+    id: notification.id,
+    requesterName: notification.requesterName || 'Pessoa não informada',
+    requesterEmail: notification.requesterEmail || '',
+    requesterDocumentNumber: notification.requesterDocumentNumber || '',
+    requestedRole: notification.requestedRole || 'user',
+    companyName: notification.companyName || 'Empresa não informada',
+    companyType: notification.companyType || '',
+    status: notification.status || 'PENDING',
+    createdAt: notification.createdAt,
+    type: 'company-invite',
+  }
+}
+
+function normalizeAppFeedbackNotification(notification) {
+  return {
+    id: notification.id,
+    title: notification.title || 'Atualização da equipe',
+    description: notification.description || '',
+    status: notification.status || 'ACCEPTED',
+    createdAt: notification.createdAt || new Date().toISOString(),
+    type: 'app-feedback',
+  }
+}
+
 async function fetchDashboardBundle(email) {
+  const nextProfile = await getProfile(email)
+  const normalizedProfile = normalizeCurrentUser(nextProfile)
+  const currentRole = getPrimaryRole(normalizedProfile.roles)
+  const canManageCompanyRequests = currentRole === 'admin'
+
+  async function safeRequest(request, fallbackValue) {
+    try {
+      return await request()
+    } catch {
+      return fallbackValue
+    }
+  }
+
   const [
-    nextProfile,
     nextSummary,
     nextSectors,
     nextTicketTargets,
@@ -263,29 +330,34 @@ async function fetchDashboardBundle(email) {
     nextCompanyPartnerships,
     nextTicketNotifications,
     nextTicketTransferNotifications,
+    nextTicketClosureNotifications,
     nextTeamMembershipNotifications,
     nextCalendarReminderNotifications,
     nextCompanyPartnershipNotifications,
     nextCompanyAccessRequestNotifications,
+    nextCompanyInviteNotifications,
   ] = await Promise.all([
-    getProfile(email),
-    getTicketSummary(email),
-    getSectors(email),
-    getCompanyPartnershipTicketTargets(email),
-    getTeamMembers(email),
-    getReceivedTeamInvites(email),
-    getSentTeamInvites(email),
-    getMyCompanyPartnerships(email),
-    getTicketAssignmentNotifications(email),
-    getTicketTransferNotifications(email),
-    getTeamMembershipNotifications(email),
-    getCalendarReminderNotifications(email),
-    getCompanyPartnershipNotifications(email),
-    getCompanyAccessRequestNotifications(email),
+    safeRequest(() => getTicketSummary(email), null),
+    safeRequest(() => getSectors(email), []),
+    safeRequest(() => getCompanyPartnershipTicketTargets(email), []),
+    safeRequest(() => getTeamMembers(email), []),
+    safeRequest(() => getReceivedTeamInvites(email), []),
+    safeRequest(() => getSentTeamInvites(email), []),
+    canManageCompanyRequests ? safeRequest(() => getMyCompanyPartnerships(email), []) : Promise.resolve([]),
+    safeRequest(() => getTicketAssignmentNotifications(email), []),
+    safeRequest(() => getTicketTransferNotifications(email), []),
+    safeRequest(() => getTicketClosureNotifications(email), []),
+    safeRequest(() => getTeamMembershipNotifications(email), []),
+    safeRequest(() => getCalendarReminderNotifications(email), []),
+    safeRequest(() => getCompanyPartnershipNotifications(email), []),
+    canManageCompanyRequests
+      ? safeRequest(() => getCompanyAccessRequestNotifications(email), [])
+      : Promise.resolve([]),
+    safeRequest(() => getCompanyInviteNotifications(email), []),
   ])
 
   return {
-    profile: normalizeCurrentUser(nextProfile),
+    profile: normalizedProfile,
     ticketSummary: nextSummary,
     sectors: Array.isArray(nextSectors) ? nextSectors.map(normalizeSector) : [],
     ticketTargets: Array.isArray(nextTicketTargets) ? nextTicketTargets.map(normalizeSector) : [],
@@ -304,6 +376,9 @@ async function fetchDashboardBundle(email) {
       ...(Array.isArray(nextTicketTransferNotifications)
         ? nextTicketTransferNotifications.map(normalizeTicketTransferNotification)
         : []),
+      ...(Array.isArray(nextTicketClosureNotifications)
+        ? nextTicketClosureNotifications.map(normalizeTicketClosureNotification)
+        : []),
       ...(Array.isArray(nextTeamMembershipNotifications)
         ? nextTeamMembershipNotifications.map(normalizeTeamMembershipNotification)
         : []),
@@ -315,6 +390,9 @@ async function fetchDashboardBundle(email) {
         : []),
       ...(Array.isArray(nextCompanyAccessRequestNotifications)
         ? nextCompanyAccessRequestNotifications.map(normalizeCompanyAccessRequestNotification)
+        : []),
+      ...(Array.isArray(nextCompanyInviteNotifications)
+        ? nextCompanyInviteNotifications.map(normalizeCompanyInviteNotification)
         : []),
     ],
   }
@@ -465,6 +543,7 @@ function App() {
   const [sentInvites, setSentInvites] = useState([])
   const [companyPartnerships, setCompanyPartnerships] = useState([])
   const [ticketNotifications, setTicketNotifications] = useState([])
+  const [appFeedbackNotifications, setAppFeedbackNotifications] = useState([])
   const [profile, setProfile] = useState(() => loadStoredSession())
   const [isProfileLoading, setIsProfileLoading] = useState(false)
   const [profileError, setProfileError] = useState('')
@@ -482,16 +561,19 @@ function App() {
   const currentMemberId =
     teamMembers.find((member) => member.email?.toLowerCase() === currentUserEmail.toLowerCase())?.id ?? null
   const effectiveUserRole = currentUserRole
-  const canAccessTeamPage = currentUserRole === 'admin' || currentMemberId !== null
+  const hasPendingTeamInvites = receivedInvites.some((invite) => invite.status === 'PENDING')
+  const canAccessTeamPage =
+    currentUserRole === 'admin' || currentMemberId !== null || hasPendingTeamInvites
   const navigationGroups = useMemo(
     () =>
       buildNavigationGroups({
+        canAccessTeamPage,
         userRole: effectiveUserRole,
         sectors: createdSectors,
         teamMembers,
         currentMemberId,
       }),
-    [createdSectors, currentMemberId, effectiveUserRole, teamMembers]
+    [canAccessTeamPage, createdSectors, currentMemberId, effectiveUserRole, teamMembers]
   )
   const visibleSectors = useMemo(
     () => getVisibleSectors(effectiveUserRole, createdSectors, teamMembers, currentMemberId),
@@ -514,7 +596,7 @@ function App() {
         type: 'sent',
       }))
 
-    return [...pendingReceived, ...sentUpdates, ...ticketNotifications].sort(
+    return [...appFeedbackNotifications, ...pendingReceived, ...sentUpdates, ...ticketNotifications].sort(
       (firstInvite, secondInvite) =>
         new Date(
           secondInvite.updatedAt ||
@@ -529,7 +611,7 @@ function App() {
             firstInvite.createdAt
         ).getTime()
     )
-  }, [receivedInvites, sentInvites, ticketNotifications])
+  }, [appFeedbackNotifications, receivedInvites, sentInvites, ticketNotifications])
 
   const headerProps = {
     isTeamRole: canAccessTeamPage,
@@ -540,10 +622,12 @@ function App() {
     onAcceptInvite: handleAcceptInvite,
     onAcceptCompanyAccessRequest: handleAcceptCompanyAccessRequest,
     onAcceptCompanyPartnership: handleAcceptCompanyPartnership,
+    onAcceptCompanyInvite: handleAcceptCompanyInvite,
     onAcceptTicketTransfer: handleAcceptTicketTransfer,
     onDeleteNotification: handleDeleteNotification,
     onDeclineCompanyAccessRequest: handleDeclineCompanyAccessRequest,
     onDeclineCompanyPartnership: handleDeclineCompanyPartnership,
+    onDeclineCompanyInvite: handleDeclineCompanyInvite,
     onDeclineInvite: handleDeclineInvite,
     onDeclineTicketTransfer: handleDeclineTicketTransfer,
     onNavigateLogin: handleNavigateLogin,
@@ -569,6 +653,17 @@ function App() {
     setSentInvites(bundle.sentInvites)
     setCompanyPartnerships(bundle.companyPartnerships)
     setTicketNotifications(bundle.ticketNotifications)
+  }
+
+  function pushAppFeedbackNotification(notification) {
+    setAppFeedbackNotifications((currentNotifications) => [
+      normalizeAppFeedbackNotification({
+        id: `app-feedback-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        ...notification,
+        createdAt: new Date().toISOString(),
+      }),
+      ...currentNotifications,
+    ])
   }
 
   useEffect(() => {
@@ -637,6 +732,52 @@ function App() {
 
     return () => {
       isCancelled = true
+    }
+  }, [authUser?.email])
+
+  useEffect(() => {
+    if (!authUser?.email) {
+      return undefined
+    }
+
+    let isCancelled = false
+
+    async function refreshBundleSilently() {
+      if (document.visibilityState === 'hidden') {
+        return
+      }
+
+      try {
+        const bundle = await fetchDashboardBundle(authUser.email)
+
+        if (isCancelled) {
+          return
+        }
+
+        applyDashboardBundle(bundle)
+      } catch {
+        // Mantem os dados atuais quando a atualizacao silenciosa falha.
+      }
+    }
+
+    const intervalId = window.setInterval(refreshBundleSilently, AUTO_REFRESH_INTERVAL_MS)
+    const handleWindowFocus = () => {
+      refreshBundleSilently()
+    }
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshBundleSilently()
+      }
+    }
+
+    window.addEventListener('focus', handleWindowFocus)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      isCancelled = true
+      window.clearInterval(intervalId)
+      window.removeEventListener('focus', handleWindowFocus)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [authUser?.email])
 
@@ -732,6 +873,7 @@ function App() {
     priorityCode,
     companyOwnerId,
     sectorId,
+    assignedToUserId,
     copyEmail,
     files = [],
   }) {
@@ -759,6 +901,7 @@ function App() {
       copyEmail: trimmedCopyEmail || undefined,
       requesterEmail: currentUserEmail,
       sectorId,
+      assignedToUserId,
     })
 
     await refreshDashboardData(currentUserEmail)
@@ -786,6 +929,21 @@ function App() {
     })
     await refreshDashboardData(currentUserEmail)
     return normalizeCompanyPartnership(partnership)
+  }
+
+  async function handleInviteCompanyMember({ fullName, email, documentNumber }) {
+    if (!currentUserEmail) {
+      return null
+    }
+
+    const createdInvite = await createCompanyInvite({
+      fullName,
+      email,
+      documentNumber,
+      invitedByEmail: currentUserEmail,
+    })
+    await refreshDashboardData(currentUserEmail)
+    return createdInvite
   }
 
   async function handleAcceptCompanyPartnership(partnershipId) {
@@ -845,6 +1003,24 @@ function App() {
     return closedTicket
   }
 
+  async function handleDeleteTickets(ticketIds) {
+    if (!currentUserEmail || !Array.isArray(ticketIds) || ticketIds.length === 0) {
+      return
+    }
+
+    await deleteTickets({
+      authorEmail: currentUserEmail,
+      ticketIds,
+    })
+
+    if (selectedTicket && ticketIds.includes(selectedTicket.id)) {
+      setSelectedTicket(null)
+      navigate(getSectionPath('all'))
+    }
+
+    await refreshDashboardData(currentUserEmail)
+  }
+
   async function handleRequestTicketTransfer(ticketId, recipientUserId) {
     if (!ticketId || !recipientUserId || !currentUserEmail) {
       return null
@@ -876,7 +1052,7 @@ function App() {
 
     const updatedMembers = await updateTeamMemberSectors(memberId, {
       assignedByEmail: currentUserEmail,
-      sectorIds: nextSectors,
+      sectorIds: Array.from(new Set(nextSectors || [])),
     })
 
     setTeamMembers(Array.isArray(updatedMembers) ? updatedMembers.map(normalizeTeamMember) : [])
@@ -896,15 +1072,16 @@ function App() {
     const trimmedCpf = cpf.trim()
 
     if (!trimmedCpf || sectors.length === 0 || !currentUserEmail) {
-      return
+      return null
     }
 
-    await createTeamInvite({
+    const createdInvite = await createTeamInvite({
       documentNumber: trimmedCpf,
       invitedByEmail: currentUserEmail,
       sectorIds: sectors,
     })
     await refreshDashboardData(currentUserEmail)
+    return normalizeInvite(createdInvite)
   }
 
   async function handleDeleteSector(sectorId) {
@@ -952,6 +1129,24 @@ function App() {
     await refreshDashboardData(currentUserEmail)
   }
 
+  async function handleAcceptCompanyInvite(requestId) {
+    if (!currentUserEmail) {
+      return
+    }
+
+    await acceptCompanyInviteNotification(requestId, currentUserEmail)
+    await refreshDashboardData(currentUserEmail)
+  }
+
+  async function handleDeclineCompanyInvite(requestId) {
+    if (!currentUserEmail) {
+      return
+    }
+
+    await declineCompanyInviteNotification(requestId, currentUserEmail)
+    await refreshDashboardData(currentUserEmail)
+  }
+
   async function handleAcceptTicketTransfer(notificationId) {
     if (!currentUserEmail) {
       return
@@ -976,6 +1171,13 @@ function App() {
     }
 
     if (typeof notificationOrId === 'object') {
+      if (notificationOrId.type === 'app-feedback') {
+        setAppFeedbackNotifications((currentNotifications) =>
+          currentNotifications.filter((notification) => notification.id !== notificationOrId.id)
+        )
+        return
+      }
+
       if (notificationOrId.type === 'ticket-assignment') {
         await deleteTicketAssignmentNotification(notificationOrId.id, currentUserEmail)
         await refreshDashboardData(currentUserEmail)
@@ -984,6 +1186,12 @@ function App() {
 
       if (notificationOrId.type === 'ticket-transfer') {
         await deleteTicketTransferNotification(notificationOrId.id, currentUserEmail)
+        await refreshDashboardData(currentUserEmail)
+        return
+      }
+
+      if (notificationOrId.type === 'ticket-closure') {
+        await deleteTicketClosureNotification(notificationOrId.id, currentUserEmail)
         await refreshDashboardData(currentUserEmail)
         return
       }
@@ -1032,6 +1240,25 @@ function App() {
     handleNavigateLogin()
   }
 
+  async function handleUpdateProfile(profileData) {
+    if (!currentUserEmail) {
+      return null
+    }
+
+    const updatedProfile = await updateProfileRequest({
+      currentEmail: currentUserEmail,
+      ...profileData,
+    })
+
+    const normalizedProfile = normalizeCurrentUser(updatedProfile)
+    setProfile(normalizedProfile)
+    setAuthUser(normalizedProfile)
+    setCurrentUserRole(getPrimaryRole(normalizedProfile.roles))
+    await refreshDashboardData(normalizedProfile.email)
+
+    return normalizedProfile
+  }
+
   function renderDashboardPage(pageId) {
     const CurrentDashboardPage = dashboardPageComponents[pageId]
 
@@ -1049,19 +1276,25 @@ function App() {
         onCreateCompanyPartnership={handleCreateCompanyPartnership}
         onCreateTicket={handleCreateTicket}
         onAcceptCompanyPartnership={handleAcceptCompanyPartnership}
+        onAcceptCompanyInvite={handleAcceptCompanyInvite}
         onDeclineInvite={handleDeclineInvite}
         onDeclineCompanyPartnership={handleDeclineCompanyPartnership}
+        onDeclineCompanyInvite={handleDeclineCompanyInvite}
         onDeclineTicketTransfer={handleDeclineTicketTransfer}
         onDeleteAccount={handleDeleteAccount}
         onDeleteCompany={handleDeleteCompany}
+        onDeleteTickets={handleDeleteTickets}
         onUnlinkCompanyPartnership={handleUnlinkCompanyPartnership}
         onDeleteNotification={handleDeleteNotification}
         onDeleteSector={handleDeleteSector}
         onInviteMember={handleInviteMember}
+        onInviteCompanyMember={handleInviteCompanyMember}
+        onPublishNotification={pushAppFeedbackNotification}
         onNavigatePage={handleNavigatePage}
         onOpenTicket={handleOpenTicket}
         onRefreshDashboardData={refreshDashboardData}
         onRemoveMemberFromCompany={handleRemoveMemberFromCompany}
+        onUpdateProfile={handleUpdateProfile}
         onSearchPartnershipCompanies={handleSearchPartnershipCompanies}
         onUpdateMemberSectors={handleUpdateMemberSectors}
         availableTicketSectors={ticketTargetSectors}
@@ -1200,8 +1433,10 @@ function App() {
                 sectorPage ? (
                   <Sector
                     headerProps={headerProps}
+                    isTeamDataLoading={isTeamDataLoading}
                     navigationGroups={navigationGroups}
                     onNavigatePage={handleNavigatePage}
+                    onUpdateMemberSectors={handleUpdateMemberSectors}
                     sector={sectorPage}
                     teamMembers={teamMembers}
                     userRole={currentUserRole}
@@ -1248,7 +1483,13 @@ function App() {
       </div>
 
       <footer className="app-shell__footer">
-        <span>&copy; 2026 Siaficont Sistemas. Todos os direitos reservados.</span>
+        <span>
+          &copy; 2026{' '}
+          <a href="https://www.siaficont.com.br/" target="_blank" rel="noreferrer">
+            Siaficont Sistemas
+          </a>
+          . Todos os direitos reservados.
+        </span>
       </footer>
     </div>
   )

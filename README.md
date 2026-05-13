@@ -176,12 +176,29 @@ Principais variáveis suportadas:
 - `SPRING_MAIL_PASSWORD`
 - `SPRING_MAIL_SMTP_AUTH`
 - `SPRING_MAIL_SMTP_STARTTLS_ENABLE`
+- `SPRING_MAIL_SMTP_SSL_ENABLE`
+- `APP_MAIL_FROM`
 - `APP_MAIL_TICKET_CLOSURE_FROM`
+- `APP_MAIL_COMPANY_INVITE_FROM`
+- `APP_FRONTEND_BASE_URL`
 - `APP_WHATSAPP_BASE_URL`
 - `APP_WHATSAPP_API_KEY`
 - `APP_WHATSAPP_WEBHOOK_URL`
 - `APP_STORAGE_ATTACHMENTS_DIR`
 - `APP_STORAGE_ATTACHMENTS_LEGACY_DIRS`
+
+Configuração recomendada para emails da plataforma:
+
+- `APP_MAIL_FROM=chamaqui@siaficont.com.br`
+- `APP_MAIL_TICKET_CLOSURE_FROM=chamaqui@siaficont.com.br`
+- `APP_MAIL_COMPANY_INVITE_FROM=chamaqui@siaficont.com.br`
+- `APP_FRONTEND_BASE_URL=https://chamaqui.app.br`
+- `SPRING_MAIL_SMTP_SSL_ENABLE=false`
+
+Observação importante:
+
+- o SMTP pode continuar autenticando com `sistemas@siaficont.com.br` se esse for o usuário real da conta;
+- o alias `chamaqui@siaficont.com.br` precisa estar autorizado pelo provedor para ser usado no campo remetente (`From`).
 
 ### WhatsApp / Baileys
 

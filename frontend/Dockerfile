@@ -9,7 +9,7 @@ RUN npm ci
 
 WORKDIR /app
 COPY frontend ./frontend
-COPY .env ./.env
+COPY .env.production ./.env.production
 
 WORKDIR /app/frontend
 RUN npm run build

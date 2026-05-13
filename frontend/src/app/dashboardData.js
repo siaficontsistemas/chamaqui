@@ -117,7 +117,7 @@ function getVisibleSectors(userRole, sectors, teamMembers, currentMemberId = get
   return []
 }
 
-function buildNavigationGroups({ userRole, sectors, teamMembers, currentMemberId }) {
+function buildNavigationGroups({ userRole, sectors, teamMembers, currentMemberId, canAccessTeamPage = false }) {
   const visibleSectors = getVisibleSectors(userRole, sectors, teamMembers, currentMemberId)
   const sectorItems = [
     ...(userRole === 'admin'
@@ -147,6 +147,15 @@ function buildNavigationGroups({ userRole, sectors, teamMembers, currentMemberId
           id: 'reports',
           label: 'Relatórios',
         },
+        ...(canAccessTeamPage
+          ? [
+              {
+                id: 'team',
+                label: 'Equipe',
+                icon: 'building',
+              },
+            ]
+          : []),
       ],
     },
     {

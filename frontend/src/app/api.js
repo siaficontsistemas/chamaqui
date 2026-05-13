@@ -40,7 +40,14 @@ async function extractErrorMessage(response) {
     }
 
     if (data?.message) {
+      if (data?.fieldErrors && Object.keys(data.fieldErrors).length > 0) {
+        return `${data.message} ${formatFieldErrors(data.fieldErrors)}`
+      }
       return data.message
+    }
+
+    if (data?.fieldErrors && Object.keys(data.fieldErrors).length > 0) {
+      return formatFieldErrors(data.fieldErrors)
     }
 
     if (Array.isArray(data?.errors) && data.errors.length > 0) {
@@ -57,6 +64,41 @@ async function extractErrorMessage(response) {
   return `Não foi possível concluir a requisição (${response.status}).`
 }
 
+function formatFieldErrors(fieldErrors) {
+  const entries = Object.entries(fieldErrors || {}).filter(
+    ([fieldName, fieldMessage]) => fieldName && fieldMessage
+  )
+
+  if (entries.length === 0) {
+    return 'Verifique os dados informados.'
+  }
+
+  const formattedEntries = entries.map(([fieldName, fieldMessage]) => {
+    const label = getFieldLabel(fieldName)
+    return `${label}: ${fieldMessage}`
+  })
+
+  return `Campos com erro: ${formattedEntries.join(' | ')}.`
+}
+
+function getFieldLabel(fieldName) {
+  const labelsByField = {
+    fullName: 'Nome',
+    email: 'Email',
+    phoneNumber: 'Telefone',
+    documentNumber: 'CPF',
+    companyOwnerId: 'Empresa',
+    assignedToUserId: 'Funcionário',
+    companyName: 'Nome da empresa',
+    companyDocument: 'CNPJ da empresa',
+    companyType: 'Tipo da empresa',
+    password: 'Senha',
+    role: 'Tipo de cadastro',
+  }
+
+  return labelsByField[fieldName] || fieldName
+}
+
 export function loginUser(credentials) {
   return apiRequest('/api/v1/auth/login', {
     method: 'POST',
@@ -71,12 +113,23 @@ export function registerUser(payload) {
   })
 }
 
+export function getRegisterInvite(token) {
+  return apiRequest(`/api/v1/auth/register-invite?token=${encodeURIComponent(token)}`)
+}
+
 export function getAvailableCompanies(companyType) {
   return apiRequest(`/api/v1/reference/companies?type=${encodeURIComponent(companyType)}`)
 }
 
 export function getProfile(email) {
   return apiRequest(`/api/v1/profile?email=${encodeURIComponent(email)}`)
+}
+
+export function updateProfile(payload) {
+  return apiRequest('/api/v1/profile', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
 }
 
 export function deleteProfile(email) {
@@ -154,6 +207,13 @@ export function getTicketAttachmentDownloadUrl(ticketId, attachmentId, email) {
 
 export function closeTicket(ticketId, payload) {
   return apiRequest(`/api/v1/tickets/${ticketId}/close`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deleteTickets(payload) {
+  return apiRequest('/api/v1/tickets/delete', {
     method: 'POST',
     body: JSON.stringify(payload),
   })
@@ -289,6 +349,13 @@ export function createTeamInvite(payload) {
   })
 }
 
+export function createCompanyInvite(payload) {
+  return apiRequest('/api/v1/team/company-invites', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
 export function deleteTeamSector(sectorId, email) {
   return apiRequest(`/api/v1/team/sectors/${sectorId}?email=${encodeURIComponent(email)}`, {
     method: 'DELETE',
@@ -340,6 +407,10 @@ export function getTicketTransferNotifications(email) {
   return apiRequest(`/api/v1/notifications/ticket-transfers?email=${encodeURIComponent(email)}`)
 }
 
+export function getTicketClosureNotifications(email) {
+  return apiRequest(`/api/v1/notifications/ticket-closures?email=${encodeURIComponent(email)}`)
+}
+
 export function getTeamMembershipNotifications(email) {
   return apiRequest(`/api/v1/notifications/team-memberships?email=${encodeURIComponent(email)}`)
 }
@@ -354,6 +425,10 @@ export function getCompanyPartnershipNotifications(email) {
 
 export function getCompanyAccessRequestNotifications(email) {
   return apiRequest(`/api/v1/notifications/company-access-requests?email=${encodeURIComponent(email)}`)
+}
+
+export function getCompanyInviteNotifications(email) {
+  return apiRequest(`/api/v1/notifications/company-invites?email=${encodeURIComponent(email)}`)
 }
 
 export function acceptTicketTransferNotification(notificationId, email) {
@@ -384,9 +459,32 @@ export function declineCompanyAccessRequestNotification(requestId, email) {
   })
 }
 
+export function acceptCompanyInviteNotification(requestId, email) {
+  return apiRequest(`/api/v1/notifications/company-invites/${requestId}/accept`, {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  })
+}
+
+export function declineCompanyInviteNotification(requestId, email) {
+  return apiRequest(`/api/v1/notifications/company-invites/${requestId}/decline`, {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  })
+}
+
 export function deleteTicketTransferNotification(notificationId, email) {
   return apiRequest(
     `/api/v1/notifications/ticket-transfers/${notificationId}?email=${encodeURIComponent(email)}`,
+    {
+      method: 'DELETE',
+    }
+  )
+}
+
+export function deleteTicketClosureNotification(notificationId, email) {
+  return apiRequest(
+    `/api/v1/notifications/ticket-closures/${notificationId}?email=${encodeURIComponent(email)}`,
     {
       method: 'DELETE',
     }

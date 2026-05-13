@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { getAvailableCompanies, registerUser } from '../../api'
+import { getAvailableCompanies, getRegisterInvite, registerUser } from '../../api'
 import './Register.css'
 
 const formFields = [
@@ -38,11 +38,17 @@ const INITIAL_FORM_VALUES = {
 }
 
 function Register({ onNavigateHome, onNavigateLogin }) {
+  const inviteToken =
+    typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('companyInvite') || ''
+      : ''
   const [selectedRole, setSelectedRole] = useState('')
   const [selectedParticipation, setSelectedParticipation] = useState('')
   const [formValues, setFormValues] = useState(INITIAL_FORM_VALUES)
+  const [inviteContext, setInviteContext] = useState(null)
   const [availableCompanies, setAvailableCompanies] = useState([])
   const [isLoadingCompanies, setIsLoadingCompanies] = useState(false)
+  const [isLoadingInvite, setIsLoadingInvite] = useState(false)
   const [passwordVisibility, setPasswordVisibility] = useState({
     password: false,
     passwordConfirm: false,
@@ -72,8 +78,56 @@ function Register({ onNavigateHome, onNavigateLogin }) {
   useEffect(() => {
     let ignore = false
 
+    async function loadInviteContext() {
+      if (!inviteToken) {
+        setInviteContext(null)
+        setIsLoadingInvite(false)
+        return
+      }
+
+      try {
+        setIsLoadingInvite(true)
+        setErrorMessage('')
+        const invite = await getRegisterInvite(inviteToken)
+
+        if (ignore) {
+          return
+        }
+
+        setInviteContext(invite)
+        setSelectedRole('user')
+        setSelectedParticipation(invite.participation || '')
+        setFormValues((currentValues) => ({
+          ...currentValues,
+          name: invite.fullName || '',
+          email: invite.email || '',
+          cpf: invite.documentNumber || '',
+          companyOwnerId: '',
+        }))
+      } catch (error) {
+        if (!ignore) {
+          setInviteContext(null)
+          setErrorMessage(error.message)
+        }
+      } finally {
+        if (!ignore) {
+          setIsLoadingInvite(false)
+        }
+      }
+    }
+
+    loadInviteContext()
+
+    return () => {
+      ignore = true
+    }
+  }, [inviteToken])
+
+  useEffect(() => {
+    let ignore = false
+
     async function loadCompanies() {
-      if (selectedRole !== 'user' || !participantCompanyType) {
+      if (inviteContext || selectedRole !== 'user' || !participantCompanyType) {
         setAvailableCompanies([])
         setIsLoadingCompanies(false)
         return
@@ -104,9 +158,13 @@ function Register({ onNavigateHome, onNavigateLogin }) {
     return () => {
       ignore = true
     }
-  }, [participantCompanyType, selectedRole])
+  }, [inviteContext, participantCompanyType, selectedRole])
 
   function handleSelectRole(role) {
+    if (inviteContext) {
+      return
+    }
+
     setSelectedRole(role)
     setSelectedParticipation('')
     setErrorMessage('')
@@ -123,6 +181,10 @@ function Register({ onNavigateHome, onNavigateLogin }) {
   }
 
   function handleSelectParticipation(participation) {
+    if (inviteContext) {
+      return
+    }
+
     setSelectedParticipation(participation)
     setErrorMessage('')
     setSuccessMessage('')
@@ -134,6 +196,11 @@ function Register({ onNavigateHome, onNavigateLogin }) {
 
   async function handleSubmit(event) {
     event.preventDefault()
+
+    const normalizedEmail = formValues.email.trim().toLowerCase()
+    const normalizedPhone = normalizePhoneNumber(formValues.phone)
+    const normalizedCpf = formValues.cpf.replace(/\D/g, '')
+    const normalizedCompanyCnpj = formValues.companyCnpj.replace(/\D/g, '')
 
     if (!selectedRole) {
       setErrorMessage('Escolha o tipo de cadastro para continuar.')
@@ -150,18 +217,34 @@ function Register({ onNavigateHome, onNavigateLogin }) {
       return
     }
 
-    if (selectedRole === 'user' && !formValues.companyOwnerId) {
-      setErrorMessage('Selecione a empresa à qual esse usuário será vinculado.')
+    const missingFieldLabels = visibleFormFields
+      .filter((field) => !formValues[field.id].trim())
+      .map((field) => field.label)
+
+    if (missingFieldLabels.length > 0) {
+      setErrorMessage(
+        `Erro no cadastro: preencha os seguintes dados obrigatórios: ${missingFieldLabels.join(', ')}.`
+      )
       return
     }
 
-    if (visibleFormFields.some((field) => !formValues[field.id].trim())) {
-      setErrorMessage('Preencha todos os campos obrigatórios do cadastro.')
+    if (!isValidEmailFormat(normalizedEmail)) {
+      setErrorMessage('Erro no cadastro: o dado "Email" está inválido.')
+      return
+    }
+
+    if (!isValidCpf(normalizedCpf)) {
+      setErrorMessage('Erro no cadastro: o dado "CPF" está inválido.')
+      return
+    }
+
+    if (selectedRole === 'admin' && normalizedCompanyCnpj.length !== 14) {
+      setErrorMessage('Erro no cadastro: o dado "CNPJ da empresa" está inválido.')
       return
     }
 
     if (formValues.password !== formValues.passwordConfirm) {
-      setErrorMessage('As senhas informadas precisam ser iguais.')
+      setErrorMessage('Erro no cadastro: os dados "Senha" e "Digite novamente" precisam ser iguais.')
       return
     }
 
@@ -182,15 +265,16 @@ function Register({ onNavigateHome, onNavigateLogin }) {
       const roleToSubmit = selectedRole === 'admin' ? 'admin' : getParticipantRole(selectedParticipation)
       const user = await registerUser({
         fullName: formValues.name.trim(),
-        email: formValues.email.trim(),
-        phoneNumber: formValues.phone.trim(),
-        documentNumber: formValues.cpf.trim(),
+        email: normalizedEmail,
+        phoneNumber: normalizedPhone,
+        documentNumber: normalizedCpf,
         companyOwnerId: selectedRole === 'user' ? formValues.companyOwnerId : null,
         companyName: selectedRole === 'admin' ? formValues.companyName.trim() : null,
-        companyDocument: selectedRole === 'admin' ? formValues.companyCnpj.trim() : null,
+        companyDocument: selectedRole === 'admin' ? normalizedCompanyCnpj : null,
         companyType: selectedRole === 'admin' ? formValues.companyType : participantCompanyType,
         password: formValues.password,
         role: roleToSubmit,
+        inviteToken: inviteToken || null,
       })
 
       if (selectedRole === 'user' && user?.status === 'PENDING') {
@@ -204,6 +288,10 @@ function Register({ onNavigateHome, onNavigateLogin }) {
           `Cadastro concluído. Sua solicitação foi enviada para a empresa ${companyName} e precisa ser aprovada por um administrador antes do acesso.`
         )
         return
+      }
+
+      if (inviteContext) {
+        setSuccessMessage(`Cadastro concluído. Você entrou diretamente na empresa ${inviteContext.companyName}.`)
       }
 
       onNavigateHome(user)
@@ -239,7 +327,9 @@ function Register({ onNavigateHome, onNavigateLogin }) {
           <div className="auth-card__form-header">
             <h2>Crie sua Conta Aqui</h2>
             <p>
-              {selectedRole
+              {inviteContext
+                ? `Você está entrando na empresa ${inviteContext.companyName}. Confira os dados e conclua o cadastro.`
+                : selectedRole
                 ? `Preencha os dados para concluir seu cadastro como ${selectedRoleLabel.toLowerCase()}.`
                 : 'Primeiro escolha como deseja se cadastrar.'}
             </p>
@@ -255,27 +345,39 @@ function Register({ onNavigateHome, onNavigateLogin }) {
                     {selectedParticipationLabel ? <span>• {selectedParticipationLabel}</span> : null}
                   </div>
 
-                  <button
-                    className="signup-form__change-role"
-                    type="button"
-                    onClick={() => {
-                      setSelectedRole('')
-                      setSelectedParticipation('')
-                      setAvailableCompanies([])
-                      setErrorMessage('')
-                      setSuccessMessage('')
-                      setFormValues((currentValues) => ({
-                        ...currentValues,
-                        companyName: '',
-                        companyCnpj: '',
-                        companyType: '',
-                        companyOwnerId: '',
-                      }))
-                    }}
-                  >
-                    Alterar tipo
-                  </button>
+                  {!inviteContext ? (
+                    <button
+                      className="signup-form__change-role"
+                      type="button"
+                      onClick={() => {
+                        setSelectedRole('')
+                        setSelectedParticipation('')
+                        setAvailableCompanies([])
+                        setErrorMessage('')
+                        setSuccessMessage('')
+                        setFormValues((currentValues) => ({
+                          ...currentValues,
+                          companyName: '',
+                          companyCnpj: '',
+                          companyType: '',
+                          companyOwnerId: '',
+                        }))
+                      }}
+                    >
+                      Alterar tipo
+                    </button>
+                  ) : null}
                 </div>
+
+                {inviteContext ? (
+                  <div className="signup-form__flow-block">
+                    <span className="signup-form__role-label">Convite da empresa</span>
+                    <p className="signup-form__role-text">
+                      Seu cadastro será vinculado automaticamente à empresa {inviteContext.companyName}
+                      {' '}com permissão para {selectedParticipationLabel.toLowerCase()}.
+                    </p>
+                  </div>
+                ) : null}
 
                 {selectedRole === 'user' ? (
                   <div className="signup-form__flow-block">
@@ -286,6 +388,7 @@ function Register({ onNavigateHome, onNavigateLogin }) {
                         className={`signup-form__role-card ${selectedParticipation === 'requester' ? 'is-active' : ''}`}
                         type="button"
                         onClick={() => handleSelectParticipation('requester')}
+                        disabled={Boolean(inviteContext)}
                       >
                         <span className="signup-form__role-title">Criar chamados</span>
                         <span className="signup-form__role-text">
@@ -297,6 +400,7 @@ function Register({ onNavigateHome, onNavigateLogin }) {
                         className={`signup-form__role-card ${selectedParticipation === 'responder' ? 'is-active' : ''}`}
                         type="button"
                         onClick={() => handleSelectParticipation('responder')}
+                        disabled={Boolean(inviteContext)}
                       >
                         <span className="signup-form__role-title">Responder chamados</span>
                         <span className="signup-form__role-text">
@@ -389,38 +493,44 @@ function Register({ onNavigateHome, onNavigateLogin }) {
                   </label>
                 ))}
 
-                {selectedRole === 'user' && selectedParticipation ? (
-                  <label className="form-field form-field--select" htmlFor="companyOwnerId">
-                    <span className="form-field__icon" aria-hidden="true">
-                      <BuildingIcon />
-                    </span>
-                    <select
-                      id="companyOwnerId"
-                      name="companyOwnerId"
-                      value={formValues.companyOwnerId}
-                      onChange={(event) => {
-                        setSuccessMessage('')
-                        setFormValues((currentValues) => ({
-                          ...currentValues,
-                          companyOwnerId: event.target.value,
-                        }))
-                      }}
-                      disabled={isLoadingCompanies}
-                    >
-                      <option value="">
-                        {isLoadingCompanies
-                          ? 'Carregando empresas...'
-                          : availableCompanies.length > 0
-                            ? 'Selecione a empresa'
-                            : 'Nenhuma empresa disponivel'}
-                      </option>
-                      {availableCompanies.map((company) => (
-                        <option key={company.id} value={company.id}>
-                          {company.name}
+                {selectedRole === 'user' && selectedParticipation && !inviteContext ? (
+                  <>
+                    <label className="form-field form-field--select" htmlFor="companyOwnerId">
+                      <span className="form-field__icon" aria-hidden="true">
+                        <BuildingIcon />
+                      </span>
+                      <select
+                        id="companyOwnerId"
+                        name="companyOwnerId"
+                        value={formValues.companyOwnerId}
+                        onChange={(event) => {
+                          setSuccessMessage('')
+                          setFormValues((currentValues) => ({
+                            ...currentValues,
+                            companyOwnerId: event.target.value,
+                          }))
+                        }}
+                        disabled={isLoadingCompanies}
+                      >
+                        <option value="">
+                          {isLoadingCompanies
+                            ? 'Carregando empresas...'
+                            : availableCompanies.length > 0
+                              ? 'Selecione a empresa (opcional)'
+                              : 'Nenhuma empresa disponivel'}
                         </option>
-                      ))}
-                    </select>
-                  </label>
+                        {availableCompanies.map((company) => (
+                          <option key={company.id} value={company.id}>
+                            {company.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <p className="signup-form__role-text">
+                      Se você deixar a empresa em branco, sua conta será criada normalmente e convites
+                      pendentes para empresa aparecerão como notificação depois do acesso.
+                    </p>
+                  </>
                 ) : null}
 
                 <div className="signup-form__feedback-slot" aria-live="polite">
@@ -459,6 +569,10 @@ function Register({ onNavigateHome, onNavigateLogin }) {
                   {isSubmitting ? 'Cadastrando...' : 'Cadastrar'}
                 </button>
               </>
+            ) : isLoadingInvite ? (
+              <div className="signup-form__role-step">
+                <span className="signup-form__role-label">Carregando convite...</span>
+              </div>
             ) : (
               <div className="signup-form__role-step">
                 <span className="signup-form__role-label">Escolha o tipo de cadastro</span>
@@ -515,6 +629,47 @@ function getParticipantCompanyType(participation) {
   }
 
   return ''
+}
+
+function isValidEmailFormat(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || ''))
+}
+
+function normalizePhoneNumber(value) {
+  const digits = String(value || '').replace(/\D/g, '')
+  if (digits.startsWith('55') && digits.length === 13) {
+    return digits.slice(2)
+  }
+  return digits
+}
+
+function isValidCpf(cpf) {
+  if (!/^\d{11}$/.test(cpf) || hasAllDigitsEqual(cpf)) {
+    return false
+  }
+
+  return (
+    calculateCpfCheckDigit(cpf, 9) === Number(cpf[9]) &&
+    calculateCpfCheckDigit(cpf, 10) === Number(cpf[10])
+  )
+}
+
+function calculateCpfCheckDigit(cpf, length) {
+  let sum = 0
+  let weight = length + 1
+
+  for (let index = 0; index < length; index += 1) {
+    sum += Number(cpf[index]) * (weight - index)
+  }
+
+  const remainder = (sum * 10) % 11
+  return remainder === 10 ? 0 : remainder
+}
+
+function hasAllDigitsEqual(value) {
+  return String(value || '')
+    .split('')
+    .every((digit) => digit === value[0])
 }
 
 function TermsOfUseModal({ onClose }) {

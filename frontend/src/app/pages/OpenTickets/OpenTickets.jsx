@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getTickets } from '../../api'
+import ConfirmActionModal from '../../components/confirm-action-modal/ConfirmActionModal'
 import Header from '../../components/header/Header'
 import Sidebar from '../../components/sidebar/Sidebar'
 import TicketListPagination from '../../components/TicketListPagination/TicketListPagination'
@@ -8,14 +9,27 @@ import { SearchIcon } from '../../dashboardIcons'
 import '../Home/Home.css'
 
 const ITEMS_PER_PAGE = 20
+const AUTO_REFRESH_INTERVAL_MS = 5000
 
-function OpenTickets({ currentUser, headerProps, navigationGroups, onNavigatePage, onOpenTicket }) {
+function OpenTickets({
+  currentUser,
+  headerProps,
+  navigationGroups,
+  onDeleteTickets,
+  onNavigatePage,
+  onOpenTicket,
+  userRole,
+}) {
   const [tickets, setTickets] = useState([])
   const [searchValue, setSearchValue] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [isLoading, setIsLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
+  const [selectedTicketIds, setSelectedTicketIds] = useState([])
+  const [isDeleteConfirmationOpen, setIsDeleteConfirmationOpen] = useState(false)
+  const [isDeletingTickets, setIsDeletingTickets] = useState(false)
   const normalizedSearchValue = searchValue.trim().toLowerCase()
+  const canDeleteTickets = userRole === 'admin'
   const formattedDate = useMemo(
     () =>
       new Intl.DateTimeFormat('pt-BR', {
@@ -41,6 +55,12 @@ function OpenTickets({ currentUser, headerProps, navigationGroups, onNavigatePag
     const startIndex = (safeCurrentPage - 1) * ITEMS_PER_PAGE
     return filteredTickets.slice(startIndex, startIndex + ITEMS_PER_PAGE)
   }, [filteredTickets, safeCurrentPage])
+  const selectedTicketsCount = selectedTicketIds.filter((ticketId) =>
+    tickets.some((ticket) => ticket.id === ticketId)
+  ).length
+  const areAllVisibleTicketsSelected =
+    paginatedTickets.length > 0 &&
+    paginatedTickets.every((ticket) => selectedTicketIds.includes(ticket.id))
 
   useEffect(() => {
     if (!currentUser?.email) {
@@ -52,9 +72,11 @@ function OpenTickets({ currentUser, headerProps, navigationGroups, onNavigatePag
 
     let isCancelled = false
 
-    async function loadTickets() {
-      setIsLoading(true)
-      setErrorMessage('')
+    async function loadTickets({ silently = false } = {}) {
+      if (!silently) {
+        setIsLoading(true)
+        setErrorMessage('')
+      }
 
       try {
         const response = await getTickets(currentUser.email, ['OPEN', 'IN_PROGRESS'])
@@ -69,19 +91,39 @@ function OpenTickets({ currentUser, headerProps, navigationGroups, onNavigatePag
           return
         }
 
-        setTickets([])
         setErrorMessage(error.message)
       } finally {
-        if (!isCancelled) {
+        if (!isCancelled && !silently) {
           setIsLoading(false)
         }
       }
     }
 
     loadTickets()
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === 'hidden') {
+        return
+      }
+
+      loadTickets({ silently: true })
+    }, AUTO_REFRESH_INTERVAL_MS)
+    const handleWindowFocus = () => {
+      loadTickets({ silently: true })
+    }
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadTickets({ silently: true })
+      }
+    }
+
+    window.addEventListener('focus', handleWindowFocus)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
 
     return () => {
       isCancelled = true
+      window.clearInterval(intervalId)
+      window.removeEventListener('focus', handleWindowFocus)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [currentUser?.email])
 
@@ -94,6 +136,12 @@ function OpenTickets({ currentUser, headerProps, navigationGroups, onNavigatePag
       setCurrentPage(safeCurrentPage)
     }
   }, [currentPage, safeCurrentPage])
+
+  useEffect(() => {
+    setSelectedTicketIds((currentSelection) =>
+      currentSelection.filter((ticketId) => tickets.some((ticket) => ticket.id === ticketId))
+    )
+  }, [tickets])
 
   function getStatusClass(statusCode) {
     if (statusCode === 'IN_PROGRESS' || statusCode === 'IN_PROGRESS_TRANSFER_PENDING') {
@@ -113,6 +161,63 @@ function OpenTickets({ currentUser, headerProps, navigationGroups, onNavigatePag
     }
 
     return formattedDate.format(new Date(value))
+  }
+
+  function handleToggleTicketSelection(ticketId) {
+    setSelectedTicketIds((currentSelection) =>
+      currentSelection.includes(ticketId)
+        ? currentSelection.filter((currentTicketId) => currentTicketId !== ticketId)
+        : [...currentSelection, ticketId]
+    )
+  }
+
+  function handleToggleVisibleTicketsSelection() {
+    if (areAllVisibleTicketsSelected) {
+      const visibleTicketIds = new Set(paginatedTickets.map((ticket) => ticket.id))
+      setSelectedTicketIds((currentSelection) =>
+        currentSelection.filter((ticketId) => !visibleTicketIds.has(ticketId))
+      )
+      return
+    }
+
+    setSelectedTicketIds((currentSelection) => [
+      ...new Set([...currentSelection, ...paginatedTickets.map((ticket) => ticket.id)]),
+    ])
+  }
+
+  function openDeleteConfirmation() {
+    if (!canDeleteTickets || selectedTicketsCount === 0 || isDeletingTickets) {
+      return
+    }
+
+    setIsDeleteConfirmationOpen(true)
+  }
+
+  function closeDeleteConfirmation() {
+    if (isDeletingTickets) {
+      return
+    }
+
+    setIsDeleteConfirmationOpen(false)
+  }
+
+  async function handleConfirmDeleteTickets() {
+    if (!onDeleteTickets || selectedTicketsCount === 0) {
+      return
+    }
+
+    setIsDeletingTickets(true)
+    setErrorMessage('')
+
+    try {
+      await onDeleteTickets(selectedTicketIds)
+      setSelectedTicketIds([])
+      setIsDeleteConfirmationOpen(false)
+    } catch (error) {
+      setErrorMessage(error.message)
+    } finally {
+      setIsDeletingTickets(false)
+    }
   }
 
   return (
@@ -149,12 +254,36 @@ function OpenTickets({ currentUser, headerProps, navigationGroups, onNavigatePag
                     totalItems={filteredTickets.length}
                   />
                 ) : null}
+                {canDeleteTickets ? (
+                  <button
+                    className="ticket-list__bulk-action"
+                    type="button"
+                    onClick={openDeleteConfirmation}
+                    disabled={selectedTicketsCount === 0 || isDeletingTickets}
+                  >
+                    {isDeletingTickets
+                      ? 'Excluindo...'
+                      : selectedTicketsCount > 0
+                        ? `Excluir selecionados (${selectedTicketsCount})`
+                        : 'Excluir selecionados'}
+                  </button>
+                ) : null}
               </div>
 
               <div className="ticket-list__table">
                 {paginatedTickets.length > 0 ? (
                   <>
-                    <div className="ticket-list__head">
+                    <div className={`ticket-list__head${canDeleteTickets ? ' ticket-list__head--with-select' : ''}`}>
+                      {canDeleteTickets ? (
+                        <span className="ticket-list__select-cell">
+                          <input
+                            type="checkbox"
+                            checked={areAllVisibleTicketsSelected}
+                            onChange={handleToggleVisibleTicketsSelection}
+                            aria-label="Selecionar chamados visíveis"
+                          />
+                        </span>
+                      ) : null}
                       <span>Protocolo</span>
                       <span>Assunto</span>
                       <span>Status</span>
@@ -163,10 +292,20 @@ function OpenTickets({ currentUser, headerProps, navigationGroups, onNavigatePag
                     </div>
 
                     {paginatedTickets.map((ticket) => (
-                      <div className="ticket-list__row" key={ticket.id}>
+                      <div className={`ticket-list__row${canDeleteTickets ? ' ticket-list__row--with-select' : ''}`} key={ticket.id}>
+                        {canDeleteTickets ? (
+                          <span className="ticket-list__select-cell">
+                            <input
+                              type="checkbox"
+                              checked={selectedTicketIds.includes(ticket.id)}
+                              onChange={() => handleToggleTicketSelection(ticket.id)}
+                              aria-label={`Selecionar chamado ${ticket.protocol}`}
+                            />
+                          </span>
+                        ) : null}
                         <span>{ticket.protocol}</span>
                         <span>{ticket.title}</span>
-                        <span>
+                        <span className="ticket-list__status-cell">
                           <strong className={`ticket-list__status ${getStatusClass(ticket.statusCode)}`}>
                             {ticket.statusName}
                           </strong>
@@ -196,6 +335,19 @@ function OpenTickets({ currentUser, headerProps, navigationGroups, onNavigatePag
           </div>
         </section>
       </div>
+      <ConfirmActionModal
+        isOpen={isDeleteConfirmationOpen}
+        title="Excluir chamados"
+        description={[
+          `Tem certeza que deseja excluir ${selectedTicketsCount} chamado(s)?`,
+          'Se algum deles ainda estiver aberto, o solicitante será informado que o chamado foi fechado antes da exclusão.',
+        ]}
+        confirmLabel={isDeletingTickets ? 'Excluindo...' : 'Excluir chamados'}
+        confirmVariant="danger"
+        onCancel={closeDeleteConfirmation}
+        onConfirm={handleConfirmDeleteTickets}
+        isProcessing={isDeletingTickets}
+      />
     </main>
   )
 }

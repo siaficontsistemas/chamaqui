@@ -19,6 +19,7 @@ function MyData({
   onNavigatePage,
   onDeleteAccount,
   onDeleteCompany,
+  onUpdateProfile,
   onSearchPartnershipCompanies,
   onCreateCompanyPartnership,
   onAcceptCompanyPartnership,
@@ -32,6 +33,17 @@ function MyData({
   const [deleteTarget, setDeleteTarget] = useState('')
   const [isDeletingAction, setIsDeletingAction] = useState(false)
   const [deleteError, setDeleteError] = useState('')
+  const [isEditingProfile, setIsEditingProfile] = useState(false)
+  const [isSavingProfile, setIsSavingProfile] = useState(false)
+  const [profileFeedback, setProfileFeedback] = useState('')
+  const [profileFeedbackType, setProfileFeedbackType] = useState('info')
+  const [profileFormValues, setProfileFormValues] = useState({
+    fullName: '',
+    email: '',
+    phoneNumber: '',
+    companyName: '',
+    companyDocument: '',
+  })
   const [whatsappStatus, setWhatsappStatus] = useState(null)
   const [whatsappFeedback, setWhatsappFeedback] = useState('')
   const [isWhatsappLoading, setIsWhatsappLoading] = useState(false)
@@ -63,12 +75,28 @@ function MyData({
     (partnership) => partnership.status === 'ACCEPTED'
   )
   const profileFields = [
-    { label: 'Nome', value: currentUser?.fullName || 'Não informado', type: 'text' },
-    { label: 'Email', value: currentUser?.email || 'Não informado', type: 'email' },
+    {
+      label: 'Nome',
+      value: isEditingProfile ? profileFormValues.fullName : currentUser?.fullName || 'Não informado',
+      type: 'text',
+      editable: true,
+      field: 'fullName',
+    },
+    {
+      label: 'Email',
+      value: isEditingProfile ? profileFormValues.email : currentUser?.email || 'Não informado',
+      type: 'email',
+      editable: true,
+      field: 'email',
+    },
     {
       label: 'Telefone',
-      value: currentUser?.phoneNumber || 'Não informado',
+      value: isEditingProfile
+        ? profileFormValues.phoneNumber
+        : formatPhoneNumber(currentUser?.phoneNumber) || 'Não informado',
       type: 'tel',
+      editable: true,
+      field: 'phoneNumber',
     },
     {
       label: 'Documento',
@@ -79,13 +107,21 @@ function MyData({
       ? [
           {
             label: 'Nome da empresa',
-            value: currentUser?.companyName || 'Obrigatório não informado',
+            value: isEditingProfile
+              ? profileFormValues.companyName
+              : currentUser?.companyName || 'Obrigatório não informado',
             type: 'text',
+            editable: true,
+            field: 'companyName',
           },
           {
             label: 'CNPJ da empresa',
-            value: currentUser?.companyDocument || 'Obrigatório não informado',
+            value: isEditingProfile
+              ? profileFormValues.companyDocument
+              : currentUser?.companyDocument || 'Obrigatório não informado',
             type: 'text',
+            editable: true,
+            field: 'companyDocument',
           },
         ]
       : []),
@@ -95,6 +131,22 @@ function MyData({
       type: 'text',
     },
   ]
+
+  useEffect(() => {
+    setProfileFormValues({
+      fullName: currentUser?.fullName || '',
+      email: currentUser?.email || '',
+      phoneNumber: currentUser?.phoneNumber || '',
+      companyName: currentUser?.companyName || '',
+      companyDocument: currentUser?.companyDocument || '',
+    })
+  }, [
+    currentUser?.companyDocument,
+    currentUser?.companyName,
+    currentUser?.email,
+    currentUser?.fullName,
+    currentUser?.phoneNumber,
+  ])
 
   useEffect(() => {
     let isCancelled = false
@@ -334,6 +386,64 @@ function MyData({
     setDeleteTarget(target)
   }
 
+  function handleProfileFieldChange(field, value) {
+    setProfileFormValues((currentValues) => ({
+      ...currentValues,
+      [field]: value,
+    }))
+  }
+
+  function handleStartEditingProfile() {
+    setProfileFeedback('')
+    setProfileFeedbackType('info')
+    setIsEditingProfile(true)
+  }
+
+  function handleCancelEditingProfile() {
+    setProfileFormValues({
+      fullName: currentUser?.fullName || '',
+      email: currentUser?.email || '',
+      phoneNumber: currentUser?.phoneNumber || '',
+      companyName: currentUser?.companyName || '',
+      companyDocument: currentUser?.companyDocument || '',
+    })
+    setProfileFeedback('')
+    setProfileFeedbackType('info')
+    setIsEditingProfile(false)
+  }
+
+  async function handleSaveProfile() {
+    try {
+      setIsSavingProfile(true)
+      setProfileFeedback('')
+      setProfileFeedbackType('info')
+
+      const updatedProfile = await onUpdateProfile?.({
+        fullName: profileFormValues.fullName.trim(),
+        email: profileFormValues.email.trim(),
+        phoneNumber: normalizePhoneNumber(profileFormValues.phoneNumber),
+        companyName: isAdmin ? profileFormValues.companyName.trim() : null,
+        companyDocument: isAdmin ? profileFormValues.companyDocument.trim() : null,
+      })
+
+      setProfileFormValues({
+        fullName: updatedProfile?.fullName || '',
+        email: updatedProfile?.email || '',
+        phoneNumber: updatedProfile?.phoneNumber || '',
+        companyName: updatedProfile?.companyName || '',
+        companyDocument: updatedProfile?.companyDocument || '',
+      })
+      setProfileFeedback('Seus dados foram atualizados com sucesso.')
+      setProfileFeedbackType('success')
+      setIsEditingProfile(false)
+    } catch (error) {
+      setProfileFeedback(error.message || 'Não foi possível atualizar seus dados.')
+      setProfileFeedbackType('error')
+    } finally {
+      setIsSavingProfile(false)
+    }
+  }
+
   function handleCloseDeleteModal() {
     setDeleteTarget('')
     setDeleteError('')
@@ -398,6 +508,11 @@ function MyData({
               <h1 className="home-profile__title">{activeContent.contentTitle}</h1>
 
               {profileError ? <p className="profile-form__feedback">{profileError}</p> : null}
+              {profileFeedback ? (
+                <p className={`my-data__profile-feedback my-data__profile-feedback--${profileFeedbackType}`}>
+                  {profileFeedback}
+                </p>
+              ) : null}
 
               <form className="profile-form" onSubmit={(event) => event.preventDefault()}>
                 {profileFields.map((field) => (
@@ -406,7 +521,10 @@ function MyData({
                     <div className="ticket-field__control">
                       <input
                         value={isProfileLoading ? 'Carregando...' : field.value}
-                        readOnly
+                        readOnly={!isEditingProfile || !field.editable}
+                        onChange={(event) =>
+                          field.editable ? handleProfileFieldChange(field.field, event.target.value) : undefined
+                        }
                         type={field.type}
                       />
                     </div>
@@ -414,6 +532,34 @@ function MyData({
                 ))}
 
                 <div className="my-data__actions">
+                  {isEditingProfile ? (
+                    <>
+                      <button
+                        className="my-data__edit-button my-data__edit-button--secondary"
+                        type="button"
+                        onClick={handleCancelEditingProfile}
+                        disabled={isSavingProfile}
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        className="my-data__edit-button"
+                        type="button"
+                        onClick={handleSaveProfile}
+                        disabled={isSavingProfile}
+                      >
+                        {isSavingProfile ? 'Salvando...' : 'Salvar alterações'}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      className="my-data__edit-button"
+                      type="button"
+                      onClick={handleStartEditingProfile}
+                    >
+                      Editar meus dados
+                    </button>
+                  )}
                   {isAdmin ? (
                     <button
                       className="my-data__delete-button"
@@ -688,3 +834,25 @@ function MyData({
 }
 
 export default MyData
+
+function normalizePhoneNumber(value) {
+  const digits = String(value || '').replace(/\D/g, '')
+  if (digits.startsWith('55') && digits.length === 13) {
+    return digits.slice(2)
+  }
+  return digits
+}
+
+function formatPhoneNumber(value) {
+  const digits = normalizePhoneNumber(value)
+
+  if (digits.length === 11) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`
+  }
+
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`
+  }
+
+  return value || ''
+}

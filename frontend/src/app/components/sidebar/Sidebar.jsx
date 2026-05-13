@@ -1,6 +1,7 @@
 function Sidebar({ activeSection, navigationGroups, onSectionChange }) {
   const currentSections = Array.isArray(activeSection) ? activeSection : [activeSection]
   const currentPage = currentSections[0]
+  const ticketSections = ['tickets', 'all', 'open', 'closed', 'newTicket']
 
   return (
     <div className="home-sidebar-column">
@@ -17,7 +18,7 @@ function Sidebar({ activeSection, navigationGroups, onSectionChange }) {
               {group.items.map((item) => {
                 const isActive =
                   currentSections.includes(item.id) ||
-                  (item.id === 'tickets' && currentPage !== 'reports') ||
+                  (item.id === 'tickets' && ticketSections.includes(currentPage)) ||
                   (item.id === 'all' && currentPage === 'tickets')
 
                 return (

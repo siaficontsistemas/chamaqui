@@ -90,10 +90,22 @@ function Reports({
 
                     {reportRows.map((row) => (
                       <div className="reports-table__row" key={`${row.year}-${row.month}`}>
-                        <span>{row.year}</span>
-                        <span>{row.month}</span>
-                        <span>{row.createdTickets}</span>
-                        <span>{row.repliedTickets}</span>
+                        <div className="reports-table__cell">
+                          <span className="reports-table__label">Ano</span>
+                          <span className="reports-table__value">{row.year}</span>
+                        </div>
+                        <div className="reports-table__cell">
+                          <span className="reports-table__label">Mês</span>
+                          <span className="reports-table__value">{row.month}</span>
+                        </div>
+                        <div className="reports-table__cell">
+                          <span className="reports-table__label">Novos chamados</span>
+                          <span className="reports-table__value">{row.createdTickets}</span>
+                        </div>
+                        <div className="reports-table__cell">
+                          <span className="reports-table__label">Respostas enviadas</span>
+                          <span className="reports-table__value">{row.repliedTickets}</span>
+                        </div>
                       </div>
                     ))}
                   </>
