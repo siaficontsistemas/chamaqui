@@ -3,10 +3,30 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:420
   ''
 )
 
+export function resolveApiAssetUrl(assetUrl) {
+  if (!assetUrl) {
+    return ''
+  }
+
+  if (/^https?:\/\//i.test(assetUrl)) {
+    return assetUrl
+  }
+
+  if (assetUrl.startsWith('/')) {
+    return `${API_BASE_URL}${assetUrl}`
+  }
+
+  return `${API_BASE_URL}/${assetUrl}`
+}
+
 async function apiRequest(path, options = {}) {
   const isFormData = options.body instanceof FormData
+  const tenantHost =
+    typeof window !== 'undefined' && window.location?.host ? window.location.host : ''
   const response = await fetch(`${API_BASE_URL}${path}`, {
+    credentials: options.credentials || 'include',
     headers: {
+      ...(tenantHost ? { 'X-Tenant-Host': tenantHost } : {}),
       ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...(options.headers || {}),
     },
@@ -106,6 +126,20 @@ export function loginUser(credentials) {
   })
 }
 
+export function requestPasswordReset(payload) {
+  return apiRequest('/api/v1/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function resetPasswordWithToken(payload) {
+  return apiRequest('/api/v1/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
 export function registerUser(payload) {
   return apiRequest('/api/v1/auth/register', {
     method: 'POST',
@@ -113,8 +147,54 @@ export function registerUser(payload) {
   })
 }
 
+export function loginPlatformAdmin(credentials) {
+  return apiRequest('/api/v1/platform-admin/auth/login', {
+    method: 'POST',
+    body: JSON.stringify(credentials),
+  })
+}
+
+export function getPlatformAdminMe() {
+  return apiRequest('/api/v1/platform-admin/auth/me')
+}
+
+export function logoutPlatformAdmin() {
+  return apiRequest('/api/v1/platform-admin/auth/logout', {
+    method: 'POST',
+  })
+}
+
+export function getPlatformAdminCompanies() {
+  return apiRequest('/api/v1/platform-admin/companies')
+}
+
+export function createPlatformAdminCompany(payload) {
+  return apiRequest('/api/v1/platform-admin/companies', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function activatePlatformAdminCompany(companyId) {
+  return apiRequest(`/api/v1/platform-admin/companies/${encodeURIComponent(companyId)}/activate`, {
+    method: 'PATCH',
+  })
+}
+
+export function deactivatePlatformAdminCompany(companyId) {
+  return apiRequest(`/api/v1/platform-admin/companies/${encodeURIComponent(companyId)}/deactivate`, {
+    method: 'PATCH',
+  })
+}
+
 export function getRegisterInvite(token) {
   return apiRequest(`/api/v1/auth/register-invite?token=${encodeURIComponent(token)}`)
+}
+
+export function getPublicTenantBranding(host) {
+  return apiRequest('/api/v1/public/tenant-branding', {
+    headers: host ? { 'X-Tenant-Host': host } : {},
+  })
 }
 
 export function getAvailableCompanies(companyType) {
@@ -129,6 +209,29 @@ export function updateProfile(payload) {
   return apiRequest('/api/v1/profile', {
     method: 'PUT',
     body: JSON.stringify(payload),
+  })
+}
+
+export function changePassword(payload) {
+  return apiRequest('/api/v1/profile/password', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function uploadCompanyLogo(email, file) {
+  const formData = new FormData()
+  formData.append('file', file)
+
+  return apiRequest(`/api/v1/profile/company/logo?email=${encodeURIComponent(email)}`, {
+    method: 'PUT',
+    body: formData,
+  })
+}
+
+export function deleteCompanyLogo(email) {
+  return apiRequest(`/api/v1/profile/company/logo?email=${encodeURIComponent(email)}`, {
+    method: 'DELETE',
   })
 }
 
@@ -294,6 +397,28 @@ export function getMyCompanyPartnerships(email) {
 
 export function createCompanyPartnership(payload) {
   return apiRequest('/api/v1/company-partnerships', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function createClientCompany(payload) {
+  return apiRequest('/api/v1/client-companies', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function lookupClientCompany(companyDocument, createdByEmail) {
+  const searchParams = new URLSearchParams({
+    companyDocument,
+    createdByEmail,
+  })
+  return apiRequest(`/api/v1/client-companies/lookup?${searchParams.toString()}`)
+}
+
+export function linkExistingClientCompany(payload) {
+  return apiRequest('/api/v1/client-companies/link-existing', {
     method: 'POST',
     body: JSON.stringify(payload),
   })

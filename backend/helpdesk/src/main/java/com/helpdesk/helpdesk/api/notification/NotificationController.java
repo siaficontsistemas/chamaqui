@@ -21,6 +21,7 @@ import com.helpdesk.helpdesk.dto.notification.CompanyAdminInviteNotificationResp
 import com.helpdesk.helpdesk.dto.notification.CompanyPartnershipNotificationResponse;
 import com.helpdesk.helpdesk.dto.notification.TeamMembershipNotificationResponse;
 import com.helpdesk.helpdesk.dto.notification.TicketAssignmentNotificationResponse;
+import com.helpdesk.helpdesk.dto.notification.TicketClosureNotificationResponse;
 import com.helpdesk.helpdesk.dto.notification.TicketTransferNotificationResponse;
 import com.helpdesk.helpdesk.dto.ticket.RespondTicketTransferRequest;
 import com.helpdesk.helpdesk.service.CompanyAccessRequestService;
@@ -51,6 +52,11 @@ public class NotificationController {
 	@GetMapping("/ticket-transfers")
 	public List<TicketTransferNotificationResponse> listTicketTransfers(@RequestParam String email) {
 		return notificationService.listTicketTransfers(email);
+	}
+
+	@GetMapping("/ticket-closures")
+	public List<TicketClosureNotificationResponse> listTicketClosures(@RequestParam String email) {
+		return notificationService.listTicketClosures(email);
 	}
 
 	@GetMapping("/team-memberships")
@@ -142,6 +148,12 @@ public class NotificationController {
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void deleteTicketTransfer(@PathVariable UUID notificationId, @RequestParam String email) {
 		notificationService.deleteTicketTransfer(notificationId, email);
+	}
+
+	@DeleteMapping("/ticket-closures/{notificationId}")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	public void deleteTicketClosure(@PathVariable UUID notificationId, @RequestParam String email) {
+		notificationService.deleteTicketClosure(notificationId, email);
 	}
 
 	@DeleteMapping("/team-memberships/{notificationId}")

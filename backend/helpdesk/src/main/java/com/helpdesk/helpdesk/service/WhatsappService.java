@@ -43,6 +43,7 @@ public class WhatsappService {
 	private final ObjectMapper objectMapper = new ObjectMapper();
 	private final RestClient restClient;
 	private final UserRepository userRepository;
+	private final ScopedUserLookupService scopedUserLookupService;
 	private final String apiKey;
 	private final String defaultWebhookUrl;
 
@@ -50,7 +51,8 @@ public class WhatsappService {
 		@Value("${app.whatsapp.base-url}") String baseUrl,
 		@Value("${app.whatsapp.api-key:}") String apiKey,
 		@Value("${app.whatsapp.webhook-url:}") String defaultWebhookUrl,
-		UserRepository userRepository
+		UserRepository userRepository,
+		ScopedUserLookupService scopedUserLookupService
 	) {
 		this.restClient = RestClient.builder()
 			.requestFactory(new SimpleClientHttpRequestFactory())
@@ -60,6 +62,7 @@ public class WhatsappService {
 		this.apiKey = defaultIfBlank(apiKey);
 		this.defaultWebhookUrl = defaultIfBlank(defaultWebhookUrl);
 		this.userRepository = userRepository;
+		this.scopedUserLookupService = scopedUserLookupService;
 	}
 
 	public WhatsappSessionStatusResponse startSession(StartWhatsappSessionRequest request) {
@@ -275,7 +278,7 @@ public class WhatsappService {
 	}
 
 	private User loadCompanyAdmin(String adminEmail) {
-		User companyOwner = userRepository.findByEmailIgnoreCase(normalizeEmail(adminEmail))
+		User companyOwner = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(adminEmail))
 			.orElseThrow(() -> new IllegalArgumentException("Administrador da empresa não encontrado."));
 		validateCompanyAdmin(companyOwner);
 		return companyOwner;

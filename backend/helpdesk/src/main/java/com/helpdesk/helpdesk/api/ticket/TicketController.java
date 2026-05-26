@@ -24,6 +24,7 @@ import org.springframework.web.multipart.MultipartFile;
 import com.helpdesk.helpdesk.dto.ticket.CloseTicketRequest;
 import com.helpdesk.helpdesk.dto.ticket.CreateTicketMessageRequest;
 import com.helpdesk.helpdesk.dto.ticket.CreateTicketRequest;
+import com.helpdesk.helpdesk.dto.ticket.DeleteTicketsRequest;
 import com.helpdesk.helpdesk.dto.ticket.RequestTicketTransferRequest;
 import com.helpdesk.helpdesk.dto.ticket.TicketMessageResponse;
 import com.helpdesk.helpdesk.dto.ticket.TicketResponse;
@@ -134,6 +135,12 @@ public class TicketController {
 		@Valid @RequestBody CloseTicketRequest request
 	) {
 		return ticketService.closeTicket(ticketId, request);
+	}
+
+	@PostMapping("/delete")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	public void deleteTickets(@Valid @RequestBody DeleteTicketsRequest request) {
+		ticketService.deleteTickets(request);
 	}
 
 	@GetMapping("/{ticketId}/transfer-candidates")

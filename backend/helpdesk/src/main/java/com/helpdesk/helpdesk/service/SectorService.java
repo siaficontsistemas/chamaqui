@@ -13,23 +13,22 @@ import com.helpdesk.helpdesk.domain.User;
 import com.helpdesk.helpdesk.dto.sector.CreateSectorRequest;
 import com.helpdesk.helpdesk.dto.sector.SectorResponse;
 import com.helpdesk.helpdesk.repository.SectorRepository;
-import com.helpdesk.helpdesk.repository.UserRepository;
 
 @Service
 public class SectorService {
 
 	private final SectorRepository sectorRepository;
-	private final UserRepository userRepository;
 	private final SlugService slugService;
+	private final ScopedUserLookupService scopedUserLookupService;
 
 	public SectorService(
 		SectorRepository sectorRepository,
-		UserRepository userRepository,
-		SlugService slugService
+		SlugService slugService,
+		ScopedUserLookupService scopedUserLookupService
 	) {
 		this.sectorRepository = sectorRepository;
-		this.userRepository = userRepository;
 		this.slugService = slugService;
+		this.scopedUserLookupService = scopedUserLookupService;
 	}
 
 	@Transactional(readOnly = true)
@@ -39,7 +38,7 @@ public class SectorService {
 		}
 
 		String normalizedEmail = normalizeEmail(email);
-		User user = userRepository.findByEmailIgnoreCase(normalizedEmail)
+		User user = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizedEmail)
 			.orElseThrow(() -> new NotFoundException("Usuário responsável pela consulta não encontrado."));
 
 		if (hasRole(user, "ADMIN")) {
@@ -65,7 +64,7 @@ public class SectorService {
 
 	@Transactional
 	public SectorResponse create(CreateSectorRequest request) {
-		User createdBy = userRepository.findByEmailIgnoreCase(request.createdByEmail().trim())
+		User createdBy = scopedUserLookupService.findUniqueByEmailInCurrentTenant(request.createdByEmail().trim())
 			.orElseThrow(() -> new NotFoundException("Usuário responsável pelo setor não encontrado."));
 
 		if (!hasRole(createdBy, "ADMIN")) {

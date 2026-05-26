@@ -10,10 +10,14 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.helpdesk.helpdesk.dto.auth.AuthResponse;
+import com.helpdesk.helpdesk.dto.auth.ForgotPasswordRequest;
 import com.helpdesk.helpdesk.dto.auth.LoginRequest;
 import com.helpdesk.helpdesk.dto.auth.RegisterInviteResponse;
 import com.helpdesk.helpdesk.dto.auth.RegisterRequest;
+import com.helpdesk.helpdesk.dto.auth.ResetPasswordRequest;
+import com.helpdesk.helpdesk.dto.common.OperationMessageResponse;
 import com.helpdesk.helpdesk.service.AuthService;
+import com.helpdesk.helpdesk.service.PasswordRecoveryService;
 
 import jakarta.validation.Valid;
 
@@ -22,9 +26,11 @@ import jakarta.validation.Valid;
 public class AuthController {
 
 	private final AuthService authService;
+	private final PasswordRecoveryService passwordRecoveryService;
 
-	public AuthController(AuthService authService) {
+	public AuthController(AuthService authService, PasswordRecoveryService passwordRecoveryService) {
 		this.authService = authService;
+		this.passwordRecoveryService = passwordRecoveryService;
 	}
 
 	@PostMapping("/register")
@@ -41,5 +47,15 @@ public class AuthController {
 	@GetMapping("/register-invite")
 	public RegisterInviteResponse getRegisterInvite(@RequestParam String token) {
 		return authService.getRegisterInvite(token);
+	}
+
+	@PostMapping("/forgot-password")
+	public OperationMessageResponse forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+		return passwordRecoveryService.requestReset(request);
+	}
+
+	@PostMapping("/reset-password")
+	public OperationMessageResponse resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+		return passwordRecoveryService.resetPassword(request);
 	}
 }

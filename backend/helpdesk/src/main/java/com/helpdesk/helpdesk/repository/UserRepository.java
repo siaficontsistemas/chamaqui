@@ -34,10 +34,27 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 	Optional<User> findByEmailIgnoreCase(String email);
 
 	@EntityGraph(attributePaths = {"roles", "companyOwner"})
+	java.util.List<User> findAllByEmailIgnoreCaseOrderByCreatedAtAsc(String email);
+
+	@Query("""
+		select user
+		from User user
+		join user.roles role
+		where role.code = 'ADMIN'
+		  and user.companyDocument = :companyDocument
+		order by user.createdAt asc
+		""")
+	@EntityGraph(attributePaths = {"roles", "companyOwner"})
+	java.util.List<User> findAdminCompaniesByCompanyDocument(@Param("companyDocument") String companyDocument);
+
+	@EntityGraph(attributePaths = {"roles", "companyOwner"})
 	java.util.List<User> findAllByDocumentNumberOrderByCreatedAtAsc(String documentNumber);
 
 	@EntityGraph(attributePaths = {"roles", "companyOwner"})
 	Optional<User> findByPhoneNumber(String phoneNumber);
+
+	@EntityGraph(attributePaths = {"roles", "companyOwner"})
+	Optional<User> findByPasswordResetTokenHash(String passwordResetTokenHash);
 
 	@EntityGraph(attributePaths = {"roles", "companyOwner"})
 	Optional<User> findByWhatsappTransportId(String whatsappTransportId);
@@ -63,6 +80,9 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 	@EntityGraph(attributePaths = {"roles", "companyOwner"})
 	java.util.List<User> findByCompanyOwnerIdAndIdNotOrderByFullNameAsc(UUID companyOwnerId, UUID excludedUserId);
 
+	@EntityGraph(attributePaths = {"roles", "companyOwner"})
+	java.util.List<User> findByCompanyOwnerIdOrIdOrderByCreatedAtAsc(UUID companyOwnerId, UUID userId);
+
 	@EntityGraph(attributePaths = "roles")
 	java.util.List<User> findDistinctByRolesCodeInOrderByFullNameAsc(java.util.Collection<String> roleCodes);
 
@@ -75,6 +95,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 		  and user.status = com.helpdesk.helpdesk.domain.UserStatus.ACTIVE
 		  and user.companyName is not null
 		  and user.companyDocument is not null
+		  and user.companyOwner is null
 		  and user.id <> :excludedCompanyId
 		  and user.companyType = :companyType
 		  and (
@@ -98,6 +119,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 		where role.code = 'ADMIN'
 		  and user.companyName is not null
 		  and user.companyDocument is not null
+		  and user.companyOwner is null
 		  and user.companyType = :companyType
 		order by lower(user.companyName), lower(user.fullName)
 		""")
@@ -114,6 +136,22 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 		  and user.companyType = :companyType
 		""")
 	Optional<User> findAdminCompanyOwnerByIdAndCompanyType(
+		@Param("companyOwnerId") UUID companyOwnerId,
+		@Param("companyType") CompanyType companyType
+	);
+
+	@Query("""
+		select user
+		from User user
+		join user.roles role
+		where role.code = 'ADMIN'
+		  and user.id = :companyOwnerId
+		  and user.companyName is not null
+		  and user.companyDocument is not null
+		  and user.companyOwner is null
+		  and user.companyType = :companyType
+		""")
+	Optional<User> findStandaloneAdminCompanyOwnerByIdAndCompanyType(
 		@Param("companyOwnerId") UUID companyOwnerId,
 		@Param("companyType") CompanyType companyType
 	);

@@ -7,6 +7,7 @@ import {
   getWhatsappSessionStatus,
   startWhatsappSession,
 } from '../../api'
+import { useTenantBranding } from '../../context/TenantBrandingContext'
 import { dashboardPages } from '../../dashboardData'
 import '../Home/Home.css'
 import './MyData.css'
@@ -17,9 +18,12 @@ function MyData({
   isProfileLoading,
   navigationGroups,
   onNavigatePage,
+  onChangePassword,
   onDeleteAccount,
   onDeleteCompany,
   onUpdateProfile,
+  onUploadCompanyLogo,
+  onDeleteCompanyLogo,
   onSearchPartnershipCompanies,
   onCreateCompanyPartnership,
   onAcceptCompanyPartnership,
@@ -37,6 +41,20 @@ function MyData({
   const [isSavingProfile, setIsSavingProfile] = useState(false)
   const [profileFeedback, setProfileFeedback] = useState('')
   const [profileFeedbackType, setProfileFeedbackType] = useState('info')
+  const [isChangingPassword, setIsChangingPassword] = useState(false)
+  const [isSavingPassword, setIsSavingPassword] = useState(false)
+  const [passwordFeedback, setPasswordFeedback] = useState('')
+  const [passwordFeedbackType, setPasswordFeedbackType] = useState('info')
+  const [passwordFormValues, setPasswordFormValues] = useState({
+    newPassword: '',
+    confirmPassword: '',
+  })
+  const [passwordVisibility, setPasswordVisibility] = useState({
+    newPassword: false,
+    confirmPassword: false,
+  })
+  const [selectedCompanyLogoFile, setSelectedCompanyLogoFile] = useState(null)
+  const [isUploadingCompanyLogo, setIsUploadingCompanyLogo] = useState(false)
   const [profileFormValues, setProfileFormValues] = useState({
     fullName: '',
     email: '',
@@ -55,10 +73,13 @@ function MyData({
   const [isSubmittingPartnership, setIsSubmittingPartnership] = useState(false)
   const [partnershipActionId, setPartnershipActionId] = useState('')
   const [unlinkTarget, setUnlinkTarget] = useState(null)
+  const { companyLogoUrl, setBranding: setTenantBranding } = useTenantBranding()
   const activeContent = dashboardPages.myData
   const isAdmin = currentUser?.roles?.includes('admin')
   const canManageWhatsapp = isAdmin && currentUser?.companyType === 'RESPONDER'
   const canManagePartnerships = isAdmin
+  const canManageClientCompanies = isAdmin && currentUser?.companyType === 'RESPONDER'
+  const canManageCompanyLogo = isAdmin && currentUser?.companyType === 'RESPONDER'
   const partnershipSectionTitle =
     currentUser?.companyType === 'REQUESTER' ? 'Solicitar parceria' : 'Adicionar Empresa Cliente'
   const partnershipSectionDescription =
@@ -444,6 +465,135 @@ function MyData({
     }
   }
 
+  function handleStartChangingPassword() {
+    setPasswordFeedback('')
+    setPasswordFeedbackType('info')
+    setIsChangingPassword(true)
+  }
+
+  function handleCancelChangingPassword() {
+    setPasswordFormValues({
+      newPassword: '',
+      confirmPassword: '',
+    })
+    setPasswordVisibility({
+      newPassword: false,
+      confirmPassword: false,
+    })
+    setPasswordFeedback('')
+    setPasswordFeedbackType('info')
+    setIsChangingPassword(false)
+  }
+
+  async function handleSavePassword() {
+    if (!passwordFormValues.newPassword || !passwordFormValues.confirmPassword) {
+      setPasswordFeedback('Informe a nova senha e repita a senha para continuar.')
+      setPasswordFeedbackType('error')
+      return
+    }
+
+    if (passwordFormValues.newPassword !== passwordFormValues.confirmPassword) {
+      setPasswordFeedback('A nova senha e a confirmação precisam ser iguais.')
+      setPasswordFeedbackType('error')
+      return
+    }
+
+    try {
+      setIsSavingPassword(true)
+      setPasswordFeedback('')
+      setPasswordFeedbackType('info')
+      const response = await onChangePassword?.({
+        newPassword: passwordFormValues.newPassword,
+        confirmPassword: passwordFormValues.confirmPassword,
+      })
+      setPasswordFormValues({
+        newPassword: '',
+        confirmPassword: '',
+      })
+      setPasswordVisibility({
+        newPassword: false,
+        confirmPassword: false,
+      })
+      setPasswordFeedback(response?.message || 'Sua senha foi alterada com sucesso.')
+      setPasswordFeedbackType('success')
+      setIsChangingPassword(false)
+    } catch (error) {
+      setPasswordFeedback(error.message || 'Não foi possível alterar sua senha.')
+      setPasswordFeedbackType('error')
+    } finally {
+      setIsSavingPassword(false)
+    }
+  }
+
+  function handleCompanyLogoSelection(event) {
+    const nextFile = event.target.files?.[0] || null
+    setSelectedCompanyLogoFile(nextFile)
+    setProfileFeedback('')
+    setProfileFeedbackType('info')
+  }
+
+  async function handleUploadCompanyLogoFile() {
+    if (!selectedCompanyLogoFile) {
+      setProfileFeedback('Selecione uma imagem antes de enviar a logo da empresa.')
+      setProfileFeedbackType('info')
+      return
+    }
+
+    try {
+      setIsUploadingCompanyLogo(true)
+      setProfileFeedback('')
+      setProfileFeedbackType('info')
+
+      const updatedBranding = await onUploadCompanyLogo?.(selectedCompanyLogoFile)
+      setTenantBranding((currentBranding) => ({
+        ...(currentBranding || {}),
+        tenantResolved: true,
+        companyName: updatedBranding?.companyName || currentUser?.companyName || '',
+        logoUrl: updatedBranding?.logoUrl || '',
+        loginLogoUrl: updatedBranding?.loginLogoUrl || '',
+      }))
+      setSelectedCompanyLogoFile(null)
+      setProfileFeedback('Logo da empresa atualizada com sucesso.')
+      setProfileFeedbackType('success')
+    } catch (error) {
+      setProfileFeedback(error.message || 'Não foi possível atualizar a logo da empresa.')
+      setProfileFeedbackType('error')
+    } finally {
+      setIsUploadingCompanyLogo(false)
+    }
+  }
+
+  async function handleDeleteCompanyLogoFile() {
+    if (!companyLogoUrl) {
+      setProfileFeedback('Nenhuma logo da empresa foi enviada ainda.')
+      setProfileFeedbackType('info')
+      return
+    }
+
+    try {
+      setIsUploadingCompanyLogo(true)
+      setProfileFeedback('')
+      setProfileFeedbackType('info')
+
+      const updatedBranding = await onDeleteCompanyLogo?.()
+      setTenantBranding((currentBranding) => ({
+        ...(currentBranding || {}),
+        tenantResolved: true,
+        companyName: updatedBranding?.companyName || currentUser?.companyName || '',
+        logoUrl: updatedBranding?.logoUrl || '',
+        loginLogoUrl: updatedBranding?.loginLogoUrl || '',
+      }))
+      setSelectedCompanyLogoFile(null)
+      setProfileFeedback('Logo da empresa removida com sucesso.')
+      setProfileFeedbackType('success')
+    } catch (error) {
+      setProfileFeedback(error.message || 'Não foi possível remover a logo da empresa.')
+      setProfileFeedbackType('error')
+    } finally {
+      setIsUploadingCompanyLogo(false)
+    }
+  }
+
   function handleCloseDeleteModal() {
     setDeleteTarget('')
     setDeleteError('')
@@ -569,6 +719,33 @@ function MyData({
                       Excluir empresa
                     </button>
                   ) : null}
+                  {canManageClientCompanies ? (
+                    <button
+                      className="my-data__edit-button my-data__edit-button--secondary"
+                      type="button"
+                      onClick={() => onNavigatePage('clientCompanyRegister')}
+                    >
+                      Cadastrar empresa cliente
+                    </button>
+                  ) : null}
+                  {isChangingPassword ? (
+                    <button
+                      className="my-data__edit-button my-data__edit-button--secondary"
+                      type="button"
+                      onClick={handleCancelChangingPassword}
+                      disabled={isSavingPassword}
+                    >
+                      Cancelar senha
+                    </button>
+                  ) : (
+                    <button
+                      className="my-data__edit-button my-data__edit-button--secondary"
+                      type="button"
+                      onClick={handleStartChangingPassword}
+                    >
+                      Alterar minha senha
+                    </button>
+                  )}
                   <button
                     className="my-data__delete-button"
                     type="button"
@@ -578,6 +755,185 @@ function MyData({
                   </button>
                 </div>
               </form>
+
+              {isChangingPassword || passwordFeedback ? (
+                <section className="my-data__password-card" aria-labelledby="my-data-password-title">
+                  <div className="my-data__password-header">
+                    <div>
+                      <h2 className="my-data__password-title" id="my-data-password-title">
+                        Alterar minha senha
+                      </h2>
+                      <p className="my-data__password-description">
+                        Informe a nova senha e repita a senha para confirmar a alteração.
+                      </p>
+                    </div>
+                  </div>
+
+                  {passwordFeedback ? (
+                    <p className={`my-data__profile-feedback my-data__profile-feedback--${passwordFeedbackType}`}>
+                      {passwordFeedback}
+                    </p>
+                  ) : null}
+
+                  {isChangingPassword ? (
+                    <>
+                      <div className="my-data__password-grid">
+                        <label className="ticket-field">
+                          <span>Nova senha</span>
+                          <div className="ticket-field__control my-data__password-control">
+                            <input
+                              type={passwordVisibility.newPassword ? 'text' : 'password'}
+                              value={passwordFormValues.newPassword}
+                              onChange={(event) =>
+                                setPasswordFormValues((currentValues) => ({
+                                  ...currentValues,
+                                  newPassword: event.target.value,
+                                }))
+                              }
+                            />
+                            <button
+                              className="my-data__password-toggle"
+                              type="button"
+                              aria-label={passwordVisibility.newPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                              aria-pressed={passwordVisibility.newPassword}
+                              onClick={() =>
+                                setPasswordVisibility((currentState) => ({
+                                  ...currentState,
+                                  newPassword: !currentState.newPassword,
+                                }))
+                              }
+                            >
+                              {passwordVisibility.newPassword ? <EyeOffIcon /> : <EyeIcon />}
+                            </button>
+                          </div>
+                        </label>
+
+                        <label className="ticket-field">
+                          <span>Repita a nova senha</span>
+                          <div className="ticket-field__control my-data__password-control">
+                            <input
+                              type={passwordVisibility.confirmPassword ? 'text' : 'password'}
+                              value={passwordFormValues.confirmPassword}
+                              onChange={(event) =>
+                                setPasswordFormValues((currentValues) => ({
+                                  ...currentValues,
+                                  confirmPassword: event.target.value,
+                                }))
+                              }
+                            />
+                            <button
+                              className="my-data__password-toggle"
+                              type="button"
+                              aria-label={passwordVisibility.confirmPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                              aria-pressed={passwordVisibility.confirmPassword}
+                              onClick={() =>
+                                setPasswordVisibility((currentState) => ({
+                                  ...currentState,
+                                  confirmPassword: !currentState.confirmPassword,
+                                }))
+                              }
+                            >
+                              {passwordVisibility.confirmPassword ? <EyeOffIcon /> : <EyeIcon />}
+                            </button>
+                          </div>
+                        </label>
+                      </div>
+
+                      <div className="my-data__password-actions">
+                        <button
+                          className="my-data__edit-button my-data__edit-button--secondary"
+                          type="button"
+                          onClick={handleCancelChangingPassword}
+                          disabled={isSavingPassword}
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          className="my-data__edit-button"
+                          type="button"
+                          onClick={handleSavePassword}
+                          disabled={isSavingPassword}
+                        >
+                          {isSavingPassword ? 'Salvando...' : 'Salvar nova senha'}
+                        </button>
+                      </div>
+                    </>
+                  ) : null}
+                </section>
+              ) : null}
+
+              {canManageCompanyLogo ? (
+                <section className="my-data__company-logo-card" aria-labelledby="company-logo-title">
+                  <div className="my-data__company-logo-header">
+                    <div>
+                      <h2 className="my-data__company-logo-title" id="company-logo-title">
+                        Logo da empresa
+                      </h2>
+                      <p className="my-data__company-logo-description">
+                        Essa imagem aparece no login e no cadastro do subdomínio da sua empresa.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="my-data__company-logo-content">
+                    <div className="my-data__company-logo-preview">
+                      {companyLogoUrl ? (
+                        <img
+                          className="my-data__company-logo-image"
+                          src={companyLogoUrl}
+                          alt={currentUser?.companyName || 'Logo da empresa'}
+                        />
+                      ) : (
+                        <div className="my-data__company-logo-placeholder">
+                          Nenhuma logo enviada ainda
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="my-data__company-logo-form">
+                      <label className="ticket-field">
+                        <span>Arquivo da logo</span>
+                        <div className="ticket-field__control">
+                          <input
+                            type="file"
+                            accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+                            onChange={handleCompanyLogoSelection}
+                          />
+                        </div>
+                      </label>
+
+                      <p className="my-data__company-logo-hint">
+                        Formatos aceitos: PNG, JPG, WEBP ou GIF. Tamanho máximo de 5 MB.
+                      </p>
+
+                      {selectedCompanyLogoFile ? (
+                        <p className="my-data__company-logo-file">
+                          Arquivo selecionado: {selectedCompanyLogoFile.name}
+                        </p>
+                      ) : null}
+
+                      <div className="my-data__company-logo-actions">
+                        <button
+                          className="my-data__edit-button"
+                          type="button"
+                          onClick={handleUploadCompanyLogoFile}
+                          disabled={isUploadingCompanyLogo}
+                        >
+                          {isUploadingCompanyLogo ? 'Enviando...' : 'Salvar logo'}
+                        </button>
+                        <button
+                          className="my-data__delete-button"
+                          type="button"
+                          onClick={handleDeleteCompanyLogoFile}
+                          disabled={isUploadingCompanyLogo || !companyLogoUrl}
+                        >
+                          Excluir logo
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              ) : null}
 
               {canManageWhatsapp ? (
                 <section className="my-data__whatsapp-card" aria-labelledby="whatsapp-company-title">
@@ -855,4 +1211,60 @@ function formatPhoneNumber(value) {
   }
 
   return value || ''
+}
+
+function EyeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none">
+      <path
+        d="M2.75 12S6.5 5.75 12 5.75 21.25 12 21.25 12 17.5 18.25 12 18.25 2.75 12 2.75 12Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M12 14.75a2.75 2.75 0 1 0 0-5.5 2.75 2.75 0 0 0 0 5.5Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function EyeOffIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none">
+      <path
+        d="M3 3 21 21"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M10.58 6.93A9.77 9.77 0 0 1 12 6.75c5.5 0 9.25 5.25 9.25 5.25a18.8 18.8 0 0 1-3.2 3.74"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M6.63 6.63A18.2 18.2 0 0 0 2.75 12s3.75 5.25 9.25 5.25c1.61 0 3.05-.45 4.31-1.09"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M9.88 9.88A3 3 0 0 0 14.12 14.12"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
 }

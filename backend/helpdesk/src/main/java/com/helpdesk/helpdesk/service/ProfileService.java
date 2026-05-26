@@ -7,18 +7,25 @@ import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.helpdesk.helpdesk.common.NotFoundException;
+import com.helpdesk.helpdesk.domain.Company;
 import com.helpdesk.helpdesk.domain.Role;
 import com.helpdesk.helpdesk.domain.SectorMember;
 import com.helpdesk.helpdesk.domain.TeamMembershipNotification;
 import com.helpdesk.helpdesk.domain.TeamMembershipNotificationType;
 import com.helpdesk.helpdesk.domain.User;
+import com.helpdesk.helpdesk.dto.common.OperationMessageResponse;
+import com.helpdesk.helpdesk.dto.company.CompanyLogoResponse;
+import com.helpdesk.helpdesk.dto.profile.ChangePasswordRequest;
 import com.helpdesk.helpdesk.dto.profile.ProfileResponse;
 import com.helpdesk.helpdesk.dto.profile.UpdateProfileRequest;
 import com.helpdesk.helpdesk.repository.CompanyMembershipRepository;
+import com.helpdesk.helpdesk.repository.CompanyRepository;
 import com.helpdesk.helpdesk.repository.RoleRepository;
 import com.helpdesk.helpdesk.repository.SectorMemberRepository;
 import com.helpdesk.helpdesk.repository.TeamMembershipNotificationRepository;
@@ -28,6 +35,7 @@ import com.helpdesk.helpdesk.repository.UserRepository;
 public class ProfileService {
 
 	private final UserRepository userRepository;
+	private final PasswordEncoder passwordEncoder;
 	private final UserMapper userMapper;
 	private final JdbcTemplate jdbcTemplate;
 	private final CompanyMembershipRepository companyMembershipRepository;
@@ -35,18 +43,32 @@ public class ProfileService {
 	private final SectorMemberRepository sectorMemberRepository;
 	private final TeamMembershipNotificationRepository teamMembershipNotificationRepository;
 	private final CnpjLookupService cnpjLookupService;
+	private final EmailDomainValidationService emailDomainValidationService;
+	private final CompanyProvisioningService companyProvisioningService;
+	private final TenantAccessService tenantAccessService;
+	private final ScopedUserLookupService scopedUserLookupService;
+	private final CompanyRepository companyRepository;
+	private final CompanyLogoStorageService companyLogoStorageService;
 
 	public ProfileService(
 		UserRepository userRepository,
+		PasswordEncoder passwordEncoder,
 		UserMapper userMapper,
 		JdbcTemplate jdbcTemplate,
 		CompanyMembershipRepository companyMembershipRepository,
 		RoleRepository roleRepository,
 		SectorMemberRepository sectorMemberRepository,
 		TeamMembershipNotificationRepository teamMembershipNotificationRepository,
-		CnpjLookupService cnpjLookupService
+		CnpjLookupService cnpjLookupService,
+		EmailDomainValidationService emailDomainValidationService,
+		CompanyProvisioningService companyProvisioningService,
+		TenantAccessService tenantAccessService,
+		ScopedUserLookupService scopedUserLookupService,
+		CompanyRepository companyRepository,
+		CompanyLogoStorageService companyLogoStorageService
 	) {
 		this.userRepository = userRepository;
+		this.passwordEncoder = passwordEncoder;
 		this.userMapper = userMapper;
 		this.jdbcTemplate = jdbcTemplate;
 		this.companyMembershipRepository = companyMembershipRepository;
@@ -54,23 +76,53 @@ public class ProfileService {
 		this.sectorMemberRepository = sectorMemberRepository;
 		this.teamMembershipNotificationRepository = teamMembershipNotificationRepository;
 		this.cnpjLookupService = cnpjLookupService;
+		this.emailDomainValidationService = emailDomainValidationService;
+		this.companyProvisioningService = companyProvisioningService;
+		this.tenantAccessService = tenantAccessService;
+		this.scopedUserLookupService = scopedUserLookupService;
+		this.companyRepository = companyRepository;
+		this.companyLogoStorageService = companyLogoStorageService;
 	}
 
 	@Transactional(readOnly = true)
 	public ProfileResponse getByEmail(String email) {
-		return userRepository.findByEmailIgnoreCase(email)
-			.map(userMapper::toProfileResponse)
+		return scopedUserLookupService.findUniqueByEmailInCurrentTenant(email)
+			.map(user -> {
+				tenantAccessService.ensureUserBelongsToCurrentTenant(user, "Esse perfil não pertence ao tenant atual.");
+				return userMapper.toProfileResponse(user);
+			})
 			.orElseThrow(() -> new NotFoundException("Perfil não encontrado."));
+	}
+
+	@Transactional
+	public OperationMessageResponse changePassword(ChangePasswordRequest request) {
+		String normalizedCurrentEmail = normalizeEmail(request.currentEmail());
+		User user = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizedCurrentEmail)
+			.orElseThrow(() -> new NotFoundException("Perfil não encontrado."));
+		tenantAccessService.ensureUserBelongsToCurrentTenant(user, "Esse perfil não pertence ao tenant atual.");
+
+		if (!request.newPassword().equals(request.confirmPassword())) {
+			throw new IllegalArgumentException("A nova senha e a confirmação da senha precisam ser iguais.");
+		}
+
+		user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+		user.setPasswordResetTokenHash(null);
+		user.setPasswordResetTokenExpiresAt(null);
+		userRepository.save(user);
+
+		return new OperationMessageResponse("Sua senha foi alterada com sucesso.");
 	}
 
 	@Transactional
 	public ProfileResponse update(UpdateProfileRequest request) {
 		String normalizedCurrentEmail = normalizeEmail(request.currentEmail());
-		User user = userRepository.findByEmailIgnoreCase(normalizedCurrentEmail)
+		User user = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizedCurrentEmail)
 			.orElseThrow(() -> new NotFoundException("Perfil não encontrado."));
+		tenantAccessService.ensureUserBelongsToCurrentTenant(user, "Esse perfil não pertence ao tenant atual.");
 
 		String normalizedEmail = normalizeEmail(request.email());
-		User existingUserByEmail = userRepository.findByEmailIgnoreCase(normalizedEmail).orElse(null);
+		emailDomainValidationService.ensurePublicEmailDomainExists(normalizedEmail);
+		User existingUserByEmail = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizedEmail).orElse(null);
 		if (existingUserByEmail != null && !existingUserByEmail.getId().equals(user.getId())) {
 			throw new IllegalArgumentException("Já existe um usuário cadastrado com esse email.");
 		}
@@ -99,14 +151,42 @@ public class ProfileService {
 			user.setCompanyDocument(normalizedCompanyDocument);
 		}
 
-		return userMapper.toProfileResponse(userRepository.save(user));
+		User savedUser = userRepository.save(user);
+		if (hasRole(savedUser, "ADMIN")) {
+			companyProvisioningService.syncAdminCompany(savedUser);
+		}
+		return userMapper.toProfileResponse(savedUser);
+	}
+
+	@Transactional
+	public CompanyLogoResponse updateCompanyLogo(String email, MultipartFile file) {
+		Company company = loadCompanyForLogoManagement(email);
+
+		CompanyLogoStorageService.StoredCompanyLogo storedLogo = companyLogoStorageService.store(file);
+		String companyLogoUrl = "/api/v1/public/company-assets/" + storedLogo.storageKey();
+
+		deleteManagedCompanyLogos(company);
+
+		company.setLogoUrl(companyLogoUrl);
+		company.setLoginLogoUrl(companyLogoUrl);
+		return saveCompanyLogoResponse(company);
+	}
+
+	@Transactional
+	public CompanyLogoResponse deleteCompanyLogo(String email) {
+		Company company = loadCompanyForLogoManagement(email);
+		deleteManagedCompanyLogos(company);
+		company.setLogoUrl(null);
+		company.setLoginLogoUrl(null);
+		return saveCompanyLogoResponse(company);
 	}
 
 	@Transactional
 	public void deleteByEmail(String email) {
 		String normalizedEmail = normalizeEmail(email);
-		User user = userRepository.findByEmailIgnoreCase(normalizedEmail)
+		User user = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizedEmail)
 			.orElseThrow(() -> new NotFoundException("Perfil não encontrado."));
+		tenantAccessService.ensureUserBelongsToCurrentTenant(user, "Esse perfil não pertence ao tenant atual.");
 
 		if (isCompanyAdmin(user)) {
 			deleteCompanyData(user, true);
@@ -120,8 +200,9 @@ public class ProfileService {
 	@Transactional
 	public void deleteCompanyByEmail(String email) {
 		String normalizedEmail = normalizeEmail(email);
-		User admin = userRepository.findByEmailIgnoreCase(normalizedEmail)
+		User admin = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizedEmail)
 			.orElseThrow(() -> new NotFoundException("Perfil não encontrado."));
+		tenantAccessService.ensureUserBelongsToCurrentTenant(admin, "Esse perfil não pertence ao tenant atual.");
 
 		if (!hasRole(admin, "ADMIN")) {
 			throw new IllegalArgumentException("Somente administradores podem excluir a empresa.");
@@ -167,6 +248,7 @@ public class ProfileService {
 		companyMembershipRepository.deleteByCompanyOwnerId(admin.getId());
 		jdbcTemplate.update("update users set company_owner_id = null where company_owner_id = ? and id <> ?", admin.getId(), admin.getId());
 		refreshAffectedPrimaryCompanyOwners(affectedMembersById.values());
+		companyRepository.findByOwnerUserId(admin.getId()).ifPresent(this::deleteManagedCompanyLogos);
 
 		updateAffectedMemberRoles(affectedMembersById.values());
 
@@ -177,7 +259,40 @@ public class ProfileService {
 			admin.setCompanyDocument(null);
 			admin.setCompanyType(null);
 			userRepository.save(admin);
+			companyProvisioningService.deleteCompanyRegistration(admin.getId());
+		} else {
+			companyProvisioningService.deleteCompanyRegistration(admin.getId());
 		}
+	}
+
+	private Company loadCompanyForLogoManagement(String email) {
+		String normalizedEmail = normalizeEmail(email);
+		User admin = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizedEmail)
+			.orElseThrow(() -> new NotFoundException("Perfil nao encontrado."));
+		tenantAccessService.ensureUserBelongsToCurrentTenant(admin, "Esse perfil nao pertence ao tenant atual.");
+
+		if (!hasRole(admin, "ADMIN")) {
+			throw new IllegalArgumentException("Somente administradores podem alterar a logo da empresa.");
+		}
+
+		return companyRepository.findByOwnerUserId(admin.getId())
+			.orElseThrow(() -> new NotFoundException("Empresa nao encontrada para o administrador informado."));
+	}
+
+	private void deleteManagedCompanyLogos(Company company) {
+		companyLogoStorageService.deleteIfManaged(company.getLogoUrl());
+		if (company.getLoginLogoUrl() != null && !company.getLoginLogoUrl().equals(company.getLogoUrl())) {
+			companyLogoStorageService.deleteIfManaged(company.getLoginLogoUrl());
+		}
+	}
+
+	private CompanyLogoResponse saveCompanyLogoResponse(Company company) {
+		Company savedCompany = companyRepository.save(company);
+		return new CompanyLogoResponse(
+			savedCompany.getCompanyName(),
+			savedCompany.getLogoUrl(),
+			savedCompany.getLoginLogoUrl()
+		);
 	}
 
 	private void deleteUserOwnedRecords(UUID userId, String normalizedEmail) {

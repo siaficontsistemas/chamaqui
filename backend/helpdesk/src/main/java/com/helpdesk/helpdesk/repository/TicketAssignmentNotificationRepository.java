@@ -25,4 +25,7 @@ public interface TicketAssignmentNotificationRepository extends JpaRepository<Ti
 
 	@EntityGraph(attributePaths = {"ticket", "ticket.requester", "ticket.sector", "recipient"})
 	Optional<TicketAssignmentNotification> findDetailedById(UUID id);
+
+	@EntityGraph(attributePaths = {"ticket", "ticket.requester", "ticket.sector", "recipient"})
+	List<TicketAssignmentNotification> findByTicketId(UUID ticketId);
 }

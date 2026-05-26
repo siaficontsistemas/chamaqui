@@ -19,17 +19,20 @@ public class CompanyInvitationEmailService {
 	private static final Logger logger = LoggerFactory.getLogger(CompanyInvitationEmailService.class);
 
 	private final ObjectProvider<JavaMailSender> mailSenderProvider;
+	private final TenantAccessService tenantAccessService;
+	private final FrontendPublicUrlService frontendPublicUrlService;
 	private final String fromAddress;
-	private final String frontendBaseUrl;
 
 	public CompanyInvitationEmailService(
 		ObjectProvider<JavaMailSender> mailSenderProvider,
-		@Value("${app.mail.company-invite.from:}") String fromAddress,
-		@Value("${app.frontend.base-url:}") String frontendBaseUrl
+		TenantAccessService tenantAccessService,
+		FrontendPublicUrlService frontendPublicUrlService,
+		@Value("${app.mail.company-invite.from:}") String fromAddress
 	) {
 		this.mailSenderProvider = mailSenderProvider;
+		this.tenantAccessService = tenantAccessService;
+		this.frontendPublicUrlService = frontendPublicUrlService;
 		this.fromAddress = fromAddress == null ? "" : fromAddress.trim();
-		this.frontendBaseUrl = frontendBaseUrl == null ? "" : frontendBaseUrl.trim().replaceAll("/+$", "");
 	}
 
 	public void sendInvitation(
@@ -45,11 +48,18 @@ public class CompanyInvitationEmailService {
 		if (fromAddress.isBlank()) {
 			throw new IllegalStateException("O remetente do email de convite não está configurado.");
 		}
-		if (frontendBaseUrl.isBlank()) {
+		if (!frontendPublicUrlService.isConfigured()) {
 			throw new IllegalStateException("A URL pública do frontend não está configurada para montar o link do convite.");
 		}
 
-		String inviteUrl = frontendBaseUrl + "/register?companyInvite=" + inviteToken;
+		String subdomain = tenantAccessService.getCurrentTenant()
+			.map(tenant -> tenant.subdomain())
+			.orElse(null);
+		String inviteUrl = frontendPublicUrlService.buildUrl(
+			subdomain,
+			"/register",
+			java.util.Map.of("companyInvite", inviteToken)
+		);
 
 		try {
 			MimeMessage message = mailSender.createMimeMessage();
@@ -67,7 +77,7 @@ public class CompanyInvitationEmailService {
 				"Falha ao enviar email de convite para {} usando remetente {} e frontend {}.",
 				recipientEmail,
 				fromAddress,
-				frontendBaseUrl,
+				frontendPublicUrlService.defaultBaseUrl(),
 				exception
 			);
 			throw new IllegalStateException(

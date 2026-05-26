@@ -24,6 +24,7 @@ import com.helpdesk.helpdesk.dto.company.CompanySearchResultResponse;
 import com.helpdesk.helpdesk.dto.company.CreateCompanyPartnershipRequest;
 import com.helpdesk.helpdesk.dto.company.RespondCompanyPartnershipRequest;
 import com.helpdesk.helpdesk.dto.sector.SectorResponse;
+import com.helpdesk.helpdesk.dto.ticket.TicketTargetSectorResponse;
 import com.helpdesk.helpdesk.repository.CompanyPartnershipRepository;
 import com.helpdesk.helpdesk.repository.CompanyPartnershipNotificationRepository;
 import com.helpdesk.helpdesk.repository.SectorRepository;
@@ -36,17 +37,26 @@ public class CompanyPartnershipService {
 	private final CompanyPartnershipNotificationRepository companyPartnershipNotificationRepository;
 	private final UserRepository userRepository;
 	private final SectorRepository sectorRepository;
+	private final TicketService ticketService;
+	private final TenantAccessService tenantAccessService;
+	private final ScopedUserLookupService scopedUserLookupService;
 
 	public CompanyPartnershipService(
 		CompanyPartnershipRepository companyPartnershipRepository,
 		CompanyPartnershipNotificationRepository companyPartnershipNotificationRepository,
 		UserRepository userRepository,
-		SectorRepository sectorRepository
+		SectorRepository sectorRepository,
+		TicketService ticketService,
+		TenantAccessService tenantAccessService,
+		ScopedUserLookupService scopedUserLookupService
 	) {
 		this.companyPartnershipRepository = companyPartnershipRepository;
 		this.companyPartnershipNotificationRepository = companyPartnershipNotificationRepository;
 		this.userRepository = userRepository;
 		this.sectorRepository = sectorRepository;
+		this.ticketService = ticketService;
+		this.tenantAccessService = tenantAccessService;
+		this.scopedUserLookupService = scopedUserLookupService;
 	}
 
 	@Transactional(readOnly = true)
@@ -178,8 +188,18 @@ public class CompanyPartnershipService {
 	}
 
 	@Transactional(readOnly = true)
-	public List<SectorResponse> listTicketTargets(String email) {
+	public List<TicketTargetSectorResponse> listTicketTargets(String email) {
 		User user = loadUserByEmail(email);
+		tenantAccessService.ensureUserBelongsToCurrentTenant(user, "Esse usuário não pertence ao tenant atual.");
+
+		if (tenantAccessService.hasCurrentTenant()) {
+			return sectorRepository.findActiveByCreatedByIdOrderByNameAsc(
+				tenantAccessService.requireCurrentTenantOwnerUserId()
+			).stream()
+				.map(this::toTicketTargetSectorResponse)
+				.toList();
+		}
+
 		User currentCompany = resolveOperatingCompany(user);
 		List<CompanyPartnership> partnerships = companyPartnershipRepository.findVisibleByCompanyId(currentCompany.getId());
 
@@ -199,7 +219,7 @@ public class CompanyPartnershipService {
 		}
 
 		return sectorRepository.findActiveByCreatedByIdInOrderByNameAsc(partnerCompanyIds).stream()
-			.map(this::toSectorResponse)
+			.map(this::toTicketTargetSectorResponse)
 			.toList();
 	}
 
@@ -256,6 +276,23 @@ public class CompanyPartnershipService {
 		);
 	}
 
+	private TicketTargetSectorResponse toTicketTargetSectorResponse(Sector sector) {
+		SectorResponse sectorResponse = toSectorResponse(sector);
+		return new TicketTargetSectorResponse(
+			sectorResponse.id(),
+			sectorResponse.name(),
+			sectorResponse.slug(),
+			sectorResponse.description(),
+			sectorResponse.active(),
+			sectorResponse.companyOwnerId(),
+			sectorResponse.companyName(),
+			sectorResponse.companyDocument(),
+			sectorResponse.createdByEmail(),
+			sectorResponse.memberCount(),
+			ticketService.listAvailableAssigneesForSector(sector.getId(), sector.getCreatedBy().getId())
+		);
+	}
+
 	private void createNotification(
 		CompanyPartnership partnership,
 		User recipient,
@@ -298,7 +335,7 @@ public class CompanyPartnershipService {
 	}
 
 	private User loadUserByEmail(String email) {
-		return userRepository.findByEmailIgnoreCase(normalizeEmail(email))
+		return scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(email))
 			.orElseThrow(() -> new NotFoundException("Usuário responsável não encontrado."));
 	}
 

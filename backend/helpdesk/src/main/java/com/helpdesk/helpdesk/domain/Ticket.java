@@ -266,4 +266,12 @@ public class Ticket {
 	public OffsetDateTime getUpdatedAt() {
 		return updatedAt;
 	}
+
+	public OffsetDateTime getDeletedAt() {
+		return deletedAt;
+	}
+
+	public void setDeletedAt(OffsetDateTime deletedAt) {
+		this.deletedAt = deletedAt;
+	}
 }

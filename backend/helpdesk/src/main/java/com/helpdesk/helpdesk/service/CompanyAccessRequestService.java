@@ -40,6 +40,9 @@ public class CompanyAccessRequestService {
 	private final RoleRepository roleRepository;
 	private final TeamMembershipNotificationRepository teamMembershipNotificationRepository;
 	private final CompanyInvitationEmailService companyInvitationEmailService;
+	private final EmailDomainValidationService emailDomainValidationService;
+	private final TenantAccessService tenantAccessService;
+	private final ScopedUserLookupService scopedUserLookupService;
 
 	public CompanyAccessRequestService(
 		CompanyAccessRequestRepository companyAccessRequestRepository,
@@ -47,7 +50,10 @@ public class CompanyAccessRequestService {
 		UserRepository userRepository,
 		RoleRepository roleRepository,
 		TeamMembershipNotificationRepository teamMembershipNotificationRepository,
-		CompanyInvitationEmailService companyInvitationEmailService
+		CompanyInvitationEmailService companyInvitationEmailService,
+		EmailDomainValidationService emailDomainValidationService,
+		TenantAccessService tenantAccessService,
+		ScopedUserLookupService scopedUserLookupService
 	) {
 		this.companyAccessRequestRepository = companyAccessRequestRepository;
 		this.companyMembershipRepository = companyMembershipRepository;
@@ -55,6 +61,9 @@ public class CompanyAccessRequestService {
 		this.roleRepository = roleRepository;
 		this.teamMembershipNotificationRepository = teamMembershipNotificationRepository;
 		this.companyInvitationEmailService = companyInvitationEmailService;
+		this.emailDomainValidationService = emailDomainValidationService;
+		this.tenantAccessService = tenantAccessService;
+		this.scopedUserLookupService = scopedUserLookupService;
 	}
 
 	@Transactional
@@ -85,6 +94,7 @@ public class CompanyAccessRequestService {
 	public CompanyAdminInviteResponse createAdminInvite(CreateCompanyAdminInviteRequest request) {
 		User admin = loadAdminByEmail(request.invitedByEmail());
 		String normalizedEmail = normalizeEmail(request.email());
+		emailDomainValidationService.ensurePublicEmailDomainExists(normalizedEmail);
 		String normalizedDocumentNumber = normalizeDocumentNumber(request.documentNumber());
 
 		if (!BrazilianDocumentValidator.isValidCpf(normalizedDocumentNumber)) {
@@ -278,6 +288,16 @@ public class CompanyAccessRequestService {
 	}
 
 	@Transactional
+	public void attachApprovedUserToCompany(User user, User companyOwner) {
+		attachUserToCompany(user, companyOwner);
+	}
+
+	@Transactional(readOnly = true)
+	public void ensureInviteMatchesCurrentTenant(String inviteToken) {
+		loadPendingInviteByToken(inviteToken);
+	}
+
+	@Transactional
 	public void attachPendingAdminInvitesToRegisteredUser(User user) {
 		List<CompanyAccessRequest> pendingInvites = companyAccessRequestRepository.findPendingAdminInvitesForIdentity(
 			CompanyAccessRequestType.ADMIN_INVITE,
@@ -394,6 +414,10 @@ public class CompanyAccessRequestService {
 		if (!isNotExpired(invite)) {
 			throw new IllegalArgumentException("Esse convite expirou e não pode mais ser utilizado.");
 		}
+		if (tenantAccessService.hasCurrentTenant()
+			&& !invite.getTargetCompany().getId().equals(tenantAccessService.requireCurrentTenantOwnerUserId())) {
+			throw new IllegalArgumentException("Esse convite não pertence ao tenant atual.");
+		}
 
 		return invite;
 	}
@@ -422,7 +446,7 @@ public class CompanyAccessRequestService {
 	}
 
 	private User findInvitedUser(String normalizedEmail, String normalizedDocumentNumber) {
-		User userByEmail = userRepository.findByEmailIgnoreCase(normalizedEmail).orElse(null);
+		User userByEmail = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizedEmail).orElse(null);
 		User userByDocument = userRepository.findAllByDocumentNumberOrderByCreatedAtAsc(normalizedDocumentNumber)
 			.stream()
 			.filter(user -> !hasRole(user, "ADMIN"))
@@ -488,8 +512,10 @@ public class CompanyAccessRequestService {
 	}
 
 	private User loadUserByEmail(String email) {
-		return userRepository.findByEmailIgnoreCase(normalizeEmail(email))
+		User user = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(email))
 			.orElseThrow(() -> new NotFoundException("Usuário não encontrado."));
+		tenantAccessService.ensureUserBelongsToCurrentTenant(user, "Esse usuário não pertence ao tenant atual.");
+		return user;
 	}
 
 	private boolean isNotExpired(CompanyAccessRequest request) {

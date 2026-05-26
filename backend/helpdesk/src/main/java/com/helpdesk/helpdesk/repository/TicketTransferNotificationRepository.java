@@ -30,5 +30,8 @@ public interface TicketTransferNotificationRepository extends JpaRepository<Tick
 	@EntityGraph(attributePaths = {"ticket", "ticket.requester", "ticket.sector", "sender", "recipient"})
 	List<TicketTransferNotification> findByTicketIdAndStatus(UUID ticketId, TicketTransferStatus status);
 
+	@EntityGraph(attributePaths = {"ticket", "ticket.requester", "ticket.sector", "sender", "recipient"})
+	List<TicketTransferNotification> findByTicketId(UUID ticketId);
+
 	boolean existsByTicketIdAndStatus(UUID ticketId, TicketTransferStatus status);
 }

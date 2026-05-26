@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.helpdesk.helpdesk.common.NotFoundException;
+import com.helpdesk.helpdesk.domain.CompanyPartnershipStatus;
 import com.helpdesk.helpdesk.domain.CompanyType;
 import com.helpdesk.helpdesk.domain.Role;
 import com.helpdesk.helpdesk.domain.User;
@@ -16,6 +17,7 @@ import com.helpdesk.helpdesk.dto.auth.AuthResponse;
 import com.helpdesk.helpdesk.dto.auth.LoginRequest;
 import com.helpdesk.helpdesk.dto.auth.RegisterInviteResponse;
 import com.helpdesk.helpdesk.dto.auth.RegisterRequest;
+import com.helpdesk.helpdesk.repository.CompanyPartnershipRepository;
 import com.helpdesk.helpdesk.repository.RoleRepository;
 import com.helpdesk.helpdesk.repository.UserRepository;
 import com.helpdesk.helpdesk.util.BrazilianDocumentValidator;
@@ -29,6 +31,11 @@ public class AuthService {
 	private final UserMapper userMapper;
 	private final CompanyAccessRequestService companyAccessRequestService;
 	private final CnpjLookupService cnpjLookupService;
+	private final EmailDomainValidationService emailDomainValidationService;
+	private final CompanyProvisioningService companyProvisioningService;
+	private final TenantAccessService tenantAccessService;
+	private final ScopedUserLookupService scopedUserLookupService;
+	private final CompanyPartnershipRepository companyPartnershipRepository;
 
 	public AuthService(
 		UserRepository userRepository,
@@ -36,7 +43,12 @@ public class AuthService {
 		PasswordEncoder passwordEncoder,
 		UserMapper userMapper,
 		CompanyAccessRequestService companyAccessRequestService,
-		CnpjLookupService cnpjLookupService
+		CnpjLookupService cnpjLookupService,
+		EmailDomainValidationService emailDomainValidationService,
+		CompanyProvisioningService companyProvisioningService,
+		TenantAccessService tenantAccessService,
+		ScopedUserLookupService scopedUserLookupService,
+		CompanyPartnershipRepository companyPartnershipRepository
 	) {
 		this.userRepository = userRepository;
 		this.roleRepository = roleRepository;
@@ -44,6 +56,11 @@ public class AuthService {
 		this.userMapper = userMapper;
 		this.companyAccessRequestService = companyAccessRequestService;
 		this.cnpjLookupService = cnpjLookupService;
+		this.emailDomainValidationService = emailDomainValidationService;
+		this.companyProvisioningService = companyProvisioningService;
+		this.tenantAccessService = tenantAccessService;
+		this.scopedUserLookupService = scopedUserLookupService;
+		this.companyPartnershipRepository = companyPartnershipRepository;
 	}
 
 	@Transactional
@@ -51,12 +68,17 @@ public class AuthService {
 		boolean isAdminRegistration = "admin".equalsIgnoreCase(request.role());
 		CompanyType companyType = CompanyType.fromValue(request.companyType());
 		String normalizedEmail = request.email().trim().toLowerCase(Locale.ROOT);
+		emailDomainValidationService.ensurePublicEmailDomainExists(normalizedEmail);
 		String normalizedDocumentNumber = normalizeDocumentNumber(request.documentNumber());
 		String normalizedInviteToken = blankToNull(request.inviteToken());
 		String companyName = blankToNull(request.companyName());
 		String normalizedCompanyDocument = normalizeCompanyDocument(request.companyDocument());
 		User companyOwner = null;
-		User existingUserByEmail = userRepository.findByEmailIgnoreCase(normalizedEmail).orElse(null);
+		User tenantCompany = tenantAccessService.hasCurrentTenant() ? tenantAccessService.loadCurrentTenantOwner() : null;
+		boolean directTenantMembership = false;
+		User existingUserByEmail = tenantAccessService.hasCurrentTenant()
+			? scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizedEmail).orElse(null)
+			: scopedUserLookupService.findUniqueStandaloneByEmail(normalizedEmail).orElse(null);
 		List<User> existingUsersByDocument = findUsersByDocument(normalizedDocumentNumber);
 		User upgradeableUser = resolveUpgradeableUser(existingUserByEmail, existingUsersByDocument);
 
@@ -90,9 +112,57 @@ public class AuthService {
 		if (isAdminRegistration) {
 			cnpjLookupService.ensureCompanyExists(normalizedCompanyDocument);
 		}
+		if (tenantCompany != null) {
+			if (isAdminRegistration) {
+				throw new IllegalArgumentException(
+					"Não é permitido cadastrar um novo administrador dentro do subdomínio de uma empresa."
+				);
+			}
+			if (normalizedInviteToken != null) {
+				companyAccessRequestService.ensureInviteMatchesCurrentTenant(normalizedInviteToken);
+			}
+
+			if (companyType == tenantCompany.getCompanyType()) {
+				if (request.companyOwnerId() != null && !tenantCompany.getId().equals(request.companyOwnerId())) {
+					throw new IllegalArgumentException("Esse cadastro não pode ser vinculado a outra empresa.");
+				}
+				companyOwner = tenantCompany;
+				directTenantMembership = true;
+			} else if (
+				tenantCompany.getCompanyType() == CompanyType.RESPONDER
+					&& companyType == CompanyType.REQUESTER
+			) {
+				if (request.companyOwnerId() == null) {
+					throw new IllegalArgumentException("Selecione a empresa cliente para concluir esse cadastro.");
+				}
+
+				companyOwner = userRepository.findAdminCompanyOwnerByIdAndCompanyType(
+					request.companyOwnerId(),
+					CompanyType.REQUESTER
+				).orElseThrow(() -> new NotFoundException("Empresa cliente não encontrada."));
+
+				boolean hasAcceptedPartnership = companyPartnershipRepository.existsByCompanyPairAndStatus(
+					tenantCompany.getId(),
+					companyOwner.getId(),
+					CompanyPartnershipStatus.ACCEPTED
+				);
+				if (!hasAcceptedPartnership) {
+					throw new IllegalArgumentException(
+						"A empresa cliente selecionada não está vinculada à empresa provedora atual."
+					);
+				}
+			} else {
+				throw new IllegalArgumentException("Esse subdomínio só permite os tipos de cadastro disponíveis para a empresa atual.");
+			}
+		}
 		if (!isAdminRegistration && request.companyOwnerId() != null && normalizedInviteToken == null) {
-			companyOwner = userRepository.findAdminCompanyOwnerByIdAndCompanyType(request.companyOwnerId(), companyType)
-				.orElseThrow(() -> new NotFoundException("Empresa não encontrada para o tipo selecionado."));
+			if (tenantCompany == null) {
+				companyOwner = userRepository.findStandaloneAdminCompanyOwnerByIdAndCompanyType(
+					request.companyOwnerId(),
+					companyType
+				)
+					.orElseThrow(() -> new NotFoundException("Empresa não encontrada para o tipo selecionado."));
+			}
 		}
 
 		Role role = roleRepository.findByCode(request.role().toUpperCase(Locale.ROOT))
@@ -108,16 +178,22 @@ public class AuthService {
 		user.setCompanyType(isAdminRegistration ? companyType : null);
 		user.setCompanyOwner(null);
 		user.setPasswordHash(passwordEncoder.encode(request.password()));
-		user.setStatus(resolveInitialStatus(isAdminRegistration, normalizedInviteToken, companyOwner));
+		user.setStatus(resolveInitialStatus(isAdminRegistration, normalizedInviteToken, companyOwner, directTenantMembership));
 		user.setEmailVerified(true);
 		user.setSimplified(false);
 		user.getRoles().clear();
 		user.getRoles().add(role);
 
 		User savedUser = userRepository.save(user);
+		if (isAdminRegistration) {
+			companyProvisioningService.syncAdminCompany(savedUser);
+		}
+
 		if (!isAdminRegistration) {
 			if (normalizedInviteToken != null) {
 				companyAccessRequestService.acceptAdminInviteDuringRegistration(savedUser, normalizedInviteToken);
+			} else if (directTenantMembership && companyOwner != null) {
+				companyAccessRequestService.attachApprovedUserToCompany(savedUser, companyOwner);
 			} else if (companyOwner != null) {
 				companyAccessRequestService.createPendingRequest(savedUser, companyOwner);
 			} else {
@@ -135,10 +211,14 @@ public class AuthService {
 
 	@Transactional
 	public AuthResponse login(LoginRequest request) {
-		User user = userRepository.findByEmailIgnoreCase(request.email().trim())
+		User user = scopedUserLookupService.resolveLoginCandidate(request.email().trim())
 			.orElseThrow(() -> new NotFoundException("Usuário não encontrado."));
 
 		if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+			throw new IllegalArgumentException("Email ou senha inválidos.");
+		}
+		tenantAccessService.ensureMainHostLoginAllowed(user);
+		if (!tenantAccessService.belongsToCurrentTenant(user)) {
 			throw new IllegalArgumentException("Email ou senha inválidos.");
 		}
 
@@ -232,8 +312,13 @@ public class AuthService {
 			&& blankToNull(candidate.getCompanyDocument()) == null;
 	}
 
-	private UserStatus resolveInitialStatus(boolean isAdminRegistration, String inviteToken, User companyOwner) {
-		if (isAdminRegistration || inviteToken != null || companyOwner == null) {
+	private UserStatus resolveInitialStatus(
+		boolean isAdminRegistration,
+		String inviteToken,
+		User companyOwner,
+		boolean directTenantMembership
+	) {
+		if (isAdminRegistration || inviteToken != null || companyOwner == null || directTenantMembership) {
 			return UserStatus.ACTIVE;
 		}
 

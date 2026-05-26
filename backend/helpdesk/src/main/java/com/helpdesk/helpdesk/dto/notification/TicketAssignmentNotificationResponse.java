@@ -10,6 +10,8 @@ public record TicketAssignmentNotificationResponse(
 	String ticketTitle,
 	String requesterName,
 	String sectorName,
+	String companyName,
+	String requesterCompanyName,
 	String status,
 	OffsetDateTime createdAt
 ) {

@@ -30,6 +30,7 @@
 		<java.version>21</java.version>
 		<springdoc.version>3.0.2</springdoc.version>
 		<swagger.version>2.2.43</swagger.version>
+		<aws.sdk.version>2.32.3</aws.sdk.version>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -74,6 +75,11 @@
 			<groupId>io.swagger.core.v3</groupId>
 			<artifactId>swagger-models-jakarta</artifactId>
 			<version>${swagger.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>s3</artifactId>
+			<version>${aws.sdk.version}</version>
 		</dependency>
 
 		<dependency>

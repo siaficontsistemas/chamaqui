@@ -26,6 +26,7 @@ import com.helpdesk.helpdesk.domain.Ticket;
 import com.helpdesk.helpdesk.domain.TicketAssignmentNotification;
 import com.helpdesk.helpdesk.domain.TicketAttachment;
 import com.helpdesk.helpdesk.domain.TicketChannel;
+import com.helpdesk.helpdesk.domain.TicketClosureNotification;
 import com.helpdesk.helpdesk.domain.TicketMessage;
 import com.helpdesk.helpdesk.domain.TicketPriority;
 import com.helpdesk.helpdesk.domain.TicketStatus;
@@ -35,17 +36,20 @@ import com.helpdesk.helpdesk.domain.User;
 import com.helpdesk.helpdesk.dto.ticket.CloseTicketRequest;
 import com.helpdesk.helpdesk.dto.ticket.CreateTicketMessageRequest;
 import com.helpdesk.helpdesk.dto.ticket.CreateTicketRequest;
+import com.helpdesk.helpdesk.dto.ticket.DeleteTicketsRequest;
 import com.helpdesk.helpdesk.dto.ticket.RequestTicketTransferRequest;
 import com.helpdesk.helpdesk.dto.ticket.TicketAttachmentResponse;
 import com.helpdesk.helpdesk.dto.ticket.TicketMessageResponse;
 import com.helpdesk.helpdesk.dto.ticket.TicketResponse;
 import com.helpdesk.helpdesk.dto.ticket.TicketSummaryResponse;
+import com.helpdesk.helpdesk.dto.ticket.TicketTargetAssigneeResponse;
 import com.helpdesk.helpdesk.dto.ticket.TicketTransferCandidateResponse;
 import com.helpdesk.helpdesk.repository.CompanyPartnershipRepository;
 import com.helpdesk.helpdesk.repository.SectorMemberRepository;
 import com.helpdesk.helpdesk.repository.SectorRepository;
 import com.helpdesk.helpdesk.repository.TicketAssignmentNotificationRepository;
 import com.helpdesk.helpdesk.repository.TicketAttachmentRepository;
+import com.helpdesk.helpdesk.repository.TicketClosureNotificationRepository;
 import com.helpdesk.helpdesk.repository.TicketMessageRepository;
 import com.helpdesk.helpdesk.repository.TicketPriorityRepository;
 import com.helpdesk.helpdesk.repository.TicketRepository;
@@ -70,10 +74,13 @@ public class TicketService {
 	private final TicketMessageRepository ticketMessageRepository;
 	private final TicketAttachmentRepository ticketAttachmentRepository;
 	private final TicketTransferNotificationRepository ticketTransferNotificationRepository;
+	private final TicketClosureNotificationRepository ticketClosureNotificationRepository;
 	private final TicketAttachmentStorageService ticketAttachmentStorageService;
 	private final TicketClosureEmailService ticketClosureEmailService;
 	private final WhatsappService whatsappService;
 	private final WhatsappConversationRepository whatsappConversationRepository;
+	private final TenantAccessService tenantAccessService;
+	private final ScopedUserLookupService scopedUserLookupService;
 
 	public TicketService(
 		TicketRepository ticketRepository,
@@ -87,10 +94,13 @@ public class TicketService {
 		TicketMessageRepository ticketMessageRepository,
 		TicketAttachmentRepository ticketAttachmentRepository,
 		TicketTransferNotificationRepository ticketTransferNotificationRepository,
+		TicketClosureNotificationRepository ticketClosureNotificationRepository,
 		TicketAttachmentStorageService ticketAttachmentStorageService,
 		TicketClosureEmailService ticketClosureEmailService,
 		WhatsappService whatsappService,
-		WhatsappConversationRepository whatsappConversationRepository
+		WhatsappConversationRepository whatsappConversationRepository,
+		TenantAccessService tenantAccessService,
+		ScopedUserLookupService scopedUserLookupService
 	) {
 		this.ticketRepository = ticketRepository;
 		this.userRepository = userRepository;
@@ -103,10 +113,13 @@ public class TicketService {
 		this.ticketMessageRepository = ticketMessageRepository;
 		this.ticketAttachmentRepository = ticketAttachmentRepository;
 		this.ticketTransferNotificationRepository = ticketTransferNotificationRepository;
+		this.ticketClosureNotificationRepository = ticketClosureNotificationRepository;
 		this.ticketAttachmentStorageService = ticketAttachmentStorageService;
 		this.ticketClosureEmailService = ticketClosureEmailService;
 		this.whatsappService = whatsappService;
 		this.whatsappConversationRepository = whatsappConversationRepository;
+		this.tenantAccessService = tenantAccessService;
+		this.scopedUserLookupService = scopedUserLookupService;
 	}
 
 	@Transactional(readOnly = true)
@@ -158,7 +171,7 @@ public class TicketService {
 
 	@Transactional(readOnly = true)
 	public List<TicketTransferCandidateResponse> listTransferCandidates(UUID ticketId, String email) {
-		User author = userRepository.findByEmailIgnoreCase(normalizeEmail(email))
+		User author = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(email))
 			.orElseThrow(() -> new NotFoundException("Usuário responsável pela transferência não encontrado."));
 		Ticket ticket = loadDetailedAccessibleTicket(ticketId, author.getEmail());
 
@@ -171,9 +184,32 @@ public class TicketService {
 			.toList();
 	}
 
+	@Transactional(readOnly = true)
+	public List<TicketTargetAssigneeResponse> listAvailableAssigneesForSector(UUID sectorId, UUID companyOwnerId) {
+		com.helpdesk.helpdesk.domain.Sector sector = sectorRepository.findById(sectorId)
+			.orElseThrow(() -> new NotFoundException("Setor não encontrado."));
+		tenantAccessService.ensureCompanyMatchesCurrentTenant(
+			sector.getCreatedBy().getId(),
+			"O setor informado não pertence ao tenant atual."
+		);
+
+		UUID effectiveCompanyOwnerId = tenantAccessService.getCurrentTenantOwnerUserId().orElse(companyOwnerId);
+		if (effectiveCompanyOwnerId != null && !sector.getCreatedBy().getId().equals(effectiveCompanyOwnerId)) {
+			throw new IllegalArgumentException("O setor informado não pertence a empresa selecionada.");
+		}
+
+		return loadEligibleAssignees(sector).stream()
+			.map(user -> new TicketTargetAssigneeResponse(
+				user.getId(),
+				user.getFullName(),
+				user.getEmail()
+			))
+			.toList();
+	}
+
 	@Transactional
 	public TicketResponse create(CreateTicketRequest request, List<MultipartFile> files) {
-		User requester = userRepository.findByEmailIgnoreCase(normalizeEmail(request.requesterEmail()))
+		User requester = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(request.requesterEmail()))
 			.orElseThrow(() -> new NotFoundException("Solicitante não encontrado."));
 		TicketStatus status = ticketStatusRepository.findByCode("OPEN")
 			.orElseThrow(() -> new NotFoundException("Status padrão de abertura não encontrado."));
@@ -181,9 +217,15 @@ public class TicketService {
 			.orElseThrow(() -> new NotFoundException("Prioridade não encontrada."));
 		com.helpdesk.helpdesk.domain.Sector sector = sectorRepository.findById(request.sectorId())
 			.orElseThrow(() -> new NotFoundException("Setor não encontrado."));
+		tenantAccessService.ensureCompanyMatchesCurrentTenant(
+			sector.getCreatedBy().getId(),
+			"O setor informado não pertence ao tenant atual."
+		);
 
 		User requesterCompany = resolveRequesterCompany(requester);
-		if (!sector.getCreatedBy().getId().equals(request.companyOwnerId())) {
+		UUID effectiveCompanyOwnerId = tenantAccessService.getCurrentTenantOwnerUserId()
+			.orElse(request.companyOwnerId());
+		if (!sector.getCreatedBy().getId().equals(effectiveCompanyOwnerId)) {
 			throw new IllegalArgumentException("O setor informado não pertence a empresa selecionada.");
 		}
 		ensureAcceptedPartnership(requesterCompany, sector.getCreatedBy());
@@ -193,7 +235,7 @@ public class TicketService {
 		ticket.setTitle(request.title().trim());
 		ticket.setDescription(request.description().trim());
 		ticket.setRequester(requester);
-		ticket.setAssignedTo(resolveNextAssignee(sector));
+		ticket.setAssignedTo(resolveAssignee(sector, request.assignedToUserId()));
 		ticket.setSector(sector);
 		ticket.setStatus(status);
 		ticket.setPriority(priority);
@@ -218,8 +260,14 @@ public class TicketService {
 			.orElseThrow(() -> new NotFoundException("Prioridade padrão não encontrada."));
 		com.helpdesk.helpdesk.domain.Sector sector = sectorRepository.findById(request.sectorId())
 			.orElseThrow(() -> new NotFoundException("Setor não encontrado."));
+		tenantAccessService.ensureCompanyMatchesCurrentTenant(
+			sector.getCreatedBy().getId(),
+			"O setor informado não pertence ao tenant atual."
+		);
 
-		if (!sector.getCreatedBy().getId().equals(request.companyOwnerId())) {
+		UUID effectiveCompanyOwnerId = tenantAccessService.getCurrentTenantOwnerUserId()
+			.orElse(request.companyOwnerId());
+		if (!sector.getCreatedBy().getId().equals(effectiveCompanyOwnerId)) {
 			throw new IllegalArgumentException("O setor informado não pertence a empresa selecionada.");
 		}
 		if (sector.getCreatedBy().getCompanyType() != CompanyType.RESPONDER) {
@@ -231,7 +279,7 @@ public class TicketService {
 		ticket.setTitle(buildWhatsappTicketTitle(request.subject(), requester.getFullName()));
 		ticket.setDescription(resolveWhatsappInboundMessage(request.description(), incomingAttachments));
 		ticket.setRequester(requester);
-		ticket.setAssignedTo(resolveNextAssignee(sector));
+		ticket.setAssignedTo(resolveAssignee(sector, request.assignedToUserId()));
 		ticket.setSector(sector);
 		ticket.setStatus(status);
 		ticket.setPriority(priority);
@@ -248,7 +296,7 @@ public class TicketService {
 
 	@Transactional
 	public TicketResponse requestTransfer(UUID ticketId, RequestTicketTransferRequest request) {
-		User author = userRepository.findByEmailIgnoreCase(normalizeEmail(request.authorEmail()))
+		User author = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(request.authorEmail()))
 			.orElseThrow(() -> new NotFoundException("Usuário responsável pela transferência não encontrado."));
 		Ticket ticket = loadDetailedAccessibleTicket(ticketId, author.getEmail());
 
@@ -292,7 +340,7 @@ public class TicketService {
 
 	@Transactional
 	public TicketMessageResponse addMessage(UUID ticketId, CreateTicketMessageRequest request, List<MultipartFile> files) {
-		User author = userRepository.findByEmailIgnoreCase(normalizeEmail(request.authorEmail()))
+		User author = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(request.authorEmail()))
 			.orElseThrow(() -> new NotFoundException("Autor da mensagem não encontrado."));
 		Ticket ticket = loadDetailedAccessibleTicket(ticketId, author.getEmail());
 		List<MultipartFile> validFiles = normalizeFiles(files);
@@ -374,16 +422,65 @@ public class TicketService {
 
 	@Transactional
 	public TicketResponse closeTicket(UUID ticketId, CloseTicketRequest request) {
-		User author = userRepository.findByEmailIgnoreCase(normalizeEmail(request.authorEmail()))
+		User author = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(request.authorEmail()))
 			.orElseThrow(() -> new NotFoundException("Usuário responsável pelo fechamento não encontrado."));
 		Ticket ticket = loadDetailedAccessibleTicket(ticketId, author.getEmail());
 
+		ensureTicketCanBeClosed(author);
+		return toResponse(closeTicketInternal(ticket, author, false));
+	}
+
+	@Transactional
+	public void deleteTickets(DeleteTicketsRequest request) {
+		User author = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(request.authorEmail()))
+			.orElseThrow(() -> new NotFoundException("Usuário responsável pela exclusão não encontrado."));
+		ensureTicketCanBeDeleted(author);
+
+		List<UUID> ticketIds = request.ticketIds().stream()
+			.distinct()
+			.toList();
+
+		if (ticketIds.isEmpty()) {
+			throw new IllegalArgumentException("Selecione ao menos um chamado para excluir.");
+		}
+
+		for (UUID ticketId : ticketIds) {
+			Ticket ticket = loadDetailedAccessibleTicket(ticketId, author.getEmail());
+			Ticket managedTicket = isTicketClosed(ticket)
+				? ticket
+				: closeTicketInternal(ticket, author, true);
+
+			managedTicket.setDeletedAt(OffsetDateTime.now());
+			managedTicket.setPendingTransferTo(null);
+			managedTicket.setPendingTransferRequestedBy(null);
+			managedTicket.setPendingTransferRequestedAt(null);
+			ticketRepository.save(managedTicket);
+			hideRelatedTicketNotifications(managedTicket.getId());
+			clearWhatsappConversationForTicket(managedTicket.getId());
+		}
+	}
+
+	private void ensureTicketCanBeClosed(User author) {
 		if (!hasRole(author, "admin") && !hasRole(author, "employee")) {
 			throw new IllegalArgumentException("Apenas administradores e funcionários podem fechar chamados.");
 		}
+	}
 
-		if ("CLOSED".equalsIgnoreCase(ticket.getStatus().getCode())) {
-			return toResponse(ticket);
+	private void ensureTicketCanBeDeleted(User author) {
+		if (!hasRole(author, "admin")) {
+			throw new IllegalArgumentException("Apenas administradores podem excluir chamados.");
+		}
+	}
+
+	private boolean isTicketClosed(Ticket ticket) {
+		return ticket != null
+			&& ticket.getStatus() != null
+			&& "CLOSED".equalsIgnoreCase(ticket.getStatus().getCode());
+	}
+
+	private Ticket closeTicketInternal(Ticket ticket, User author, boolean notifyRequesterOnClosure) {
+		if (isTicketClosed(ticket)) {
+			return ticket;
 		}
 
 		TicketStatus closedStatus = ticketStatusRepository.findByCode("CLOSED")
@@ -395,6 +492,11 @@ public class TicketService {
 		ticket.setClosedAt(closedAt);
 
 		Ticket savedTicket = ticketRepository.save(ticket);
+
+		if (notifyRequesterOnClosure) {
+			createClosureNotification(savedTicket, author);
+		}
+
 		notifyWhatsappTicketClosure(savedTicket, author);
 		ticketClosureEmailService.sendConversationTranscript(
 			savedTicket,
@@ -402,7 +504,48 @@ public class TicketService {
 			loadAttachmentEntitiesByMessageId(savedTicket.getId())
 		);
 
-		return toResponse(savedTicket);
+		return savedTicket;
+	}
+
+	private void createClosureNotification(Ticket ticket, User closedBy) {
+		if (ticket == null || closedBy == null || ticket.getRequester() == null) {
+			return;
+		}
+
+		if (closedBy.getId().equals(ticket.getRequester().getId())) {
+			return;
+		}
+
+		TicketClosureNotification notification = new TicketClosureNotification();
+		notification.setTicket(ticket);
+		notification.setRecipient(ticket.getRequester());
+		notification.setClosedBy(closedBy);
+		ticketClosureNotificationRepository.save(notification);
+	}
+
+	private void hideRelatedTicketNotifications(UUID ticketId) {
+		List<TicketAssignmentNotification> assignmentNotifications = ticketAssignmentNotificationRepository.findByTicketId(ticketId);
+		for (TicketAssignmentNotification notification : assignmentNotifications) {
+			notification.setHidden(true);
+		}
+		if (!assignmentNotifications.isEmpty()) {
+			ticketAssignmentNotificationRepository.saveAll(assignmentNotifications);
+		}
+
+		List<TicketTransferNotification> transferNotifications = ticketTransferNotificationRepository.findByTicketId(ticketId);
+		for (TicketTransferNotification notification : transferNotifications) {
+			notification.setHidden(true);
+		}
+		if (!transferNotifications.isEmpty()) {
+			ticketTransferNotificationRepository.saveAll(transferNotifications);
+		}
+	}
+
+	private void clearWhatsappConversationForTicket(UUID ticketId) {
+		whatsappConversationRepository.findByActiveTicketId(ticketId).ifPresent(conversation -> {
+			conversation.setActiveTicket(null);
+			whatsappConversationRepository.save(conversation);
+		});
 	}
 
 	@Transactional(readOnly = true)
@@ -541,20 +684,36 @@ public class TicketService {
 			.orElseThrow(() -> new NotFoundException("Chamado não encontrado ou indisponível para esse usuário."));
 	}
 
-	private User resolveNextAssignee(com.helpdesk.helpdesk.domain.Sector sector) {
-		List<SectorMember> eligibleMembers = sectorMemberRepository.findBySectorIdOrderByAssignedAtAsc(sector.getId()).stream()
-			.filter(member -> member.getUser() != null)
-			.filter(member -> member.getUser().getStatus() != null)
-			.filter(member -> member.getUser().getStatus().name().equalsIgnoreCase("ACTIVE"))
-			.filter(member -> hasRole(member.getUser(), "employee"))
-			.toList();
-
-		if (eligibleMembers.isEmpty()) {
+	private User resolveAssignee(com.helpdesk.helpdesk.domain.Sector sector, UUID assignedToUserId) {
+		List<User> eligibleAssignees = loadEligibleAssignees(sector);
+		if (eligibleAssignees.isEmpty()) {
 			throw new IllegalArgumentException("Esse setor não possui funcionários disponíveis para receber chamados.");
 		}
 
-		List<UUID> eligibleUserIds = eligibleMembers.stream()
-			.map(member -> member.getUser().getId())
+		if (assignedToUserId == null) {
+			return resolveNextAssignee(sector, eligibleAssignees);
+		}
+
+		return eligibleAssignees.stream()
+			.filter(user -> user.getId().equals(assignedToUserId))
+			.findFirst()
+			.orElseThrow(() ->
+				new IllegalArgumentException("Selecione um funcionário válido desse setor para receber o chamado."));
+	}
+
+	private List<User> loadEligibleAssignees(com.helpdesk.helpdesk.domain.Sector sector) {
+		return sectorMemberRepository.findBySectorIdOrderByAssignedAtAsc(sector.getId()).stream()
+			.map(SectorMember::getUser)
+			.filter(java.util.Objects::nonNull)
+			.filter(user -> user.getStatus() != null)
+			.filter(user -> user.getStatus().name().equalsIgnoreCase("ACTIVE"))
+			.filter(user -> hasRole(user, "employee"))
+			.toList();
+	}
+
+	private User resolveNextAssignee(com.helpdesk.helpdesk.domain.Sector sector, List<User> eligibleAssignees) {
+		List<UUID> eligibleUserIds = eligibleAssignees.stream()
+			.map(User::getId)
 			.toList();
 
 		UUID lastAssignedUserId = ticketRepository
@@ -564,19 +723,19 @@ public class TicketService {
 			.orElse(null);
 
 		if (lastAssignedUserId == null) {
-			return eligibleMembers.get(0).getUser();
+			return eligibleAssignees.get(0);
 		}
 
-		for (int index = 0; index < eligibleMembers.size(); index++) {
-			if (!eligibleMembers.get(index).getUser().getId().equals(lastAssignedUserId)) {
+		for (int index = 0; index < eligibleAssignees.size(); index++) {
+			if (!eligibleAssignees.get(index).getId().equals(lastAssignedUserId)) {
 				continue;
 			}
 
-			int nextIndex = (index + 1) % eligibleMembers.size();
-			return eligibleMembers.get(nextIndex).getUser();
+			int nextIndex = (index + 1) % eligibleAssignees.size();
+			return eligibleAssignees.get(nextIndex);
 		}
 
-		return eligibleMembers.get(0).getUser();
+		return eligibleAssignees.get(0);
 	}
 
 	private void createAssignmentNotification(Ticket ticket) {
@@ -1104,6 +1263,7 @@ public class TicketService {
 		String whatsappTransportId,
 		UUID companyOwnerId,
 		UUID sectorId,
+		UUID assignedToUserId,
 		String subject,
 		String description,
 		List<IncomingAttachment> attachments

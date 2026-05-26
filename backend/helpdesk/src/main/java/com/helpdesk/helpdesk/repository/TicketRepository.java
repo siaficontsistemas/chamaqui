@@ -21,10 +21,13 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
 		left join ticket.sector sector
 		left join sector.createdBy sectorOwner
 		left join ticket.assignedTo assignedTo
-		where lower(requester.email) = lower(:email)
+		where ticket.deletedAt is null
+			and (
+				lower(requester.email) = lower(:email)
 			or lower(requesterCompanyOwner.email) = lower(:email)
 			or lower(sectorOwner.email) = lower(:email)
 			or lower(assignedTo.email) = lower(:email)
+			)
 		order by ticket.createdAt desc
 		""")
 	@EntityGraph(attributePaths = {
@@ -46,7 +49,8 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
 		left join ticket.sector sector
 		left join sector.createdBy sectorOwner
 		left join ticket.assignedTo assignedTo
-		where ticket.status.code in :statusCodes
+		where ticket.deletedAt is null
+			and ticket.status.code in :statusCodes
 			and (
 				lower(requester.email) = lower(:email)
 				or lower(requesterCompanyOwner.email) = lower(:email)
@@ -78,6 +82,7 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
 		left join sector.createdBy sectorOwner
 		left join ticket.assignedTo assignedTo
 		where ticket.id = :id
+			and ticket.deletedAt is null
 			and (
 				lower(requester.email) = lower(:email)
 				or lower(requesterCompanyOwner.email) = lower(:email)

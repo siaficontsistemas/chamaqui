@@ -68,6 +68,13 @@ const dashboardPages = {
     contentText:
       'Cadastre novos setores para a equipe e disponibilize esses setores para vinculação dos funcionários.',
   },
+  clientCompanyRegister: {
+    id: 'clientCompanyRegister',
+    label: 'Cadastrar empresa cliente',
+    contentTitle: 'Cadastrar Empresa Cliente',
+    contentText:
+      'Cadastre a empresa cliente e o administrador responsável já vinculando essa empresa à sua operação.',
+  },
 }
 
 const roleLabels = {
@@ -117,10 +124,17 @@ function getVisibleSectors(userRole, sectors, teamMembers, currentMemberId = get
   return []
 }
 
-function buildNavigationGroups({ userRole, sectors, teamMembers, currentMemberId, canAccessTeamPage = false }) {
+function buildNavigationGroups({
+  userRole,
+  sectors,
+  teamMembers,
+  currentMemberId,
+  canAccessTeamPage = false,
+  canCreateSector = false,
+}) {
   const visibleSectors = getVisibleSectors(userRole, sectors, teamMembers, currentMemberId)
   const sectorItems = [
-    ...(userRole === 'admin'
+    ...(userRole === 'admin' && canCreateSector
       ? [{ id: 'createSector', label: 'Criar setor', icon: 'plus', marker: 'neutral' }]
       : []),
     ...visibleSectors.map((sector) => ({

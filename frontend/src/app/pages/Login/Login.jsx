@@ -1,5 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { loginUser } from '../../api'
+import TenantBrandImage from '../../components/branding/TenantBrandImage'
+import { useTenantBranding } from '../../context/TenantBrandingContext'
+import { isPlatformAdminHost } from '../../platformAdminHost'
+import { PUBLIC_ROUTE_PATHS } from '../../routes'
 import './Login.css'
 
 const formFields = [
@@ -7,7 +12,16 @@ const formFields = [
   { id: 'password', label: 'Senha', type: 'password', icon: LockIcon },
 ]
 
-function Login({ onNavigateHome, onNavigateRegister }) {
+function Login({ onNavigateHome, onNavigateRegister, onRequestPasswordReset, onResetPassword }) {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const isAdminHost = isPlatformAdminHost()
+  const { branding: tenantBranding, companyLogoUrl: tenantLogoUrl, isTenantExperience } =
+    useTenantBranding()
+  const resetPasswordToken = useMemo(
+    () => new URLSearchParams(location.search).get('resetPasswordToken') || '',
+    [location.search]
+  )
   const [credentials, setCredentials] = useState({
     email: '',
     password: '',
@@ -15,6 +29,28 @@ function Login({ onNavigateHome, onNavigateRegister }) {
   const [isPasswordVisible, setIsPasswordVisible] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false)
+  const [passwordRecoveryStep, setPasswordRecoveryStep] = useState('request')
+  const [passwordRecoveryForm, setPasswordRecoveryForm] = useState({
+    email: '',
+    password: '',
+    confirmPassword: '',
+  })
+  const [passwordRecoveryFeedback, setPasswordRecoveryFeedback] = useState('')
+  const [passwordRecoveryError, setPasswordRecoveryError] = useState('')
+  const [isPasswordRecoverySubmitting, setIsPasswordRecoverySubmitting] = useState(false)
+  const [passwordRecoveryVisibility, setPasswordRecoveryVisibility] = useState({
+    password: false,
+    confirmPassword: false,
+  })
+  useEffect(() => {
+    if (resetPasswordToken) {
+      setPasswordRecoveryStep('reset')
+      setIsPasswordModalOpen(true)
+      setPasswordRecoveryFeedback('')
+      setPasswordRecoveryError('')
+    }
+  }, [resetPasswordToken])
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -39,25 +75,142 @@ function Login({ onNavigateHome, onNavigateRegister }) {
     }
   }
 
+  function handleOpenForgotPasswordModal() {
+    setPasswordRecoveryStep('request')
+    setIsPasswordModalOpen(true)
+    setPasswordRecoveryFeedback('')
+    setPasswordRecoveryError('')
+    setPasswordRecoveryForm((currentForm) => ({
+      ...currentForm,
+      email: credentials.email.trim() || currentForm.email,
+      password: '',
+      confirmPassword: '',
+    }))
+  }
+
+  function handleClosePasswordModal() {
+    if (isPasswordRecoverySubmitting) {
+      return
+    }
+
+    setIsPasswordModalOpen(false)
+    setPasswordRecoveryFeedback('')
+    setPasswordRecoveryError('')
+    setPasswordRecoveryStep('request')
+    setPasswordRecoveryForm((currentForm) => ({
+      ...currentForm,
+      password: '',
+      confirmPassword: '',
+    }))
+    setPasswordRecoveryVisibility({
+      password: false,
+      confirmPassword: false,
+    })
+
+    if (resetPasswordToken) {
+      navigate(PUBLIC_ROUTE_PATHS.login, { replace: true })
+    }
+  }
+
+  async function handleSubmitPasswordRecovery(event) {
+    event.preventDefault()
+
+    if (passwordRecoveryStep === 'request') {
+      if (!passwordRecoveryForm.email.trim()) {
+        setPasswordRecoveryError('Informe o email para recuperar a senha.')
+        return
+      }
+
+      try {
+        setIsPasswordRecoverySubmitting(true)
+        setPasswordRecoveryError('')
+        setPasswordRecoveryFeedback('')
+        const response = await onRequestPasswordReset?.(passwordRecoveryForm.email.trim())
+        setPasswordRecoveryFeedback(
+          response?.message || 'Se o email estiver cadastrado, enviaremos um link para redefinir a senha.'
+        )
+      } catch (error) {
+        setPasswordRecoveryError(error.message || 'Não foi possível solicitar a recuperação de senha.')
+      } finally {
+        setIsPasswordRecoverySubmitting(false)
+      }
+
+      return
+    }
+
+    if (!passwordRecoveryForm.password || !passwordRecoveryForm.confirmPassword) {
+      setPasswordRecoveryError('Informe a nova senha e repita a senha para continuar.')
+      return
+    }
+
+    if (passwordRecoveryForm.password !== passwordRecoveryForm.confirmPassword) {
+      setPasswordRecoveryError('A nova senha e a confirmação precisam ser iguais.')
+      return
+    }
+
+    try {
+      setIsPasswordRecoverySubmitting(true)
+      setPasswordRecoveryError('')
+      setPasswordRecoveryFeedback('')
+      const response = await onResetPassword?.({
+        token: resetPasswordToken,
+        password: passwordRecoveryForm.password,
+        confirmPassword: passwordRecoveryForm.confirmPassword,
+      })
+      setPasswordRecoveryFeedback(response?.message || 'Senha redefinida com sucesso.')
+      setPasswordRecoveryForm((currentForm) => ({
+        ...currentForm,
+        password: '',
+        confirmPassword: '',
+      }))
+      window.setTimeout(() => {
+        navigate(PUBLIC_ROUTE_PATHS.login, { replace: true })
+        setIsPasswordModalOpen(false)
+        setPasswordRecoveryStep('request')
+      }, 1200)
+    } catch (error) {
+      setPasswordRecoveryError(error.message || 'Não foi possível redefinir a senha.')
+    } finally {
+      setIsPasswordRecoverySubmitting(false)
+    }
+  }
+
   return (
     <main className="auth-page login-page">
       <section className="auth-card">
         <aside className="auth-card__brand">
+          {isTenantExperience && tenantLogoUrl ? (
+            <div className="auth-card__tenant-brand" aria-label={tenantBranding.companyName}>
+              <TenantBrandImage
+                className="auth-card__tenant-logo"
+                src={tenantLogoUrl}
+                alt={tenantBranding.companyName}
+                label={tenantBranding.companyName}
+              />
+            </div>
+          ) : null}
           <BrandMark />
           <div className="auth-card__welcome">
-            <h1>Bem-vindo ao ChamAqui Helpdesk</h1>
+            <h1>
+              {isTenantExperience
+                ? `Bem-vindo a ${tenantBranding.companyName}`
+                : 'Bem-vindo ao ChamAqui Helpdesk'}
+            </h1>
             <p>
-              Entre na sua conta para acompanhar chamados e centralizar o seu
-              atendimento.
+              {isTenantExperience
+                ? 'Entre na sua conta para acessar o portal da empresa dentro do ChamaAqui Helpdesk.'
+                : 'Entre na sua conta para acompanhar chamados e centralizar o seu atendimento.'}
             </p>
           </div>
-          <button
-            className="auth-card__login-button"
-            type="button"
-            onClick={onNavigateRegister}
-          >
-            Cadastrar
-          </button>
+          {!isAdminHost ? (
+            <button
+              className="auth-card__login-button"
+              type="button"
+              onClick={onNavigateRegister}
+            >
+              Cadastrar
+            </button>
+          ) : null}
         </aside>
 
         <section className="auth-card__form-section">
@@ -98,19 +251,31 @@ function Login({ onNavigateHome, onNavigateRegister }) {
               </label>
             ))}
 
+            {!isAdminHost ? (
+              <button
+                className="login-form__forgot-button"
+                type="button"
+                onClick={handleOpenForgotPasswordModal}
+              >
+                Esqueceu a senha?
+              </button>
+            ) : null}
+
             {errorMessage ? <p className="login-form__feedback">{errorMessage}</p> : null}
 
-            <p className="login-form__helper">
-              Não tem conta no Helpdesk ainda? Faça seu{' '}
-              <button
-                className="login-form__text-button"
-                type="button"
-                onClick={onNavigateRegister}
-              >
-                cadastro
-              </button>
-              .
-            </p>
+            {!isAdminHost ? (
+              <p className="login-form__helper">
+                Não tem conta no Helpdesk ainda? Faça seu{' '}
+                <button
+                  className="login-form__text-button"
+                  type="button"
+                  onClick={onNavigateRegister}
+                >
+                  cadastro
+                </button>
+                .
+              </p>
+            ) : null}
 
             <button
               className="auth-card__submit-button"
@@ -122,6 +287,145 @@ function Login({ onNavigateHome, onNavigateRegister }) {
           </form>
         </section>
       </section>
+
+      {isPasswordModalOpen ? (
+        <div className="login-modal" role="dialog" aria-modal="true" aria-labelledby="password-help-title">
+          <button
+            className="login-modal__backdrop"
+            type="button"
+            aria-label="Fechar recuperação de senha"
+            onClick={handleClosePasswordModal}
+          />
+          <section className="login-modal__content">
+            <div className="login-modal__header">
+              <div>
+                <h3 id="password-help-title">
+                  {passwordRecoveryStep === 'reset' ? 'Redefinir senha' : 'Esqueci minha senha'}
+                </h3>
+                <p>
+                  {passwordRecoveryStep === 'reset'
+                    ? 'Informe a nova senha e repita a senha para concluir a redefinição.'
+                    : 'Informe seu email para receber o link de redefinição de senha.'}
+                </p>
+              </div>
+              <button className="login-modal__close" type="button" onClick={handleClosePasswordModal}>
+                Fechar
+              </button>
+            </div>
+
+            <form className="login-modal__form" onSubmit={handleSubmitPasswordRecovery}>
+              {passwordRecoveryStep === 'request' ? (
+                <label className="form-field" htmlFor="password-recovery-email">
+                  <span className="form-field__icon" aria-hidden="true">
+                    <MailIcon />
+                  </span>
+                  <input
+                    id="password-recovery-email"
+                    type="email"
+                    placeholder="Email"
+                    value={passwordRecoveryForm.email}
+                    onChange={(event) =>
+                      setPasswordRecoveryForm((currentForm) => ({
+                        ...currentForm,
+                        email: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+              ) : (
+                <>
+                  <label className="form-field" htmlFor="password-recovery-password">
+                    <span className="form-field__icon" aria-hidden="true">
+                      <LockIcon />
+                    </span>
+                    <input
+                      id="password-recovery-password"
+                      type={passwordRecoveryVisibility.password ? 'text' : 'password'}
+                      placeholder="Nova senha"
+                      value={passwordRecoveryForm.password}
+                      onChange={(event) =>
+                        setPasswordRecoveryForm((currentForm) => ({
+                          ...currentForm,
+                          password: event.target.value,
+                        }))
+                      }
+                    />
+                    <button
+                      className="form-field__toggle"
+                      type="button"
+                      aria-label={passwordRecoveryVisibility.password ? 'Ocultar senha' : 'Mostrar senha'}
+                      aria-pressed={passwordRecoveryVisibility.password}
+                      onClick={() =>
+                        setPasswordRecoveryVisibility((currentState) => ({
+                          ...currentState,
+                          password: !currentState.password,
+                        }))
+                      }
+                    >
+                      {passwordRecoveryVisibility.password ? <EyeOffIcon /> : <EyeIcon />}
+                    </button>
+                  </label>
+
+                  <label className="form-field" htmlFor="password-recovery-confirm-password">
+                    <span className="form-field__icon" aria-hidden="true">
+                      <LockIcon />
+                    </span>
+                    <input
+                      id="password-recovery-confirm-password"
+                      type={passwordRecoveryVisibility.confirmPassword ? 'text' : 'password'}
+                      placeholder="Repita a nova senha"
+                      value={passwordRecoveryForm.confirmPassword}
+                      onChange={(event) =>
+                        setPasswordRecoveryForm((currentForm) => ({
+                          ...currentForm,
+                          confirmPassword: event.target.value,
+                        }))
+                      }
+                    />
+                    <button
+                      className="form-field__toggle"
+                      type="button"
+                      aria-label={
+                        passwordRecoveryVisibility.confirmPassword ? 'Ocultar senha' : 'Mostrar senha'
+                      }
+                      aria-pressed={passwordRecoveryVisibility.confirmPassword}
+                      onClick={() =>
+                        setPasswordRecoveryVisibility((currentState) => ({
+                          ...currentState,
+                          confirmPassword: !currentState.confirmPassword,
+                        }))
+                      }
+                    >
+                      {passwordRecoveryVisibility.confirmPassword ? <EyeOffIcon /> : <EyeIcon />}
+                    </button>
+                  </label>
+                </>
+              )}
+
+              {passwordRecoveryFeedback ? (
+                <p className="login-form__feedback login-form__feedback--success">
+                  {passwordRecoveryFeedback}
+                </p>
+              ) : null}
+              {passwordRecoveryError ? <p className="login-form__feedback">{passwordRecoveryError}</p> : null}
+
+              <button
+                className="auth-card__submit-button"
+                type="submit"
+                disabled={isPasswordRecoverySubmitting}
+              >
+                {isPasswordRecoverySubmitting
+                  ? passwordRecoveryStep === 'reset'
+                    ? 'Redefinindo...'
+                    : 'Enviando...'
+                  : passwordRecoveryStep === 'reset'
+                    ? 'Redefinir senha'
+                    : 'Enviar link'}
+              </button>
+            </form>
+          </section>
+        </div>
+      ) : null}
     </main>
   )
 }
