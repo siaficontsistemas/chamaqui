@@ -31,7 +31,7 @@ public class User {
 	@Column(name = "full_name", nullable = false, length = 150)
 	private String fullName;
 
-	@Column(nullable = false, unique = true, length = 150, columnDefinition = "citext")
+	@Column(nullable = false, length = 150, columnDefinition = "citext")
 	private String email;
 
 	@Column(name = "password_hash", nullable = false, length = 255)
@@ -72,6 +72,12 @@ public class User {
 
 	@Column(name = "last_login_at")
 	private OffsetDateTime lastLoginAt;
+
+	@Column(name = "password_reset_token_hash", length = 120)
+	private String passwordResetTokenHash;
+
+	@Column(name = "password_reset_token_expires_at")
+	private OffsetDateTime passwordResetTokenExpiresAt;
 
 	@Column(name = "created_at", nullable = false)
 	private OffsetDateTime createdAt;
@@ -216,6 +222,22 @@ public class User {
 
 	public void setLastLoginAt(OffsetDateTime lastLoginAt) {
 		this.lastLoginAt = lastLoginAt;
+	}
+
+	public String getPasswordResetTokenHash() {
+		return passwordResetTokenHash;
+	}
+
+	public void setPasswordResetTokenHash(String passwordResetTokenHash) {
+		this.passwordResetTokenHash = passwordResetTokenHash;
+	}
+
+	public OffsetDateTime getPasswordResetTokenExpiresAt() {
+		return passwordResetTokenExpiresAt;
+	}
+
+	public void setPasswordResetTokenExpiresAt(OffsetDateTime passwordResetTokenExpiresAt) {
+		this.passwordResetTokenExpiresAt = passwordResetTokenExpiresAt;
 	}
 
 	public OffsetDateTime getCreatedAt() {

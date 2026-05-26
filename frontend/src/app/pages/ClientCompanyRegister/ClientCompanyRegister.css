@@ -1,0 +1,52 @@
+.client-company-register {
+  width: 100%;
+}
+
+.client-company-register__result {
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(36, 56, 74, 0.08);
+  box-shadow: 0 16px 36px rgba(28, 44, 62, 0.08);
+  padding: 24px;
+  display: grid;
+  gap: 20px;
+}
+
+.client-company-register__result-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.client-company-register__result-card {
+  min-height: 132px;
+  padding: 20px 22px;
+  border-radius: 20px;
+  background: rgba(244, 246, 248, 0.96);
+  border: 1px solid rgba(36, 56, 74, 0.08);
+  display: grid;
+  gap: 8px;
+}
+
+.client-company-register__result-card span,
+.client-company-register__result-card small {
+  color: #62727e;
+}
+
+.client-company-register__result-card span {
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.client-company-register__result-card strong {
+  color: #172633;
+  font-size: 1.25rem;
+  line-height: 1.25;
+}
+
+.client-company-register__result-card small {
+  font-size: 0.92rem;
+  line-height: 1.5;
+}

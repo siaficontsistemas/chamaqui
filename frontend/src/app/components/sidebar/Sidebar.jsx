@@ -1,12 +1,20 @@
+import TenantBrandImage from '../branding/TenantBrandImage'
+import { useTenantBranding } from '../../context/TenantBrandingContext'
+
 function Sidebar({ activeSection, navigationGroups, onSectionChange }) {
   const currentSections = Array.isArray(activeSection) ? activeSection : [activeSection]
   const currentPage = currentSections[0]
   const ticketSections = ['tickets', 'all', 'open', 'closed', 'newTicket']
+  const { branding: companyBranding, companyLogoUrl } = useTenantBranding()
 
   return (
     <div className="home-sidebar-column">
       <div className="home-brand-panel">
-        <BrandMark onClick={() => onSectionChange('tickets')} />
+        <BrandMark
+          onClick={() => onSectionChange('tickets')}
+          companyLogoUrl={companyLogoUrl}
+          companyName={companyBranding?.companyName || ''}
+        />
       </div>
 
       <aside className="home-sidebar">
@@ -76,7 +84,7 @@ function SidebarIcon({ icon, itemId }) {
   return <PhoneIcon />
 }
 
-function BrandMark({ onClick }) {
+function BrandMark({ onClick, companyLogoUrl, companyName }) {
   return (
     <button
       className="home-brand"
@@ -85,6 +93,16 @@ function BrandMark({ onClick }) {
       aria-label="Voltar para a tela de tickets"
     >
       <img className="home-brand__logo" src="/logo_chamaqui.png" alt="ChamaAqui Helpdesk" />
+      {companyLogoUrl ? (
+        <div className="home-brand__company">
+          <TenantBrandImage
+            className="home-brand__company-logo"
+            src={companyLogoUrl}
+            alt={companyName ? `Logo da empresa ${companyName}` : 'Logo da empresa'}
+            label={companyName || 'Logo'}
+          />
+        </div>
+      ) : null}
     </button>
   )
 }

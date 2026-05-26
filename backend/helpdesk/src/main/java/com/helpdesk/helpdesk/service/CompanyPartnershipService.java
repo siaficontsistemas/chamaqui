@@ -38,19 +38,25 @@ public class CompanyPartnershipService {
 	private final UserRepository userRepository;
 	private final SectorRepository sectorRepository;
 	private final TicketService ticketService;
+	private final TenantAccessService tenantAccessService;
+	private final ScopedUserLookupService scopedUserLookupService;
 
 	public CompanyPartnershipService(
 		CompanyPartnershipRepository companyPartnershipRepository,
 		CompanyPartnershipNotificationRepository companyPartnershipNotificationRepository,
 		UserRepository userRepository,
 		SectorRepository sectorRepository,
-		TicketService ticketService
+		TicketService ticketService,
+		TenantAccessService tenantAccessService,
+		ScopedUserLookupService scopedUserLookupService
 	) {
 		this.companyPartnershipRepository = companyPartnershipRepository;
 		this.companyPartnershipNotificationRepository = companyPartnershipNotificationRepository;
 		this.userRepository = userRepository;
 		this.sectorRepository = sectorRepository;
 		this.ticketService = ticketService;
+		this.tenantAccessService = tenantAccessService;
+		this.scopedUserLookupService = scopedUserLookupService;
 	}
 
 	@Transactional(readOnly = true)
@@ -184,6 +190,16 @@ public class CompanyPartnershipService {
 	@Transactional(readOnly = true)
 	public List<TicketTargetSectorResponse> listTicketTargets(String email) {
 		User user = loadUserByEmail(email);
+		tenantAccessService.ensureUserBelongsToCurrentTenant(user, "Esse usuário não pertence ao tenant atual.");
+
+		if (tenantAccessService.hasCurrentTenant()) {
+			return sectorRepository.findActiveByCreatedByIdOrderByNameAsc(
+				tenantAccessService.requireCurrentTenantOwnerUserId()
+			).stream()
+				.map(this::toTicketTargetSectorResponse)
+				.toList();
+		}
+
 		User currentCompany = resolveOperatingCompany(user);
 		List<CompanyPartnership> partnerships = companyPartnershipRepository.findVisibleByCompanyId(currentCompany.getId());
 
@@ -319,7 +335,7 @@ public class CompanyPartnershipService {
 	}
 
 	private User loadUserByEmail(String email) {
-		return userRepository.findByEmailIgnoreCase(normalizeEmail(email))
+		return scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(email))
 			.orElseThrow(() -> new NotFoundException("Usuário responsável não encontrado."));
 	}
 

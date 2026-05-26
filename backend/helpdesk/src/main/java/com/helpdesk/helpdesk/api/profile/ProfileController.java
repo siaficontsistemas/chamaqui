@@ -6,8 +6,13 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
+import com.helpdesk.helpdesk.dto.company.CompanyLogoResponse;
+import com.helpdesk.helpdesk.dto.common.OperationMessageResponse;
+import com.helpdesk.helpdesk.dto.profile.ChangePasswordRequest;
 import com.helpdesk.helpdesk.dto.profile.ProfileResponse;
 import com.helpdesk.helpdesk.dto.profile.UpdateProfileRequest;
 import com.helpdesk.helpdesk.service.ProfileService;
@@ -32,6 +37,24 @@ public class ProfileController {
 	@PutMapping
 	public ProfileResponse updateProfile(@Valid @RequestBody UpdateProfileRequest request) {
 		return profileService.update(request);
+	}
+
+	@PutMapping("/password")
+	public OperationMessageResponse changePassword(@Valid @RequestBody ChangePasswordRequest request) {
+		return profileService.changePassword(request);
+	}
+
+	@PutMapping("/company/logo")
+	public CompanyLogoResponse updateCompanyLogo(
+		@RequestParam String email,
+		@RequestPart("file") MultipartFile file
+	) {
+		return profileService.updateCompanyLogo(email, file);
+	}
+
+	@DeleteMapping("/company/logo")
+	public CompanyLogoResponse deleteCompanyLogo(@RequestParam String email) {
+		return profileService.deleteCompanyLogo(email);
 	}
 
 	@DeleteMapping

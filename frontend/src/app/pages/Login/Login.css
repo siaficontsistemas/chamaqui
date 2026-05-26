@@ -37,6 +37,22 @@
   text-align: center;
 }
 
+.auth-card__tenant-brand {
+  max-width: min(280px, 100%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.auth-card__tenant-logo {
+  max-width: 100%;
+  max-height: 92px;
+  width: auto;
+  height: auto;
+  display: block;
+  object-fit: contain;
+}
+
 .auth-card__welcome {
   max-width: 340px;
   display: grid;
@@ -191,6 +207,25 @@
   text-align: center;
 }
 
+.login-form__forgot-button {
+  width: fit-content;
+  padding: 0;
+  margin: -2px 0 2px;
+  border: 0;
+  background: transparent;
+  color: #2859b3;
+  font: inherit;
+  font-size: 0.88rem;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  cursor: pointer;
+}
+
+.login-form__forgot-button:hover,
+.login-form__forgot-button:focus-visible {
+  color: #1f4f9e;
+}
+
 .login-form__feedback {
   margin: 0;
   padding: 12px 14px;
@@ -199,6 +234,11 @@
   color: #a11b27;
   font-size: 0.92rem;
   text-align: center;
+}
+
+.login-form__feedback--success {
+  background: rgba(24, 118, 87, 0.1);
+  color: #187657;
 }
 
 .login-form__text-button {
@@ -317,6 +357,75 @@
   display: block;
 }
 
+.login-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.login-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.login-modal__content {
+  position: relative;
+  z-index: 1;
+  width: min(560px, 100%);
+  border-radius: 24px;
+  background: #ffffff;
+  box-shadow: 0 28px 60px rgba(15, 23, 42, 0.22);
+  overflow: hidden;
+  display: grid;
+  gap: 0;
+}
+
+.login-modal__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 24px 24px 18px;
+  border-bottom: 1px solid rgba(17, 17, 17, 0.08);
+}
+
+.login-modal__header h3 {
+  margin: 0 0 8px;
+  font-size: 1.35rem;
+  color: #1c1c1c;
+}
+
+.login-modal__header p {
+  margin: 0;
+  color: #666666;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.login-modal__close {
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(40, 89, 179, 0.18);
+  background: rgba(77, 130, 215, 0.08);
+  color: #2b4e90;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.login-modal__form {
+  padding: 20px 24px 24px;
+  display: grid;
+  gap: 14px;
+}
+
 @media (max-width: 1080px) {
   .auth-page {
     height: auto;
@@ -360,6 +469,10 @@
     gap: 36px;
   }
 
+  .auth-card__tenant-logo {
+    max-height: 74px;
+  }
+
   .auth-card__login-button,
   .auth-card__submit-button {
     width: 100%;
@@ -367,6 +480,20 @@
 
   .google-button {
     width: 100%;
+  }
+
+  .login-modal {
+    padding: 12px;
+  }
+
+  .login-modal__content {
+    border-radius: 20px;
+  }
+
+  .login-modal__header,
+  .login-modal__form {
+    padding-left: 18px;
+    padding-right: 18px;
   }
 
   .login-form__helper {

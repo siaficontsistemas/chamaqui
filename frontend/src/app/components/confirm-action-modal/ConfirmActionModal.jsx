@@ -2,6 +2,7 @@ import { createPortal } from 'react-dom'
 import './ConfirmActionModal.css'
 
 function ConfirmActionModal({
+  cancelLabel = 'Cancelar',
   confirmLabel = 'Confirmar',
   confirmVariant = 'primary',
   description = '',
@@ -63,7 +64,7 @@ function ConfirmActionModal({
             onClick={onCancel}
             disabled={isProcessing}
           >
-            Cancelar
+            {cancelLabel}
           </button>
           <button
             className={`confirm-action-modal__button confirm-action-modal__button--${confirmVariant}`}

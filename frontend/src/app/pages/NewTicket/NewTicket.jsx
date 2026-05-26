@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Header from '../../components/header/Header'
 import Sidebar from '../../components/sidebar/Sidebar'
 import { dashboardPages } from '../../dashboardData'
@@ -127,6 +127,25 @@ function NewTicket({
       company.document.includes(formValues.companyName.replace(/\D/g, ''))
     )
   }, [availableCompanies, formValues.companyName])
+
+  useEffect(() => {
+    if (availableCompanies.length !== 1) {
+      return
+    }
+
+    const onlyCompany = availableCompanies[0]
+    setFormValues((currentValues) => {
+      if (currentValues.companyOwnerId === onlyCompany.id && currentValues.companyName === onlyCompany.name) {
+        return currentValues
+      }
+
+      return {
+        ...currentValues,
+        companyName: onlyCompany.name,
+        companyOwnerId: onlyCompany.id,
+      }
+    })
+  }, [availableCompanies])
 
   function handleChange(field, value) {
     setFormValues((currentValues) => {
@@ -312,7 +331,9 @@ function NewTicket({
                   <div className="ticket-field__control ticket-field__control--select">
                     <input
                       placeholder={
-                        availableCompanies.length > 0
+                        availableCompanies.length === 1
+                          ? 'Empresa identificada automaticamente'
+                          : availableCompanies.length > 0
                           ? 'Digite o nome ou CNPJ da empresa parceira...'
                           : 'Nenhuma empresa parceira disponível'
                       }
@@ -330,7 +351,7 @@ function NewTicket({
                       onBlur={() => {
                         window.setTimeout(() => setIsCompanyOptionsOpen(false), 150)
                       }}
-                      disabled={availableCompanies.length === 0}
+                      disabled={availableCompanies.length === 0 || availableCompanies.length === 1}
                     />
                     <button
                       className="ticket-field__toggle"
@@ -343,7 +364,7 @@ function NewTicket({
                         setIsCompanyOptionsOpen((currentValue) => !currentValue)
                       }}
                       aria-label="Abrir opções de empresa parceira"
-                      disabled={availableCompanies.length === 0}
+                      disabled={availableCompanies.length === 0 || availableCompanies.length === 1}
                     >
                       <ChevronDownIcon />
                     </button>

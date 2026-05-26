@@ -34,7 +34,6 @@ import com.helpdesk.helpdesk.repository.TicketAssignmentNotificationRepository;
 import com.helpdesk.helpdesk.repository.TicketClosureNotificationRepository;
 import com.helpdesk.helpdesk.repository.TicketRepository;
 import com.helpdesk.helpdesk.repository.TicketTransferNotificationRepository;
-import com.helpdesk.helpdesk.repository.UserRepository;
 
 @Service
 public class NotificationService {
@@ -47,7 +46,8 @@ public class NotificationService {
 	private final TicketClosureNotificationRepository ticketClosureNotificationRepository;
 	private final CalendarObligationRepository calendarObligationRepository;
 	private final TicketRepository ticketRepository;
-	private final UserRepository userRepository;
+	private final TenantAccessService tenantAccessService;
+	private final ScopedUserLookupService scopedUserLookupService;
 
 	public NotificationService(
 		TicketAssignmentNotificationRepository ticketAssignmentNotificationRepository,
@@ -58,7 +58,8 @@ public class NotificationService {
 		TicketClosureNotificationRepository ticketClosureNotificationRepository,
 		CalendarObligationRepository calendarObligationRepository,
 		TicketRepository ticketRepository,
-		UserRepository userRepository
+		TenantAccessService tenantAccessService,
+		ScopedUserLookupService scopedUserLookupService
 	) {
 		this.ticketAssignmentNotificationRepository = ticketAssignmentNotificationRepository;
 		this.ticketTransferNotificationRepository = ticketTransferNotificationRepository;
@@ -68,13 +69,15 @@ public class NotificationService {
 		this.ticketClosureNotificationRepository = ticketClosureNotificationRepository;
 		this.calendarObligationRepository = calendarObligationRepository;
 		this.ticketRepository = ticketRepository;
-		this.userRepository = userRepository;
+		this.tenantAccessService = tenantAccessService;
+		this.scopedUserLookupService = scopedUserLookupService;
 	}
 
 	@Transactional(readOnly = true)
 	public List<TicketAssignmentNotificationResponse> listTicketAssignments(String email) {
+		User viewer = loadUserByEmail(email);
 		return ticketAssignmentNotificationRepository
-			.findVisibleByRecipientEmailOrderByCreatedAtDesc(normalizeEmail(email))
+			.findVisibleByRecipientEmailOrderByCreatedAtDesc(normalizeEmail(viewer.getEmail()))
 			.stream()
 			.map(this::toTicketAssignmentResponse)
 			.toList();
@@ -96,8 +99,9 @@ public class NotificationService {
 
 	@Transactional(readOnly = true)
 	public List<TicketTransferNotificationResponse> listTicketTransfers(String email) {
+		User viewer = loadUserByEmail(email);
 		return ticketTransferNotificationRepository
-			.findVisibleByRecipientEmailOrderByCreatedAtDesc(normalizeEmail(email))
+			.findVisibleByRecipientEmailOrderByCreatedAtDesc(normalizeEmail(viewer.getEmail()))
 			.stream()
 			.map(this::toTicketTransferResponse)
 			.toList();
@@ -105,8 +109,9 @@ public class NotificationService {
 
 	@Transactional(readOnly = true)
 	public List<TicketClosureNotificationResponse> listTicketClosures(String email) {
+		User viewer = loadUserByEmail(email);
 		return ticketClosureNotificationRepository
-			.findVisibleByRecipientEmailOrderByCreatedAtDesc(normalizeEmail(email))
+			.findVisibleByRecipientEmailOrderByCreatedAtDesc(normalizeEmail(viewer.getEmail()))
 			.stream()
 			.map(this::toTicketClosureResponse)
 			.toList();
@@ -114,8 +119,9 @@ public class NotificationService {
 
 	@Transactional(readOnly = true)
 	public List<TeamMembershipNotificationResponse> listTeamMemberships(String email) {
+		User viewer = loadUserByEmail(email);
 		return teamMembershipNotificationRepository
-			.findVisibleByRecipientEmailOrderByCreatedAtDesc(normalizeEmail(email))
+			.findVisibleByRecipientEmailOrderByCreatedAtDesc(normalizeEmail(viewer.getEmail()))
 			.stream()
 			.map(this::toTeamMembershipResponse)
 			.toList();
@@ -123,8 +129,9 @@ public class NotificationService {
 
 	@Transactional(readOnly = true)
 	public List<CompanyPartnershipNotificationResponse> listCompanyPartnerships(String email) {
+		User viewer = loadUserByEmail(email);
 		return companyPartnershipNotificationRepository
-			.findVisibleByRecipientEmailOrderByCreatedAtDesc(normalizeEmail(email))
+			.findVisibleByRecipientEmailOrderByCreatedAtDesc(normalizeEmail(viewer.getEmail()))
 			.stream()
 			.map(this::toCompanyPartnershipResponse)
 			.toList();
@@ -132,9 +139,8 @@ public class NotificationService {
 
 	@Transactional
 	public List<CalendarReminderNotificationResponse> listCalendarReminders(String email) {
-		String normalizedEmail = normalizeEmail(email);
-		User user = userRepository.findByEmailIgnoreCase(normalizedEmail)
-			.orElseThrow(() -> new NotFoundException("Usuário responsável pela consulta não encontrado."));
+		User user = loadUserByEmail(email);
+		String normalizedEmail = normalizeEmail(user.getEmail());
 		OffsetDateTime now = OffsetDateTime.now();
 
 		createMissingCalendarReminderNotifications(user, now);
@@ -149,8 +155,7 @@ public class NotificationService {
 	@Transactional
 	public void acceptTicketTransfer(UUID notificationId, RespondTicketTransferRequest request) {
 		TicketTransferNotification notification = loadTransferNotification(notificationId);
-		User recipient = userRepository.findByEmailIgnoreCase(normalizeEmail(request.email()))
-			.orElseThrow(() -> new NotFoundException("Destinatário da transferência não encontrado."));
+		User recipient = loadUserByEmail(request.email());
 
 		ensureTransferRecipient(notification, recipient);
 
@@ -176,8 +181,7 @@ public class NotificationService {
 	@Transactional
 	public void declineTicketTransfer(UUID notificationId, RespondTicketTransferRequest request) {
 		TicketTransferNotification notification = loadTransferNotification(notificationId);
-		User recipient = userRepository.findByEmailIgnoreCase(normalizeEmail(request.email()))
-			.orElseThrow(() -> new NotFoundException("Destinatário da transferência não encontrado."));
+		User recipient = loadUserByEmail(request.email());
 
 		ensureTransferRecipient(notification, recipient);
 
@@ -514,5 +518,12 @@ public class NotificationService {
 		}
 
 		return email.trim().toLowerCase(Locale.ROOT);
+	}
+
+	private User loadUserByEmail(String email) {
+		User user = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(email))
+			.orElseThrow(() -> new NotFoundException("Usuário responsável pela consulta não encontrado."));
+		tenantAccessService.ensureUserBelongsToCurrentTenant(user, "Esse usuário não pertence ao tenant atual.");
+		return user;
 	}
 }

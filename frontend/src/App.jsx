@@ -6,7 +6,9 @@ import {
   acceptCompanyPartnership,
   acceptTicketTransferNotification,
   acceptTeamInvite,
+  changePassword as changePasswordRequest,
   closeTicket,
+  createClientCompany,
   createCompanyInvite,
   createCompanyPartnership,
   createTicket,
@@ -23,6 +25,7 @@ import {
   deleteTeamMembershipNotification,
   deleteTicketTransferNotification,
   deleteTeamNotification,
+  deleteCompanyLogo as deleteCompanyLogoRequest,
   deleteCompanyProfile,
   deleteProfile,
   deleteTickets,
@@ -46,16 +49,23 @@ import {
   getTicketById,
   getTicketSummary,
   getTicketTransferCandidates,
+  linkExistingClientCompany,
+  lookupClientCompany,
+  requestPasswordReset,
   removeTeamMemberFromCompany,
+  resetPasswordWithToken,
   requestTicketTransfer,
   searchCompanyPartnershipTargets,
   unlinkCompanyPartnership,
   updateProfile as updateProfileRequest,
+  uploadCompanyLogo as uploadCompanyLogoRequest,
   updateTeamMemberSectors,
 } from './app/api'
 import { buildNavigationGroups, getVisibleSectors } from './app/dashboardData'
 import Header from './app/components/header/Header'
 import Sidebar from './app/components/sidebar/Sidebar'
+import { useTenantBranding } from './app/context/TenantBrandingContext'
+import PlatformAdminApp from './admin/PlatformAdminApp'
 import {
   PUBLIC_ROUTE_PATHS,
   SECTION_ROUTE_PATHS,
@@ -63,9 +73,11 @@ import {
   getSectionPath,
   getTicketPath,
 } from './app/routes'
+import { isManagedTenantHost, isPlatformAdminHost } from './app/platformAdminHost'
 import AllTickets from './app/pages/AllTickets/AllTickets'
 import Calendar from './app/pages/Calendar/Calendar'
 import ClosedTickets from './app/pages/ClosedTickets/ClosedTickets'
+import ClientCompanyRegister from './app/pages/ClientCompanyRegister/ClientCompanyRegister'
 import CreateSector from './app/pages/CreateSector/CreateSector'
 import Home from './app/pages/Home/Home'
 import Login from './app/pages/Login/Login'
@@ -86,6 +98,7 @@ const dashboardPageComponents = {
   open: OpenTickets,
   closed: ClosedTickets,
   createSector: CreateSector,
+  clientCompanyRegister: ClientCompanyRegister,
   newTicket: NewTicket,
   myData: MyData,
   team: Team,
@@ -531,6 +544,21 @@ function TicketConversationRoute({
 }
 
 function App() {
+  if (isPlatformAdminHost()) {
+    return <PlatformAdminApp />
+  }
+
+  const { branding: tenantBranding, isLoading: isTenantBrandingLoading } = useTenantBranding()
+  const shouldValidateTenantHost = isManagedTenantHost()
+
+  if (shouldValidateTenantHost && isTenantBrandingLoading) {
+    return <UnknownTenantHostPage isLoading />
+  }
+
+  if (shouldValidateTenantHost && !tenantBranding?.tenantResolved) {
+    return <UnknownTenantHostPage />
+  }
+
   const navigate = useNavigate()
   const location = useLocation()
   const [selectedTicket, setSelectedTicket] = useState(null)
@@ -564,22 +592,23 @@ function App() {
   const hasPendingTeamInvites = receivedInvites.some((invite) => invite.status === 'PENDING')
   const canAccessTeamPage =
     currentUserRole === 'admin' || currentMemberId !== null || hasPendingTeamInvites
+  const canAccessCreateSector = currentUserRole === 'admin' && currentUser?.companyType === 'RESPONDER'
   const navigationGroups = useMemo(
     () =>
       buildNavigationGroups({
         canAccessTeamPage,
+        canCreateSector: canAccessCreateSector,
         userRole: effectiveUserRole,
         sectors: createdSectors,
         teamMembers,
         currentMemberId,
       }),
-    [canAccessTeamPage, createdSectors, currentMemberId, effectiveUserRole, teamMembers]
+    [canAccessCreateSector, canAccessTeamPage, createdSectors, currentMemberId, effectiveUserRole, teamMembers]
   )
   const visibleSectors = useMemo(
     () => getVisibleSectors(effectiveUserRole, createdSectors, teamMembers, currentMemberId),
     [createdSectors, currentMemberId, effectiveUserRole, teamMembers]
   )
-  const canAccessCreateSector = currentUserRole === 'admin'
   const sectorPage = visibleSectors.find((sector) => sector.id === currentRouteSection)
   const notificationItems = useMemo(() => {
     const pendingReceived = receivedInvites
@@ -931,6 +960,40 @@ function App() {
     return normalizeCompanyPartnership(partnership)
   }
 
+  async function handleCreateClientCompany(payload) {
+    if (!currentUserEmail) {
+      return null
+    }
+
+    const response = await createClientCompany({
+      ...payload,
+      createdByEmail: currentUserEmail,
+    })
+    await refreshDashboardData(currentUserEmail)
+    return response
+  }
+
+  async function handleLookupClientCompany(companyDocument) {
+    if (!currentUserEmail || !companyDocument) {
+      return null
+    }
+
+    return lookupClientCompany(companyDocument, currentUserEmail)
+  }
+
+  async function handleLinkExistingClientCompany(companyOwnerId) {
+    if (!currentUserEmail || !companyOwnerId) {
+      return null
+    }
+
+    const response = await linkExistingClientCompany({
+      companyOwnerId,
+      createdByEmail: currentUserEmail,
+    })
+    await refreshDashboardData(currentUserEmail)
+    return response
+  }
+
   async function handleInviteCompanyMember({ fullName, email, documentNumber }) {
     if (!currentUserEmail) {
       return null
@@ -1259,6 +1322,47 @@ function App() {
     return normalizedProfile
   }
 
+  async function handleChangePassword(passwordData) {
+    if (!currentUserEmail) {
+      return null
+    }
+
+    const response = await changePasswordRequest({
+      currentEmail: currentUserEmail,
+      ...passwordData,
+    })
+    await refreshDashboardData(currentUserEmail)
+    return response
+  }
+
+  async function handleRequestPasswordReset(email) {
+    return requestPasswordReset({ email })
+  }
+
+  async function handleResetPassword(resetData) {
+    return resetPasswordWithToken(resetData)
+  }
+
+  async function handleUploadCompanyLogo(file) {
+    if (!currentUserEmail || !file) {
+      return null
+    }
+
+    const response = await uploadCompanyLogoRequest(currentUserEmail, file)
+    await refreshDashboardData(currentUserEmail)
+    return response
+  }
+
+  async function handleDeleteCompanyLogo() {
+    if (!currentUserEmail) {
+      return null
+    }
+
+    const response = await deleteCompanyLogoRequest(currentUserEmail)
+    await refreshDashboardData(currentUserEmail)
+    return response
+  }
+
   function renderDashboardPage(pageId) {
     const CurrentDashboardPage = dashboardPageComponents[pageId]
 
@@ -1273,8 +1377,12 @@ function App() {
         onAcceptInvite={handleAcceptInvite}
         onAcceptTicketTransfer={handleAcceptTicketTransfer}
         onCreateSector={handleCreateSector}
+        onCreateClientCompany={handleCreateClientCompany}
         onCreateCompanyPartnership={handleCreateCompanyPartnership}
         onCreateTicket={handleCreateTicket}
+        onChangePassword={handleChangePassword}
+        onLookupClientCompany={handleLookupClientCompany}
+        onLinkExistingClientCompany={handleLinkExistingClientCompany}
         onAcceptCompanyPartnership={handleAcceptCompanyPartnership}
         onAcceptCompanyInvite={handleAcceptCompanyInvite}
         onDeclineInvite={handleDeclineInvite}
@@ -1295,6 +1403,8 @@ function App() {
         onRefreshDashboardData={refreshDashboardData}
         onRemoveMemberFromCompany={handleRemoveMemberFromCompany}
         onUpdateProfile={handleUpdateProfile}
+        onUploadCompanyLogo={handleUploadCompanyLogo}
+        onDeleteCompanyLogo={handleDeleteCompanyLogo}
         onSearchPartnershipCompanies={handleSearchPartnershipCompanies}
         onUpdateMemberSectors={handleUpdateMemberSectors}
         availableTicketSectors={ticketTargetSectors}
@@ -1332,6 +1442,8 @@ function App() {
               ) : (
                 <Login
                   onNavigateHome={handleAuthenticatedUser}
+                  onRequestPasswordReset={handleRequestPasswordReset}
+                  onResetPassword={handleResetPassword}
                   onNavigateRegister={() => navigate(PUBLIC_ROUTE_PATHS.register)}
                 />
               )
@@ -1427,6 +1539,20 @@ function App() {
             }
           />
           <Route
+            path={SECTION_ROUTE_PATHS.clientCompanyRegister}
+            element={
+              authUser ? (
+                currentUserRole === 'admin' && currentUser?.companyType === 'RESPONDER' ? (
+                  renderDashboardPage('clientCompanyRegister')
+                ) : (
+                  <Navigate replace to={SECTION_ROUTE_PATHS.tickets} />
+                )
+              ) : (
+                <Navigate replace to={PUBLIC_ROUTE_PATHS.login} />
+              )
+            }
+          />
+          <Route
             path="/sectors/:sectorId"
             element={
               authUser ? (
@@ -1496,3 +1622,17 @@ function App() {
 }
 
 export default App
+
+function UnknownTenantHostPage({ isLoading = false }) {
+  return (
+    <main className="tenant-host-page" aria-live="polite">
+      <div className="tenant-host-page__card">
+        <span className="tenant-host-page__eyebrow">Subdomínio</span>
+        <h1>{isLoading ? 'Verificando acesso...' : 'Subdomínio não encontrado'}</h1>
+        {!isLoading ? (
+          <p>Esse endereço não corresponde a nenhuma empresa ativa da plataforma.</p>
+        ) : null}
+      </div>
+    </main>
+  )
+}

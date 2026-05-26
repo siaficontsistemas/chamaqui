@@ -19,29 +19,32 @@ import com.helpdesk.helpdesk.domain.User;
 import com.helpdesk.helpdesk.dto.report.PersonalReportRowResponse;
 import com.helpdesk.helpdesk.repository.TicketMessageRepository;
 import com.helpdesk.helpdesk.repository.TicketRepository;
-import com.helpdesk.helpdesk.repository.UserRepository;
 
 @Service
 public class ReportService {
 
-	private final UserRepository userRepository;
 	private final TicketRepository ticketRepository;
 	private final TicketMessageRepository ticketMessageRepository;
+	private final TenantAccessService tenantAccessService;
+	private final ScopedUserLookupService scopedUserLookupService;
 
 	public ReportService(
-		UserRepository userRepository,
 		TicketRepository ticketRepository,
-		TicketMessageRepository ticketMessageRepository
+		TicketMessageRepository ticketMessageRepository,
+		TenantAccessService tenantAccessService,
+		ScopedUserLookupService scopedUserLookupService
 	) {
-		this.userRepository = userRepository;
 		this.ticketRepository = ticketRepository;
 		this.ticketMessageRepository = ticketMessageRepository;
+		this.tenantAccessService = tenantAccessService;
+		this.scopedUserLookupService = scopedUserLookupService;
 	}
 
 	@Transactional(readOnly = true)
 	public List<PersonalReportRowResponse> getPersonalReport(String email) {
-		User user = userRepository.findByEmailIgnoreCase(email)
+		User user = scopedUserLookupService.findUniqueByEmailInCurrentTenant(email)
 			.orElseThrow(() -> new NotFoundException("Usuário não encontrado para o relatório."));
+		tenantAccessService.ensureUserBelongsToCurrentTenant(user, "Esse usuário não pertence ao tenant atual.");
 
 		Map<YearMonth, Long> createdTicketsByMonth = ticketRepository.findVisibleByEmailOrderByCreatedAtDesc(email).stream()
 			.filter(ticket -> ticket.getRequester().getId().equals(user.getId()))

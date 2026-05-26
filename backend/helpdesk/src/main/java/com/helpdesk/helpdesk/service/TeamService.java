@@ -53,6 +53,8 @@ public class TeamService {
 	private final TeamMembershipNotificationRepository teamMembershipNotificationRepository;
 	private final TicketRepository ticketRepository;
 	private final TicketTransferNotificationRepository ticketTransferNotificationRepository;
+	private final TenantAccessService tenantAccessService;
+	private final ScopedUserLookupService scopedUserLookupService;
 
 	public TeamService(
 		UserRepository userRepository,
@@ -63,7 +65,9 @@ public class TeamService {
 		TeamInviteRepository teamInviteRepository,
 		TeamMembershipNotificationRepository teamMembershipNotificationRepository,
 		TicketRepository ticketRepository,
-		TicketTransferNotificationRepository ticketTransferNotificationRepository
+		TicketTransferNotificationRepository ticketTransferNotificationRepository,
+		TenantAccessService tenantAccessService,
+		ScopedUserLookupService scopedUserLookupService
 	) {
 		this.userRepository = userRepository;
 		this.companyMembershipRepository = companyMembershipRepository;
@@ -74,13 +78,16 @@ public class TeamService {
 		this.teamMembershipNotificationRepository = teamMembershipNotificationRepository;
 		this.ticketRepository = ticketRepository;
 		this.ticketTransferNotificationRepository = ticketTransferNotificationRepository;
+		this.tenantAccessService = tenantAccessService;
+		this.scopedUserLookupService = scopedUserLookupService;
 	}
 
 	@Transactional(readOnly = true)
 	public List<TeamMemberResponse> listMembers(String email) {
 		String normalizedEmail = normalizeEmail(email);
-		User viewer = userRepository.findByEmailIgnoreCase(normalizedEmail)
+		User viewer = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizedEmail)
 			.orElseThrow(() -> new NotFoundException("Usuário responsável pela consulta não encontrado."));
+		tenantAccessService.ensureUserBelongsToCurrentTenant(viewer, "Esse usuário não pertence ao tenant atual.");
 		List<SectorMember> sectorMembers = resolveVisibleSectorMembers(viewer);
 		Map<UUID, List<UUID>> sectorsByUserId = sectorMembers.stream()
 			.collect(Collectors.groupingBy(
@@ -155,21 +162,30 @@ public class TeamService {
 
 	@Transactional(readOnly = true)
 	public List<TeamInviteResponse> listInvites() {
+		UUID tenantOwnerUserId = tenantAccessService.getCurrentTenantOwnerUserId().orElse(null);
 		return teamInviteRepository.findAllByOrderByCreatedAtDesc().stream()
+			.filter(invite -> tenantOwnerUserId == null
+				|| (invite.getInvitedBy() != null && tenantOwnerUserId.equals(invite.getInvitedBy().getId())))
 			.map(this::toInviteResponse)
 			.toList();
 	}
 
 	@Transactional(readOnly = true)
 	public List<TeamInviteResponse> listReceivedInvites(String email) {
-		return teamInviteRepository.findAllByEmailIgnoreCaseAndInviteeHiddenFalseOrderByCreatedAtDesc(normalizeEmail(email)).stream()
+		User viewer = loadUserByEmail(email, "Usuário responsável pela consulta não encontrado.");
+		return teamInviteRepository.findAllByEmailIgnoreCaseAndInviteeHiddenFalseOrderByCreatedAtDesc(
+			normalizeEmail(viewer.getEmail())
+		).stream()
 			.map(this::toInviteResponse)
 			.toList();
 	}
 
 	@Transactional(readOnly = true)
 	public List<TeamInviteResponse> listSentInvites(String email) {
-		return teamInviteRepository.findAllByInvitedByEmailIgnoreCaseAndInviterHiddenFalseOrderByCreatedAtDesc(normalizeEmail(email)).stream()
+		User viewer = loadUserByEmail(email, "Usuário responsável pela consulta não encontrado.");
+		return teamInviteRepository.findAllByInvitedByEmailIgnoreCaseAndInviterHiddenFalseOrderByCreatedAtDesc(
+			normalizeEmail(viewer.getEmail())
+		).stream()
 			.map(this::toInviteResponse)
 			.toList();
 	}
@@ -177,7 +193,7 @@ public class TeamService {
 	@Transactional
 	public TeamInviteResponse invite(InviteTeamMemberRequest request) {
 		String invitedByEmail = normalizeEmail(request.invitedByEmail());
-		User invitedBy = userRepository.findByEmailIgnoreCase(invitedByEmail)
+		User invitedBy = scopedUserLookupService.findUniqueByEmailInCurrentTenant(invitedByEmail)
 			.orElseThrow(() -> new NotFoundException("Usuário responsável pelo convite não encontrado."));
 		ensureAdmin(invitedBy, "Somente administradores podem convidar funcionários para a equipe.");
 		User invitedUser = findUserByDocumentNumber(
@@ -211,7 +227,7 @@ public class TeamService {
 	@Transactional
 	public TeamInviteResponse acceptInvite(UUID inviteId, RespondTeamInviteRequest request) {
 		TeamInvite invite = loadInvite(inviteId);
-		User invitedUser = userRepository.findByEmailIgnoreCase(normalizeEmail(request.email()))
+		User invitedUser = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(request.email()))
 			.orElseThrow(() -> new NotFoundException("Usuário convidado não encontrado."));
 
 		ensureInviteCanBeAnswered(invite, invitedUser);
@@ -251,7 +267,7 @@ public class TeamService {
 	@Transactional
 	public TeamInviteResponse declineInvite(UUID inviteId, RespondTeamInviteRequest request) {
 		TeamInvite invite = loadInvite(inviteId);
-		User invitedUser = userRepository.findByEmailIgnoreCase(normalizeEmail(request.email()))
+		User invitedUser = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(request.email()))
 			.orElseThrow(() -> new NotFoundException("Usuário convidado não encontrado."));
 
 		ensureInviteCanBeAnswered(invite, invitedUser);
@@ -286,7 +302,7 @@ public class TeamService {
 	public List<TeamMemberResponse> updateMemberSectors(UUID userId, UpdateMemberSectorsRequest request) {
 		User member = userRepository.findById(userId)
 			.orElseThrow(() -> new NotFoundException("Funcionário não encontrado."));
-		User assignedBy = userRepository.findByEmailIgnoreCase(request.assignedByEmail().trim())
+		User assignedBy = scopedUserLookupService.findUniqueByEmailInCurrentTenant(request.assignedByEmail().trim())
 			.orElseThrow(() -> new NotFoundException("Usuário responsável pela atribuição não encontrado."));
 		ensureAdmin(assignedBy, "Somente administradores podem alterar os setores dos funcionários.");
 		ensureManagedEmployee(assignedBy, member, "Esse funcionário não pertence à empresa administrada por você.");
@@ -340,7 +356,7 @@ public class TeamService {
 	public List<TeamMemberResponse> removeMemberFromCompany(UUID userId, String email) {
 		User member = userRepository.findById(userId)
 			.orElseThrow(() -> new NotFoundException("Funcionário não encontrado."));
-		User removedBy = userRepository.findByEmailIgnoreCase(normalizeEmail(email))
+		User removedBy = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(email))
 			.orElseThrow(() -> new NotFoundException("Usuário responsável pela remoção não encontrado."));
 		ensureAdmin(removedBy, "Somente administradores podem remover funcionários da empresa.");
 		ensureManagedEmployee(removedBy, member, "Esse funcionário não pertence à empresa administrada por você.");
@@ -373,7 +389,7 @@ public class TeamService {
 
 	@Transactional
 	public void deleteSector(UUID sectorId, String email) {
-		User deletedBy = userRepository.findByEmailIgnoreCase(normalizeEmail(email))
+		User deletedBy = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(email))
 			.orElseThrow(() -> new NotFoundException("Usuário responsável pela exclusão não encontrado."));
 		ensureAdmin(deletedBy, "Somente administradores podem excluir setores.");
 
@@ -621,6 +637,13 @@ public class TeamService {
 	private TeamInvite loadInvite(UUID inviteId) {
 		return teamInviteRepository.findWithDetailsById(inviteId)
 			.orElseThrow(() -> new NotFoundException("Convite não encontrado."));
+	}
+
+	private User loadUserByEmail(String email, String notFoundMessage) {
+		User user = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(email))
+			.orElseThrow(() -> new NotFoundException(notFoundMessage));
+		tenantAccessService.ensureUserBelongsToCurrentTenant(user, "Esse usuário não pertence ao tenant atual.");
+		return user;
 	}
 
 	private void ensureInviteCanBeAnswered(TeamInvite invite, User invitedUser) {

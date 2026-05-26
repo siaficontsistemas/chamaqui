@@ -79,6 +79,8 @@ public class TicketService {
 	private final TicketClosureEmailService ticketClosureEmailService;
 	private final WhatsappService whatsappService;
 	private final WhatsappConversationRepository whatsappConversationRepository;
+	private final TenantAccessService tenantAccessService;
+	private final ScopedUserLookupService scopedUserLookupService;
 
 	public TicketService(
 		TicketRepository ticketRepository,
@@ -96,7 +98,9 @@ public class TicketService {
 		TicketAttachmentStorageService ticketAttachmentStorageService,
 		TicketClosureEmailService ticketClosureEmailService,
 		WhatsappService whatsappService,
-		WhatsappConversationRepository whatsappConversationRepository
+		WhatsappConversationRepository whatsappConversationRepository,
+		TenantAccessService tenantAccessService,
+		ScopedUserLookupService scopedUserLookupService
 	) {
 		this.ticketRepository = ticketRepository;
 		this.userRepository = userRepository;
@@ -114,6 +118,8 @@ public class TicketService {
 		this.ticketClosureEmailService = ticketClosureEmailService;
 		this.whatsappService = whatsappService;
 		this.whatsappConversationRepository = whatsappConversationRepository;
+		this.tenantAccessService = tenantAccessService;
+		this.scopedUserLookupService = scopedUserLookupService;
 	}
 
 	@Transactional(readOnly = true)
@@ -165,7 +171,7 @@ public class TicketService {
 
 	@Transactional(readOnly = true)
 	public List<TicketTransferCandidateResponse> listTransferCandidates(UUID ticketId, String email) {
-		User author = userRepository.findByEmailIgnoreCase(normalizeEmail(email))
+		User author = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(email))
 			.orElseThrow(() -> new NotFoundException("Usuário responsável pela transferência não encontrado."));
 		Ticket ticket = loadDetailedAccessibleTicket(ticketId, author.getEmail());
 
@@ -182,8 +188,13 @@ public class TicketService {
 	public List<TicketTargetAssigneeResponse> listAvailableAssigneesForSector(UUID sectorId, UUID companyOwnerId) {
 		com.helpdesk.helpdesk.domain.Sector sector = sectorRepository.findById(sectorId)
 			.orElseThrow(() -> new NotFoundException("Setor não encontrado."));
+		tenantAccessService.ensureCompanyMatchesCurrentTenant(
+			sector.getCreatedBy().getId(),
+			"O setor informado não pertence ao tenant atual."
+		);
 
-		if (companyOwnerId != null && !sector.getCreatedBy().getId().equals(companyOwnerId)) {
+		UUID effectiveCompanyOwnerId = tenantAccessService.getCurrentTenantOwnerUserId().orElse(companyOwnerId);
+		if (effectiveCompanyOwnerId != null && !sector.getCreatedBy().getId().equals(effectiveCompanyOwnerId)) {
 			throw new IllegalArgumentException("O setor informado não pertence a empresa selecionada.");
 		}
 
@@ -198,7 +209,7 @@ public class TicketService {
 
 	@Transactional
 	public TicketResponse create(CreateTicketRequest request, List<MultipartFile> files) {
-		User requester = userRepository.findByEmailIgnoreCase(normalizeEmail(request.requesterEmail()))
+		User requester = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(request.requesterEmail()))
 			.orElseThrow(() -> new NotFoundException("Solicitante não encontrado."));
 		TicketStatus status = ticketStatusRepository.findByCode("OPEN")
 			.orElseThrow(() -> new NotFoundException("Status padrão de abertura não encontrado."));
@@ -206,9 +217,15 @@ public class TicketService {
 			.orElseThrow(() -> new NotFoundException("Prioridade não encontrada."));
 		com.helpdesk.helpdesk.domain.Sector sector = sectorRepository.findById(request.sectorId())
 			.orElseThrow(() -> new NotFoundException("Setor não encontrado."));
+		tenantAccessService.ensureCompanyMatchesCurrentTenant(
+			sector.getCreatedBy().getId(),
+			"O setor informado não pertence ao tenant atual."
+		);
 
 		User requesterCompany = resolveRequesterCompany(requester);
-		if (!sector.getCreatedBy().getId().equals(request.companyOwnerId())) {
+		UUID effectiveCompanyOwnerId = tenantAccessService.getCurrentTenantOwnerUserId()
+			.orElse(request.companyOwnerId());
+		if (!sector.getCreatedBy().getId().equals(effectiveCompanyOwnerId)) {
 			throw new IllegalArgumentException("O setor informado não pertence a empresa selecionada.");
 		}
 		ensureAcceptedPartnership(requesterCompany, sector.getCreatedBy());
@@ -243,8 +260,14 @@ public class TicketService {
 			.orElseThrow(() -> new NotFoundException("Prioridade padrão não encontrada."));
 		com.helpdesk.helpdesk.domain.Sector sector = sectorRepository.findById(request.sectorId())
 			.orElseThrow(() -> new NotFoundException("Setor não encontrado."));
+		tenantAccessService.ensureCompanyMatchesCurrentTenant(
+			sector.getCreatedBy().getId(),
+			"O setor informado não pertence ao tenant atual."
+		);
 
-		if (!sector.getCreatedBy().getId().equals(request.companyOwnerId())) {
+		UUID effectiveCompanyOwnerId = tenantAccessService.getCurrentTenantOwnerUserId()
+			.orElse(request.companyOwnerId());
+		if (!sector.getCreatedBy().getId().equals(effectiveCompanyOwnerId)) {
 			throw new IllegalArgumentException("O setor informado não pertence a empresa selecionada.");
 		}
 		if (sector.getCreatedBy().getCompanyType() != CompanyType.RESPONDER) {
@@ -273,7 +296,7 @@ public class TicketService {
 
 	@Transactional
 	public TicketResponse requestTransfer(UUID ticketId, RequestTicketTransferRequest request) {
-		User author = userRepository.findByEmailIgnoreCase(normalizeEmail(request.authorEmail()))
+		User author = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(request.authorEmail()))
 			.orElseThrow(() -> new NotFoundException("Usuário responsável pela transferência não encontrado."));
 		Ticket ticket = loadDetailedAccessibleTicket(ticketId, author.getEmail());
 
@@ -317,7 +340,7 @@ public class TicketService {
 
 	@Transactional
 	public TicketMessageResponse addMessage(UUID ticketId, CreateTicketMessageRequest request, List<MultipartFile> files) {
-		User author = userRepository.findByEmailIgnoreCase(normalizeEmail(request.authorEmail()))
+		User author = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(request.authorEmail()))
 			.orElseThrow(() -> new NotFoundException("Autor da mensagem não encontrado."));
 		Ticket ticket = loadDetailedAccessibleTicket(ticketId, author.getEmail());
 		List<MultipartFile> validFiles = normalizeFiles(files);
@@ -399,7 +422,7 @@ public class TicketService {
 
 	@Transactional
 	public TicketResponse closeTicket(UUID ticketId, CloseTicketRequest request) {
-		User author = userRepository.findByEmailIgnoreCase(normalizeEmail(request.authorEmail()))
+		User author = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(request.authorEmail()))
 			.orElseThrow(() -> new NotFoundException("Usuário responsável pelo fechamento não encontrado."));
 		Ticket ticket = loadDetailedAccessibleTicket(ticketId, author.getEmail());
 
@@ -409,7 +432,7 @@ public class TicketService {
 
 	@Transactional
 	public void deleteTickets(DeleteTicketsRequest request) {
-		User author = userRepository.findByEmailIgnoreCase(normalizeEmail(request.authorEmail()))
+		User author = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(request.authorEmail()))
 			.orElseThrow(() -> new NotFoundException("Usuário responsável pela exclusão não encontrado."));
 		ensureTicketCanBeDeleted(author);
 

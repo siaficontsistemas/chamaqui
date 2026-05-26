@@ -12,7 +12,6 @@ import java.util.UUID;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,7 +39,6 @@ import jakarta.servlet.http.HttpServletRequest;
 public class WhatsappWebhookService {
 
 	private static final Logger logger = LoggerFactory.getLogger(WhatsappWebhookService.class);
-	private static final long TICKET_SELECTION_REMINDER_MINUTES = 20;
 
 	private final ObjectMapper objectMapper = new ObjectMapper();
 	private final UserRepository userRepository;
@@ -52,6 +50,8 @@ public class WhatsappWebhookService {
 	private final WhatsappConversationRepository whatsappConversationRepository;
 	private final PasswordEncoder passwordEncoder;
 	private final EmailDomainValidationService emailDomainValidationService;
+	private final TenantExecutionService tenantExecutionService;
+	private final ScopedUserLookupService scopedUserLookupService;
 
 	public WhatsappWebhookService(
 		UserRepository userRepository,
@@ -62,7 +62,9 @@ public class WhatsappWebhookService {
 		WhatsappService whatsappService,
 		WhatsappConversationRepository whatsappConversationRepository,
 		PasswordEncoder passwordEncoder,
-		EmailDomainValidationService emailDomainValidationService
+		EmailDomainValidationService emailDomainValidationService,
+		TenantExecutionService tenantExecutionService,
+		ScopedUserLookupService scopedUserLookupService
 	) {
 		this.userRepository = userRepository;
 		this.roleRepository = roleRepository;
@@ -73,9 +75,10 @@ public class WhatsappWebhookService {
 		this.whatsappConversationRepository = whatsappConversationRepository;
 		this.passwordEncoder = passwordEncoder;
 		this.emailDomainValidationService = emailDomainValidationService;
+		this.tenantExecutionService = tenantExecutionService;
+		this.scopedUserLookupService = scopedUserLookupService;
 	}
 
-	@Transactional
 	public void receive(String payload, HttpServletRequest request) {
 		JsonNode payloadJson = parsePayload(payload);
 		String event = firstNonBlank(extractText(payloadJson, "event"), extractDeepText(payloadJson, "event"));
@@ -112,7 +115,10 @@ public class WhatsappWebhookService {
 
 		try {
 			User companyOwner = whatsappService.resolveCompanyAdminBySession(sessionName);
-			handleIncomingMessage(companyOwner, firstNonBlank(phone, transportId), transportId, body, attachments);
+			tenantExecutionService.runInTenantByOwnerUserId(
+				companyOwner.getId(),
+				() -> handleIncomingMessage(companyOwner, firstNonBlank(phone, transportId), transportId, body, attachments)
+			);
 		} catch (IllegalArgumentException exception) {
 			logger.warn("Webhook do WhatsApp ignorado por sessão inválida: session={}, reason={}", sessionName, exception.getMessage());
 		} catch (Exception exception) {
@@ -397,7 +403,7 @@ public class WhatsappWebhookService {
 		String pendingEmail = normalizeContactEmail(conversation.getPendingEmail());
 		User requesterByEmail = pendingEmail.isBlank()
 			? null
-			: userRepository.findByEmailIgnoreCase(pendingEmail).orElse(null);
+			: scopedUserLookupService.findUniqueByEmailInCurrentTenant(pendingEmail).orElse(null);
 		User requesterFromActiveTicket = conversation.getActiveTicket() == null
 			? null
 			: conversation.getActiveTicket().getRequester();
@@ -924,7 +930,7 @@ public class WhatsappWebhookService {
 		String email
 	) {
 		emailDomainValidationService.ensurePublicEmailDomainExists(email);
-		java.util.Optional<User> requesterByEmail = userRepository.findByEmailIgnoreCase(email);
+		java.util.Optional<User> requesterByEmail = scopedUserLookupService.findUniqueByEmailInCurrentTenant(email);
 		java.util.Optional<User> requesterByContact = resolveExistingRequester(normalizedPhone, whatsappTransportId);
 		User requester = requesterByEmail
 			.orElseGet(() -> requesterByContact.orElseGet(User::new));
@@ -1213,42 +1219,6 @@ public class WhatsappWebhookService {
 			|| normalizedBody.equals("bom dia")
 			|| normalizedBody.equals("boa tarde")
 			|| normalizedBody.equals("boa noite");
-	}
-
-	@Scheduled(fixedDelayString = "${helpdesk.whatsapp.ticket-selection-reminder-delay-ms:60000}")
-	@Transactional
-	public void sendOpenTicketSelectionReminders() {
-		OffsetDateTime now = OffsetDateTime.now();
-		OffsetDateTime inactiveSince = now.minusMinutes(TICKET_SELECTION_REMINDER_MINUTES);
-		OffsetDateTime promptBefore = now.minusMinutes(TICKET_SELECTION_REMINDER_MINUTES);
-
-		List<WhatsappConversation> conversations = whatsappConversationRepository.findConversationsPendingTicketSelectionPrompt(
-			inactiveSince,
-			promptBefore,
-			WhatsappConversationStep.ACTIVE_TICKET,
-			WhatsappConversationStep.ASK_ACTIVE_TICKET_SELECTION
-		);
-
-		for (WhatsappConversation conversation : conversations) {
-			User companyOwner = conversation.getCompanyOwner();
-			if (companyOwner == null) {
-				continue;
-			}
-
-			List<Ticket> openTickets = loadOpenTicketsForConversation(companyOwner, conversation);
-			if (openTickets.size() < 2) {
-				continue;
-			}
-
-			String replyTarget = resolveReplyTarget(conversation, normalizePhone(conversation.getPhoneNumber()));
-			promptForActiveTicketSelection(
-				companyOwner,
-				conversation,
-				replyTarget,
-				openTickets,
-				"Você está há 20 minutos sem enviar mensagem e possui mais de um chamado em aberto. Para qual chamado é a próxima mensagem?"
-			);
-		}
 	}
 
 	private void replyWithMessage(User companyOwner, String phoneNumber, String message) {

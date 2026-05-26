@@ -26,6 +26,11 @@ public class GlobalExceptionHandler {
 		return buildResponse(HttpStatus.BAD_REQUEST, exception.getMessage(), Map.of());
 	}
 
+	@ExceptionHandler(UnauthorizedException.class)
+	ResponseEntity<ApiErrorResponse> handleUnauthorized(UnauthorizedException exception) {
+		return buildResponse(HttpStatus.UNAUTHORIZED, exception.getMessage(), Map.of());
+	}
+
 	@ExceptionHandler(MethodArgumentNotValidException.class)
 	ResponseEntity<ApiErrorResponse> handleValidation(MethodArgumentNotValidException exception) {
 		Map<String, String> fieldErrors = new LinkedHashMap<>();

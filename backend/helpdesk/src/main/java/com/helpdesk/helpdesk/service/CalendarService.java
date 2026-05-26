@@ -27,21 +27,28 @@ public class CalendarService {
 	private final CalendarObligationRepository calendarObligationRepository;
 	private final CalendarReminderNotificationRepository calendarReminderNotificationRepository;
 	private final UserRepository userRepository;
+	private final TenantAccessService tenantAccessService;
+	private final ScopedUserLookupService scopedUserLookupService;
 
 	public CalendarService(
 		CalendarObligationRepository calendarObligationRepository,
 		CalendarReminderNotificationRepository calendarReminderNotificationRepository,
-		UserRepository userRepository
+		UserRepository userRepository,
+		TenantAccessService tenantAccessService,
+		ScopedUserLookupService scopedUserLookupService
 	) {
 		this.calendarObligationRepository = calendarObligationRepository;
 		this.calendarReminderNotificationRepository = calendarReminderNotificationRepository;
 		this.userRepository = userRepository;
+		this.tenantAccessService = tenantAccessService;
+		this.scopedUserLookupService = scopedUserLookupService;
 	}
 
 	@Transactional(readOnly = true)
 	public List<CalendarObligationResponse> listVisible(String email) {
-		User user = userRepository.findByEmailIgnoreCase(normalizeEmail(email))
+		User user = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(email))
 			.orElseThrow(() -> new NotFoundException("Usuário responsável pela consulta não encontrado."));
+		tenantAccessService.ensureUserBelongsToCurrentTenant(user, "Esse usuário não pertence ao tenant atual.");
 
 		OffsetDateTime now = OffsetDateTime.now();
 		return loadVisibleObligations(user).stream()
@@ -51,11 +58,16 @@ public class CalendarService {
 
 	@Transactional
 	public CalendarObligationResponse create(CreateCalendarObligationRequest request) {
-		User createdBy = userRepository.findByEmailIgnoreCase(normalizeEmail(request.createdByEmail()))
+		User createdBy = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(request.createdByEmail()))
 			.orElseThrow(() -> new NotFoundException("Usuário responsável pela obrigação não encontrado."));
+		tenantAccessService.ensureUserBelongsToCurrentTenant(createdBy, "Esse usuário não pertence ao tenant atual.");
+		tenantAccessService.ensureCompanyMatchesCurrentTenant(
+			createdBy.getId(),
+			"Somente a empresa do tenant atual pode criar obrigações neste calendário."
+		);
 		ensureAdmin(createdBy, "Somente administradores podem criar obrigações no calendário.");
 		validateDates(request.dueAt(), request.reminderAt());
-		Set<User> recipients = resolveRecipients(request.recipientDocumentNumbers());
+		Set<User> recipients = resolveRecipients(request.recipientDocumentNumbers(), createdBy.getId());
 
 		CalendarObligation obligation = new CalendarObligation();
 		obligation.setCompanyOwner(createdBy);
@@ -71,11 +83,16 @@ public class CalendarService {
 
 	@Transactional
 	public void complete(UUID obligationId, String email) {
-		User completedBy = userRepository.findByEmailIgnoreCase(normalizeEmail(email))
+		User completedBy = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(email))
 			.orElseThrow(() -> new NotFoundException("Usuário responsável pela conclusão não encontrado."));
+		tenantAccessService.ensureUserBelongsToCurrentTenant(completedBy, "Esse usuário não pertence ao tenant atual.");
 
 		CalendarObligation obligation = calendarObligationRepository.findDetailedById(obligationId)
 			.orElseThrow(() -> new NotFoundException("Obrigação não encontrada."));
+		tenantAccessService.ensureCompanyMatchesCurrentTenant(
+			obligation.getCompanyOwner().getId(),
+			"Essa obrigação não pertence ao tenant atual."
+		);
 		ensureCanCompleteObligation(completedBy, obligation);
 
 		if (obligation.getCompletedAt() == null) {
@@ -86,15 +103,24 @@ public class CalendarService {
 
 	@Transactional
 	public CalendarObligationResponse update(UUID obligationId, UpdateCalendarObligationRequest request) {
-		User updatedBy = userRepository.findByEmailIgnoreCase(normalizeEmail(request.updatedByEmail()))
+		User updatedBy = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(request.updatedByEmail()))
 			.orElseThrow(() -> new NotFoundException("Usuário responsável pela atualização não encontrado."));
+		tenantAccessService.ensureUserBelongsToCurrentTenant(updatedBy, "Esse usuário não pertence ao tenant atual.");
+		tenantAccessService.ensureCompanyMatchesCurrentTenant(
+			updatedBy.getId(),
+			"Somente a empresa do tenant atual pode editar obrigações neste calendário."
+		);
 		ensureAdmin(updatedBy, "Somente administradores podem editar obrigações do calendário.");
 		validateDates(request.dueAt(), request.reminderAt());
 
 		CalendarObligation obligation = calendarObligationRepository.findDetailedById(obligationId)
 			.orElseThrow(() -> new NotFoundException("Obrigação não encontrada."));
+		tenantAccessService.ensureCompanyMatchesCurrentTenant(
+			obligation.getCompanyOwner().getId(),
+			"Essa obrigação não pertence ao tenant atual."
+		);
 		ensureAdminOwnsObligation(updatedBy, obligation);
-		Set<User> recipients = resolveRecipients(request.recipientDocumentNumbers());
+		Set<User> recipients = resolveRecipients(request.recipientDocumentNumbers(), updatedBy.getId());
 
 		boolean scheduleChanged = !obligation.getDueAt().isEqual(request.dueAt())
 			|| isDifferent(obligation.getReminderAt(), request.reminderAt())
@@ -117,12 +143,21 @@ public class CalendarService {
 
 	@Transactional
 	public void delete(UUID obligationId, String email) {
-		User deletedBy = userRepository.findByEmailIgnoreCase(normalizeEmail(email))
+		User deletedBy = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(email))
 			.orElseThrow(() -> new NotFoundException("Usuário responsável pela exclusão não encontrado."));
+		tenantAccessService.ensureUserBelongsToCurrentTenant(deletedBy, "Esse usuário não pertence ao tenant atual.");
+		tenantAccessService.ensureCompanyMatchesCurrentTenant(
+			deletedBy.getId(),
+			"Somente a empresa do tenant atual pode excluir obrigações deste calendário."
+		);
 		ensureAdmin(deletedBy, "Somente administradores podem excluir obrigações do calendário.");
 
 		CalendarObligation obligation = calendarObligationRepository.findDetailedById(obligationId)
 			.orElseThrow(() -> new NotFoundException("Obrigação não encontrada."));
+		tenantAccessService.ensureCompanyMatchesCurrentTenant(
+			obligation.getCompanyOwner().getId(),
+			"Essa obrigação não pertence ao tenant atual."
+		);
 		ensureAdminOwnsObligation(deletedBy, obligation);
 
 		calendarObligationRepository.delete(obligation);
@@ -219,7 +254,7 @@ public class CalendarService {
 		return calendarObligationRepository.findVisibleByRecipientIdOrderByDueAtAsc(user.getId());
 	}
 
-	private Set<User> resolveRecipients(List<String> recipientDocumentNumbers) {
+	private Set<User> resolveRecipients(List<String> recipientDocumentNumbers, UUID companyOwnerId) {
 		if (recipientDocumentNumbers == null || recipientDocumentNumbers.isEmpty()) {
 			throw new IllegalArgumentException("Informe pelo menos um CPF de destinatário.");
 		}
@@ -234,11 +269,13 @@ public class CalendarService {
 
 			List<User> users = userRepository.findAllByDocumentNumberOrderByCreatedAtAsc(normalizedDocumentNumber);
 			User recipient = users.stream()
+				.filter(user -> belongsToCompanyOwner(user, companyOwnerId))
 				.filter(user -> user.getDeletedAt() == null)
 				.filter(user -> user.getStatus() != null && "ACTIVE".equals(user.getStatus().name()))
 				.filter(user -> !hasRole(user, "ADMIN"))
 				.findFirst()
 				.or(() -> users.stream()
+					.filter(user -> belongsToCompanyOwner(user, companyOwnerId))
 					.filter(user -> user.getDeletedAt() == null)
 					.filter(user -> user.getStatus() != null && "ACTIVE".equals(user.getStatus().name()))
 					.findFirst())
@@ -258,6 +295,15 @@ public class CalendarService {
 		}
 
 		return recipients;
+	}
+
+	private boolean belongsToCompanyOwner(User user, UUID companyOwnerId) {
+		if (user == null || companyOwnerId == null) {
+			return false;
+		}
+
+		return companyOwnerId.equals(user.getId())
+			|| (user.getCompanyOwner() != null && companyOwnerId.equals(user.getCompanyOwner().getId()));
 	}
 
 	private boolean hasRole(User user, String roleCode) {
