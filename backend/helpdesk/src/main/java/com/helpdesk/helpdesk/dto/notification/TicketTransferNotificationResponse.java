@@ -10,6 +10,8 @@ public record TicketTransferNotificationResponse(
 	String ticketTitle,
 	String requesterName,
 	String sectorName,
+	String companyName,
+	String requesterCompanyName,
 	String senderName,
 	String recipientName,
 	String status,

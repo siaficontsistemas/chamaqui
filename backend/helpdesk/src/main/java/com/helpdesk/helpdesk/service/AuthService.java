@@ -29,6 +29,7 @@ public class AuthService {
 	private final UserMapper userMapper;
 	private final CompanyAccessRequestService companyAccessRequestService;
 	private final CnpjLookupService cnpjLookupService;
+	private final EmailDomainValidationService emailDomainValidationService;
 
 	public AuthService(
 		UserRepository userRepository,
@@ -36,7 +37,8 @@ public class AuthService {
 		PasswordEncoder passwordEncoder,
 		UserMapper userMapper,
 		CompanyAccessRequestService companyAccessRequestService,
-		CnpjLookupService cnpjLookupService
+		CnpjLookupService cnpjLookupService,
+		EmailDomainValidationService emailDomainValidationService
 	) {
 		this.userRepository = userRepository;
 		this.roleRepository = roleRepository;
@@ -44,6 +46,7 @@ public class AuthService {
 		this.userMapper = userMapper;
 		this.companyAccessRequestService = companyAccessRequestService;
 		this.cnpjLookupService = cnpjLookupService;
+		this.emailDomainValidationService = emailDomainValidationService;
 	}
 
 	@Transactional
@@ -51,6 +54,7 @@ public class AuthService {
 		boolean isAdminRegistration = "admin".equalsIgnoreCase(request.role());
 		CompanyType companyType = CompanyType.fromValue(request.companyType());
 		String normalizedEmail = request.email().trim().toLowerCase(Locale.ROOT);
+		emailDomainValidationService.ensurePublicEmailDomainExists(normalizedEmail);
 		String normalizedDocumentNumber = normalizeDocumentNumber(request.documentNumber());
 		String normalizedInviteToken = blankToNull(request.inviteToken());
 		String companyName = blankToNull(request.companyName());

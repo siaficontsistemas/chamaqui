@@ -64,6 +64,9 @@ public class WhatsappConversation {
 	@Column(name = "pending_document", length = 20)
 	private String pendingDocument;
 
+	@Column(name = "pending_assigned_user_id")
+	private UUID pendingAssignedUserId;
+
 	@Column(name = "pending_subject", length = 180)
 	private String pendingSubject;
 
@@ -169,6 +172,14 @@ public class WhatsappConversation {
 
 	public void setPendingDocument(String pendingDocument) {
 		this.pendingDocument = pendingDocument;
+	}
+
+	public UUID getPendingAssignedUserId() {
+		return pendingAssignedUserId;
+	}
+
+	public void setPendingAssignedUserId(UUID pendingAssignedUserId) {
+		this.pendingAssignedUserId = pendingAssignedUserId;
 	}
 
 	public String getPendingSubject() {

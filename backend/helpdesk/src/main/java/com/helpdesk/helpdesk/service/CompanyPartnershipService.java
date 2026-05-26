@@ -24,6 +24,7 @@ import com.helpdesk.helpdesk.dto.company.CompanySearchResultResponse;
 import com.helpdesk.helpdesk.dto.company.CreateCompanyPartnershipRequest;
 import com.helpdesk.helpdesk.dto.company.RespondCompanyPartnershipRequest;
 import com.helpdesk.helpdesk.dto.sector.SectorResponse;
+import com.helpdesk.helpdesk.dto.ticket.TicketTargetSectorResponse;
 import com.helpdesk.helpdesk.repository.CompanyPartnershipRepository;
 import com.helpdesk.helpdesk.repository.CompanyPartnershipNotificationRepository;
 import com.helpdesk.helpdesk.repository.SectorRepository;
@@ -36,17 +37,20 @@ public class CompanyPartnershipService {
 	private final CompanyPartnershipNotificationRepository companyPartnershipNotificationRepository;
 	private final UserRepository userRepository;
 	private final SectorRepository sectorRepository;
+	private final TicketService ticketService;
 
 	public CompanyPartnershipService(
 		CompanyPartnershipRepository companyPartnershipRepository,
 		CompanyPartnershipNotificationRepository companyPartnershipNotificationRepository,
 		UserRepository userRepository,
-		SectorRepository sectorRepository
+		SectorRepository sectorRepository,
+		TicketService ticketService
 	) {
 		this.companyPartnershipRepository = companyPartnershipRepository;
 		this.companyPartnershipNotificationRepository = companyPartnershipNotificationRepository;
 		this.userRepository = userRepository;
 		this.sectorRepository = sectorRepository;
+		this.ticketService = ticketService;
 	}
 
 	@Transactional(readOnly = true)
@@ -178,7 +182,7 @@ public class CompanyPartnershipService {
 	}
 
 	@Transactional(readOnly = true)
-	public List<SectorResponse> listTicketTargets(String email) {
+	public List<TicketTargetSectorResponse> listTicketTargets(String email) {
 		User user = loadUserByEmail(email);
 		User currentCompany = resolveOperatingCompany(user);
 		List<CompanyPartnership> partnerships = companyPartnershipRepository.findVisibleByCompanyId(currentCompany.getId());
@@ -199,7 +203,7 @@ public class CompanyPartnershipService {
 		}
 
 		return sectorRepository.findActiveByCreatedByIdInOrderByNameAsc(partnerCompanyIds).stream()
-			.map(this::toSectorResponse)
+			.map(this::toTicketTargetSectorResponse)
 			.toList();
 	}
 
@@ -253,6 +257,23 @@ public class CompanyPartnershipService {
 			sector.getCreatedBy().getCompanyDocument(),
 			sector.getCreatedBy().getEmail(),
 			sector.getMembers().size()
+		);
+	}
+
+	private TicketTargetSectorResponse toTicketTargetSectorResponse(Sector sector) {
+		SectorResponse sectorResponse = toSectorResponse(sector);
+		return new TicketTargetSectorResponse(
+			sectorResponse.id(),
+			sectorResponse.name(),
+			sectorResponse.slug(),
+			sectorResponse.description(),
+			sectorResponse.active(),
+			sectorResponse.companyOwnerId(),
+			sectorResponse.companyName(),
+			sectorResponse.companyDocument(),
+			sectorResponse.createdByEmail(),
+			sectorResponse.memberCount(),
+			ticketService.listAvailableAssigneesForSector(sector.getId(), sector.getCreatedBy().getId())
 		);
 	}
 

@@ -15,6 +15,7 @@ import com.helpdesk.helpdesk.domain.CompanyPartnershipNotification;
 import com.helpdesk.helpdesk.domain.CompanyPartnershipNotificationType;
 import com.helpdesk.helpdesk.domain.TeamMembershipNotification;
 import com.helpdesk.helpdesk.domain.TicketAssignmentNotification;
+import com.helpdesk.helpdesk.domain.TicketClosureNotification;
 import com.helpdesk.helpdesk.domain.TicketTransferNotification;
 import com.helpdesk.helpdesk.domain.TicketTransferStatus;
 import com.helpdesk.helpdesk.domain.User;
@@ -22,6 +23,7 @@ import com.helpdesk.helpdesk.dto.notification.CalendarReminderNotificationRespon
 import com.helpdesk.helpdesk.dto.notification.CompanyPartnershipNotificationResponse;
 import com.helpdesk.helpdesk.dto.notification.TeamMembershipNotificationResponse;
 import com.helpdesk.helpdesk.dto.notification.TicketAssignmentNotificationResponse;
+import com.helpdesk.helpdesk.dto.notification.TicketClosureNotificationResponse;
 import com.helpdesk.helpdesk.dto.notification.TicketTransferNotificationResponse;
 import com.helpdesk.helpdesk.dto.ticket.RespondTicketTransferRequest;
 import com.helpdesk.helpdesk.repository.CalendarObligationRepository;
@@ -29,6 +31,7 @@ import com.helpdesk.helpdesk.repository.CalendarReminderNotificationRepository;
 import com.helpdesk.helpdesk.repository.CompanyPartnershipNotificationRepository;
 import com.helpdesk.helpdesk.repository.TeamMembershipNotificationRepository;
 import com.helpdesk.helpdesk.repository.TicketAssignmentNotificationRepository;
+import com.helpdesk.helpdesk.repository.TicketClosureNotificationRepository;
 import com.helpdesk.helpdesk.repository.TicketRepository;
 import com.helpdesk.helpdesk.repository.TicketTransferNotificationRepository;
 import com.helpdesk.helpdesk.repository.UserRepository;
@@ -41,6 +44,7 @@ public class NotificationService {
 	private final TeamMembershipNotificationRepository teamMembershipNotificationRepository;
 	private final CalendarReminderNotificationRepository calendarReminderNotificationRepository;
 	private final CompanyPartnershipNotificationRepository companyPartnershipNotificationRepository;
+	private final TicketClosureNotificationRepository ticketClosureNotificationRepository;
 	private final CalendarObligationRepository calendarObligationRepository;
 	private final TicketRepository ticketRepository;
 	private final UserRepository userRepository;
@@ -51,6 +55,7 @@ public class NotificationService {
 		TeamMembershipNotificationRepository teamMembershipNotificationRepository,
 		CalendarReminderNotificationRepository calendarReminderNotificationRepository,
 		CompanyPartnershipNotificationRepository companyPartnershipNotificationRepository,
+		TicketClosureNotificationRepository ticketClosureNotificationRepository,
 		CalendarObligationRepository calendarObligationRepository,
 		TicketRepository ticketRepository,
 		UserRepository userRepository
@@ -60,6 +65,7 @@ public class NotificationService {
 		this.teamMembershipNotificationRepository = teamMembershipNotificationRepository;
 		this.calendarReminderNotificationRepository = calendarReminderNotificationRepository;
 		this.companyPartnershipNotificationRepository = companyPartnershipNotificationRepository;
+		this.ticketClosureNotificationRepository = ticketClosureNotificationRepository;
 		this.calendarObligationRepository = calendarObligationRepository;
 		this.ticketRepository = ticketRepository;
 		this.userRepository = userRepository;
@@ -94,6 +100,15 @@ public class NotificationService {
 			.findVisibleByRecipientEmailOrderByCreatedAtDesc(normalizeEmail(email))
 			.stream()
 			.map(this::toTicketTransferResponse)
+			.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public List<TicketClosureNotificationResponse> listTicketClosures(String email) {
+		return ticketClosureNotificationRepository
+			.findVisibleByRecipientEmailOrderByCreatedAtDesc(normalizeEmail(email))
+			.stream()
+			.map(this::toTicketClosureResponse)
 			.toList();
 	}
 
@@ -196,6 +211,20 @@ public class NotificationService {
 	}
 
 	@Transactional
+	public void deleteTicketClosure(UUID notificationId, String email) {
+		TicketClosureNotification notification = ticketClosureNotificationRepository.findDetailedById(notificationId)
+			.orElseThrow(() -> new NotFoundException("Notificação de fechamento não encontrada."));
+		String normalizedEmail = normalizeEmail(email);
+
+		if (!notification.getRecipient().getEmail().equalsIgnoreCase(normalizedEmail)) {
+			throw new IllegalArgumentException("Essa notificação não pertence ao usuário informado.");
+		}
+
+		notification.setHidden(true);
+		ticketClosureNotificationRepository.save(notification);
+	}
+
+	@Transactional
 	public void deleteTeamMembership(UUID notificationId, String email) {
 		TeamMembershipNotification notification = teamMembershipNotificationRepository.findDetailedById(notificationId)
 			.orElseThrow(() -> new NotFoundException("Notificação de remoção não encontrada."));
@@ -238,6 +267,8 @@ public class NotificationService {
 	}
 
 	private TicketAssignmentNotificationResponse toTicketAssignmentResponse(TicketAssignmentNotification notification) {
+		String companyName = resolveTicketCompanyName(notification.getTicket());
+		String requesterCompanyName = resolveRequesterCompanyName(notification.getTicket());
 		return new TicketAssignmentNotificationResponse(
 			notification.getId(),
 			notification.getTicket().getId(),
@@ -245,12 +276,16 @@ public class NotificationService {
 			notification.getTicket().getTitle(),
 			notification.getTicket().getRequester().getFullName(),
 			notification.getTicket().getSector().getName(),
+			companyName,
+			requesterCompanyName,
 			"ASSIGNED",
 			notification.getCreatedAt()
 		);
 	}
 
 	private TicketTransferNotificationResponse toTicketTransferResponse(TicketTransferNotification notification) {
+		String companyName = resolveTicketCompanyName(notification.getTicket());
+		String requesterCompanyName = resolveRequesterCompanyName(notification.getTicket());
 		return new TicketTransferNotificationResponse(
 			notification.getId(),
 			notification.getTicket().getId(),
@@ -258,6 +293,8 @@ public class NotificationService {
 			notification.getTicket().getTitle(),
 			notification.getTicket().getRequester().getFullName(),
 			notification.getTicket().getSector().getName(),
+			companyName,
+			requesterCompanyName,
 			notification.getSender().getFullName(),
 			notification.getRecipient().getFullName(),
 			notification.getStatus().name(),
@@ -265,6 +302,50 @@ public class NotificationService {
 			notification.getUpdatedAt(),
 			notification.getRespondedAt()
 		);
+	}
+
+	private TicketClosureNotificationResponse toTicketClosureResponse(TicketClosureNotification notification) {
+		return new TicketClosureNotificationResponse(
+			notification.getId(),
+			notification.getTicket().getId(),
+			notification.getTicket().getProtocol(),
+			notification.getTicket().getTitle(),
+			notification.getTicket().getSector().getName(),
+			resolveTicketCompanyName(notification.getTicket()),
+			notification.getClosedBy().getFullName(),
+			notification.getCreatedAt()
+		);
+	}
+
+	private String resolveTicketCompanyName(com.helpdesk.helpdesk.domain.Ticket ticket) {
+		if (ticket == null || ticket.getSector() == null || ticket.getSector().getCreatedBy() == null) {
+			return "Empresa não informada";
+		}
+
+		String companyName = ticket.getSector().getCreatedBy().getCompanyName();
+		if (companyName == null || companyName.isBlank()) {
+			companyName = ticket.getSector().getCreatedBy().getFullName();
+		}
+
+		return companyName == null || companyName.isBlank() ? "Empresa não informada" : companyName;
+	}
+
+	private String resolveRequesterCompanyName(com.helpdesk.helpdesk.domain.Ticket ticket) {
+		if (ticket == null || ticket.getRequester() == null) {
+			return "";
+		}
+
+		User requester = ticket.getRequester();
+		User requesterCompany = requester.getCompanyOwner() != null ? requester.getCompanyOwner() : requester;
+		String companyName = requesterCompany.getCompanyName();
+
+		if ((companyName == null || companyName.isBlank())
+			&& requesterCompany.getCompanyDocument() != null
+			&& !requesterCompany.getCompanyDocument().isBlank()) {
+			companyName = requesterCompany.getFullName();
+		}
+
+		return companyName == null ? "" : companyName.trim();
 	}
 
 	private TeamMembershipNotificationResponse toTeamMembershipResponse(TeamMembershipNotification notification) {

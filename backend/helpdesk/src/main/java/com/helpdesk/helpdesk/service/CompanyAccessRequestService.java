@@ -40,6 +40,7 @@ public class CompanyAccessRequestService {
 	private final RoleRepository roleRepository;
 	private final TeamMembershipNotificationRepository teamMembershipNotificationRepository;
 	private final CompanyInvitationEmailService companyInvitationEmailService;
+	private final EmailDomainValidationService emailDomainValidationService;
 
 	public CompanyAccessRequestService(
 		CompanyAccessRequestRepository companyAccessRequestRepository,
@@ -47,7 +48,8 @@ public class CompanyAccessRequestService {
 		UserRepository userRepository,
 		RoleRepository roleRepository,
 		TeamMembershipNotificationRepository teamMembershipNotificationRepository,
-		CompanyInvitationEmailService companyInvitationEmailService
+		CompanyInvitationEmailService companyInvitationEmailService,
+		EmailDomainValidationService emailDomainValidationService
 	) {
 		this.companyAccessRequestRepository = companyAccessRequestRepository;
 		this.companyMembershipRepository = companyMembershipRepository;
@@ -55,6 +57,7 @@ public class CompanyAccessRequestService {
 		this.roleRepository = roleRepository;
 		this.teamMembershipNotificationRepository = teamMembershipNotificationRepository;
 		this.companyInvitationEmailService = companyInvitationEmailService;
+		this.emailDomainValidationService = emailDomainValidationService;
 	}
 
 	@Transactional
@@ -85,6 +88,7 @@ public class CompanyAccessRequestService {
 	public CompanyAdminInviteResponse createAdminInvite(CreateCompanyAdminInviteRequest request) {
 		User admin = loadAdminByEmail(request.invitedByEmail());
 		String normalizedEmail = normalizeEmail(request.email());
+		emailDomainValidationService.ensurePublicEmailDomainExists(normalizedEmail);
 		String normalizedDocumentNumber = normalizeDocumentNumber(request.documentNumber());
 
 		if (!BrazilianDocumentValidator.isValidCpf(normalizedDocumentNumber)) {

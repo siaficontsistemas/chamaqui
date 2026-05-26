@@ -17,7 +17,7 @@ import com.helpdesk.helpdesk.dto.company.CompanyPartnershipResponse;
 import com.helpdesk.helpdesk.dto.company.CompanySearchResultResponse;
 import com.helpdesk.helpdesk.dto.company.CreateCompanyPartnershipRequest;
 import com.helpdesk.helpdesk.dto.company.RespondCompanyPartnershipRequest;
-import com.helpdesk.helpdesk.dto.sector.SectorResponse;
+import com.helpdesk.helpdesk.dto.ticket.TicketTargetSectorResponse;
 import com.helpdesk.helpdesk.service.CompanyPartnershipService;
 
 import jakarta.validation.Valid;
@@ -47,7 +47,7 @@ public class CompanyPartnershipController {
 	}
 
 	@GetMapping("/ticket-targets")
-	public List<SectorResponse> listTicketTargets(@RequestParam("email") String email) {
+	public List<TicketTargetSectorResponse> listTicketTargets(@RequestParam("email") String email) {
 		return companyPartnershipService.listTicketTargets(email);
 	}
 

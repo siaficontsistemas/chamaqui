@@ -35,6 +35,7 @@ public class ProfileService {
 	private final SectorMemberRepository sectorMemberRepository;
 	private final TeamMembershipNotificationRepository teamMembershipNotificationRepository;
 	private final CnpjLookupService cnpjLookupService;
+	private final EmailDomainValidationService emailDomainValidationService;
 
 	public ProfileService(
 		UserRepository userRepository,
@@ -44,7 +45,8 @@ public class ProfileService {
 		RoleRepository roleRepository,
 		SectorMemberRepository sectorMemberRepository,
 		TeamMembershipNotificationRepository teamMembershipNotificationRepository,
-		CnpjLookupService cnpjLookupService
+		CnpjLookupService cnpjLookupService,
+		EmailDomainValidationService emailDomainValidationService
 	) {
 		this.userRepository = userRepository;
 		this.userMapper = userMapper;
@@ -54,6 +56,7 @@ public class ProfileService {
 		this.sectorMemberRepository = sectorMemberRepository;
 		this.teamMembershipNotificationRepository = teamMembershipNotificationRepository;
 		this.cnpjLookupService = cnpjLookupService;
+		this.emailDomainValidationService = emailDomainValidationService;
 	}
 
 	@Transactional(readOnly = true)
@@ -70,6 +73,7 @@ public class ProfileService {
 			.orElseThrow(() -> new NotFoundException("Perfil não encontrado."));
 
 		String normalizedEmail = normalizeEmail(request.email());
+		emailDomainValidationService.ensurePublicEmailDomainExists(normalizedEmail);
 		User existingUserByEmail = userRepository.findByEmailIgnoreCase(normalizedEmail).orElse(null);
 		if (existingUserByEmail != null && !existingUserByEmail.getId().equals(user.getId())) {
 			throw new IllegalArgumentException("Já existe um usuário cadastrado com esse email.");
