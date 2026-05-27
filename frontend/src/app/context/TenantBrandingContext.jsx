@@ -100,7 +100,7 @@ export function isBrandImageLoaded(url) {
   return isLoaded
 }
 
-function markBrandImageAsLoaded(url) {
+export function markBrandImageAsLoaded(url) {
   if (!url) {
     return
   }

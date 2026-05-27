@@ -76,9 +76,8 @@ public class AuthService {
 		User companyOwner = null;
 		User tenantCompany = tenantAccessService.hasCurrentTenant() ? tenantAccessService.loadCurrentTenantOwner() : null;
 		boolean directTenantMembership = false;
-		User existingUserByEmail = tenantAccessService.hasCurrentTenant()
-			? scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizedEmail).orElse(null)
-			: scopedUserLookupService.findUniqueStandaloneByEmail(normalizedEmail).orElse(null);
+		User existingUserByEmail = scopedUserLookupService.findUniqueByEmailForRegistrationScope(normalizedEmail)
+			.orElse(null);
 		List<User> existingUsersByDocument = findUsersByDocument(normalizedDocumentNumber);
 		User upgradeableUser = resolveUpgradeableUser(existingUserByEmail, existingUsersByDocument);
 
@@ -127,7 +126,7 @@ public class AuthService {
 					throw new IllegalArgumentException("Esse cadastro não pode ser vinculado a outra empresa.");
 				}
 				companyOwner = tenantCompany;
-				directTenantMembership = true;
+				directTenantMembership = tenantCompany.getCompanyType() == CompanyType.REQUESTER;
 			} else if (
 				tenantCompany.getCompanyType() == CompanyType.RESPONDER
 					&& companyType == CompanyType.REQUESTER
@@ -151,6 +150,7 @@ public class AuthService {
 						"A empresa cliente selecionada não está vinculada à empresa provedora atual."
 					);
 				}
+
 			} else {
 				throw new IllegalArgumentException("Esse subdomínio só permite os tipos de cadastro disponíveis para a empresa atual.");
 			}
@@ -277,7 +277,10 @@ public class AuthService {
 		if (normalizedDocumentNumber == null) {
 			return List.of();
 		}
-		return userRepository.findAllByDocumentNumberOrderByCreatedAtAsc(normalizedDocumentNumber);
+		if (tenantAccessService.hasCurrentTenant()) {
+			return scopedUserLookupService.findAllByDocumentInCurrentTenant(normalizedDocumentNumber);
+		}
+		return scopedUserLookupService.findStandaloneUsersByDocument(normalizedDocumentNumber);
 	}
 
 	private User resolveUpgradeableUser(User existingUserByEmail, List<User> existingUsersByDocument) {

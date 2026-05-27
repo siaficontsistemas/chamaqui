@@ -66,7 +66,6 @@ function NewTicket({
     sectorId: '',
     assignedToUserId: '',
     priorityCode: '',
-    title: '',
     copyEmail: '',
     description: '',
   })
@@ -250,13 +249,8 @@ function NewTicket({
       return
     }
 
-    if (formValues.title.trim().length < 3) {
-      setFeedbackMessage('Informe um assunto com pelo menos 3 caracteres.')
-      return
-    }
-
     if (formValues.description.trim().length < 10) {
-      setFeedbackMessage('Descreva o chamado com pelo menos 10 caracteres.')
+      setFeedbackMessage('Escreva a primeira mensagem do chamado com pelo menos 10 caracteres.')
       return
     }
 
@@ -264,7 +258,6 @@ function NewTicket({
       setIsSubmitting(true)
       setFeedbackMessage('')
       await onCreateTicket({
-        title: formValues.title,
         description: formValues.description,
         files: attachedFiles,
         priorityCode: formValues.priorityCode,
@@ -279,7 +272,6 @@ function NewTicket({
         sectorId: '',
         assignedToUserId: '',
         priorityCode: '',
-        title: '',
         copyEmail: '',
         description: '',
       })
@@ -476,18 +468,6 @@ function NewTicket({
               </div>
 
               <label className="ticket-field">
-                <span>Assunto</span>
-                <div className="ticket-field__control">
-                  <input
-                    placeholder="Digite o assunto do chamado"
-                    type="text"
-                    value={formValues.title}
-                    onChange={(event) => handleChange('title', event.target.value)}
-                  />
-                </div>
-              </label>
-
-              <label className="ticket-field">
                 <span>Enviar Cópia</span>
                 <div className="ticket-field__control">
                   <input
@@ -500,10 +480,10 @@ function NewTicket({
               </label>
 
               <label className="ticket-field">
-                <span>Mensagem</span>
+                <span>Primeira mensagem</span>
                 <div className="ticket-field__control ticket-field__control--textarea">
                   <textarea
-                    placeholder="Descreva aqui o seu chamado"
+                    placeholder="Descreva aqui o seu chamado. O assunto sera gerado automaticamente a partir desta mensagem."
                     rows="6"
                     value={formValues.description}
                     onChange={(event) => handleChange('description', event.target.value)}

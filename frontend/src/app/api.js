@@ -105,6 +105,7 @@ function getFieldLabel(fieldName) {
   const labelsByField = {
     fullName: 'Nome',
     email: 'Email',
+    authorEmail: 'Email do funcionário',
     phoneNumber: 'Telefone',
     documentNumber: 'CPF',
     companyOwnerId: 'Empresa',
@@ -112,6 +113,7 @@ function getFieldLabel(fieldName) {
     companyName: 'Nome da empresa',
     companyDocument: 'CNPJ da empresa',
     companyType: 'Tipo da empresa',
+    title: 'Título',
     password: 'Senha',
     role: 'Tipo de cadastro',
   }
@@ -282,6 +284,13 @@ export function getTicketMessages(ticketId, email) {
 
 export function addTicketMessage(ticketId, payload) {
   return createMultipartRequest(`/api/v1/tickets/${ticketId}/messages`, payload)
+}
+
+export function updateTicketTitle(ticketId, payload) {
+  return apiRequest(`/api/v1/tickets/${ticketId}/title`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
 }
 
 function createMultipartRequest(path, payload) {

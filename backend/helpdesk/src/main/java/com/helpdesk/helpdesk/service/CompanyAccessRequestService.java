@@ -446,17 +446,15 @@ public class CompanyAccessRequestService {
 	}
 
 	private User findInvitedUser(String normalizedEmail, String normalizedDocumentNumber) {
-		User userByEmail = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizedEmail).orElse(null);
-		User userByDocument = userRepository.findAllByDocumentNumberOrderByCreatedAtAsc(normalizedDocumentNumber)
+		User userByEmail = scopedUserLookupService.findUniqueByEmailForRegistrationScope(normalizedEmail).orElse(null);
+		List<User> usersByDocument = tenantAccessService.hasCurrentTenant()
+			? scopedUserLookupService.findAllByDocumentInCurrentTenant(normalizedDocumentNumber)
+			: scopedUserLookupService.findStandaloneUsersByDocument(normalizedDocumentNumber);
+		User userByDocument = usersByDocument
 			.stream()
 			.filter(user -> !hasRole(user, "ADMIN"))
 			.findFirst()
-			.orElse(
-				userRepository.findAllByDocumentNumberOrderByCreatedAtAsc(normalizedDocumentNumber)
-					.stream()
-					.findFirst()
-					.orElse(null)
-			);
+			.orElse(usersByDocument.stream().findFirst().orElse(null));
 
 		if (userByEmail != null && userByDocument != null && !userByEmail.getId().equals(userByDocument.getId())) {
 			throw new IllegalArgumentException("O email e o CPF informados pertencem a cadastros diferentes.");

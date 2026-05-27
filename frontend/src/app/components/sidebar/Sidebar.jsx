@@ -100,6 +100,7 @@ function BrandMark({ onClick, companyLogoUrl, companyName }) {
             src={companyLogoUrl}
             alt={companyName ? `Logo da empresa ${companyName}` : 'Logo da empresa'}
             label={companyName || 'Logo'}
+            loadingMode="eager"
           />
         </div>
       ) : null}

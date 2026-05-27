@@ -12,6 +12,7 @@ public record TicketResponse(
 	String requesterEmail,
 	String requesterPhoneNumber,
 	String requesterDocumentNumber,
+	String requesterCompanyName,
 	String assignedToName,
 	String assignedToEmail,
 	String sectorName,

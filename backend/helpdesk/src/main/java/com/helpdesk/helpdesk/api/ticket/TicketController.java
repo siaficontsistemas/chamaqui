@@ -13,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -30,6 +31,7 @@ import com.helpdesk.helpdesk.dto.ticket.TicketMessageResponse;
 import com.helpdesk.helpdesk.dto.ticket.TicketResponse;
 import com.helpdesk.helpdesk.dto.ticket.TicketSummaryResponse;
 import com.helpdesk.helpdesk.dto.ticket.TicketTransferCandidateResponse;
+import com.helpdesk.helpdesk.dto.ticket.UpdateTicketTitleRequest;
 import com.helpdesk.helpdesk.service.TicketService;
 
 import jakarta.validation.Valid;
@@ -102,6 +104,14 @@ public class TicketController {
 		@RequestPart(name = "files", required = false) List<MultipartFile> files
 	) {
 		return ticketService.addMessage(ticketId, request, files);
+	}
+
+	@PutMapping("/{ticketId}/title")
+	public TicketResponse updateTitle(
+		@PathVariable UUID ticketId,
+		@Valid @RequestBody UpdateTicketTitleRequest request
+	) {
+		return ticketService.updateTitle(ticketId, request);
 	}
 
 	@GetMapping("/{ticketId}/attachments/{attachmentId}")

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import ConfirmActionModal from '../../components/confirm-action-modal/ConfirmActionModal'
 import Header from '../../components/header/Header'
 import Sidebar from '../../components/sidebar/Sidebar'
@@ -35,7 +35,9 @@ function Team({
   const roleLabel = getRoleLabel(userRole)
   const activeContent = getTeamContent(userRole)
   const visibleTeamMembers = getTeamMembers(userRole, teamMembers)
-  const [activeInviteTab, setActiveInviteTab] = useState('sector')
+  const companyType = String(currentUser?.companyType || '').toUpperCase()
+  const companyUsesSectors = companyType === 'RESPONDER'
+  const [activeInviteTab, setActiveInviteTab] = useState(companyUsesSectors ? 'sector' : 'company')
   const [inviteCpf, setInviteCpf] = useState('')
   const [inviteSearch, setInviteSearch] = useState('')
   const [inviteSectorIds, setInviteSectorIds] = useState([])
@@ -86,9 +88,14 @@ function Team({
       ).getTime()
   )
   const companyName =
+    (!companyUsesSectors && userRole === 'user'
+      ? visibleTeamMembers.map((member) => member.companyName).filter(Boolean).join(', ')
+      : '') ||
     currentUser?.companyName ||
     sectors.find((sector) => sector.companyName)?.companyName ||
     'Empresa não informada'
+  const directionColumnTitle =
+    companyUsesSectors ? 'Setores' : userRole === 'user' ? 'Empresas cliente' : 'Vinculo'
   const selectableTeamMembers = useMemo(
     () =>
       visibleTeamMembers.filter(
@@ -128,6 +135,12 @@ function Team({
       )
     })
   }, [inviteSearch, inviteSuggestions])
+
+  useEffect(() => {
+    if (!companyUsesSectors && activeInviteTab !== 'company') {
+      setActiveInviteTab('company')
+    }
+  }, [activeInviteTab, companyUsesSectors])
 
   async function toggleMemberSector(memberId, sectorId) {
     const currentMember = visibleTeamMembers.find((member) => member.id === memberId)
@@ -698,36 +711,66 @@ function Team({
                 <article className="team-view__summary-card">
                   <span>Empresa da equipe</span>
                   <strong>{companyName}</strong>
-                  <small>Empresa vinculada aos setores e integrantes dessa equipe</small>
+                  <small>
+                    {companyUsesSectors
+                      ? 'Empresa vinculada aos setores e integrantes dessa equipe'
+                      : 'Empresa à qual esses participantes estão vinculados para criar chamados'}
+                  </small>
                 </article>
                 <article className="team-view__summary-card">
                   <span>Seu acesso</span>
                   <strong>{roleLabel}</strong>
                   <small>
                     {userRole === 'admin'
-                      ? 'Pode escolher os setores da equipe e direcionar funcionários'
-                      : 'Pode apenas visualizar os setores definidos pelo administrador'}
+                      ? companyUsesSectors
+                        ? 'Pode escolher os setores da equipe e direcionar funcionários'
+                        : 'Pode vincular e remover participantes da empresa sem usar setores'
+                      : companyUsesSectors
+                        ? 'Pode apenas visualizar os setores definidos pelo administrador'
+                        : 'Seu acesso depende apenas do vínculo com a empresa, sem setores'}
                   </small>
                 </article>
                 <article className="team-view__summary-card">
-                  <span>{userRole === 'admin' ? 'Setores criados' : 'Seus setores ativos'}</span>
-                  <strong>{sectors.length}</strong>
+                  <span>
+                    {companyUsesSectors
+                      ? userRole === 'admin'
+                        ? 'Setores criados'
+                        : 'Seus setores ativos'
+                      : 'Modelo da equipe'}
+                  </span>
+                  <strong>{companyUsesSectors ? sectors.length : 'Sem setores'}</strong>
                   <small>
-                    {userRole === 'admin'
-                      ? 'Setores disponíveis para distribuição na equipe'
-                      : 'Setores em que você participa dentro da equipe'}
+                    {companyUsesSectors
+                      ? userRole === 'admin'
+                        ? 'Setores disponíveis para distribuição na equipe'
+                        : 'Setores em que você participa dentro da equipe'
+                      : 'Os participantes aceitos ficam soltos na empresa e podem criar chamados sem setor'}
                   </small>
                 </article>
                 <article className="team-view__summary-card">
-                  <span>{userRole === 'admin' ? 'Pessoas alocadas' : 'Convites pendentes'}</span>
-                  <strong>{userRole === 'admin' ? membersWithSector : pendingReceivedInvites.length}</strong>
+                  <span>
+                    {userRole === 'admin'
+                      ? companyUsesSectors
+                        ? 'Pessoas alocadas'
+                        : 'Participantes vinculados'
+                      : 'Convites pendentes'}
+                  </span>
+                  <strong>
+                    {userRole === 'admin'
+                      ? companyUsesSectors
+                        ? membersWithSector
+                        : visibleTeamMembers.length
+                      : pendingReceivedInvites.length}
+                  </strong>
                   <small>
                     {userRole === 'admin'
-                      ? 'Integrantes que já foram vinculados a pelo menos um setor'
+                      ? companyUsesSectors
+                        ? 'Integrantes que já foram vinculados a pelo menos um setor'
+                        : 'Integrantes aceitos para criar chamados dentro da empresa'
                       : 'Convites que ainda esperam sua resposta para entrar na equipe'}
                   </small>
                 </article>
-                {userRole !== 'admin' ? (
+                {userRole !== 'admin' && companyUsesSectors ? (
                   <article className="team-view__summary-card">
                     <span>Setores convidados</span>
                     <strong>{pendingInviteSectorCount}</strong>
@@ -848,24 +891,26 @@ function Team({
                       <span className="home-panel__eyebrow">Convite de funcionário</span>
                       <h2>Adicionar novo integrante</h2>
                     </div>
-                    <div className="team-invite__tabs" role="tablist" aria-label="Tipos de convite">
-                      <button
-                        className={`team-invite__tab${activeInviteTab === 'sector' ? ' is-active' : ''}`}
-                        type="button"
-                        onClick={() => setActiveInviteTab('sector')}
-                      >
-                        Convidar para setores
-                      </button>
-                      <button
-                        className={`team-invite__tab${activeInviteTab === 'company' ? ' is-active' : ''}`}
-                        type="button"
-                        onClick={() => setActiveInviteTab('company')}
-                      >
-                        Adicionar à empresa
-                      </button>
-                    </div>
+                    {companyUsesSectors ? (
+                      <div className="team-invite__tabs" role="tablist" aria-label="Tipos de convite">
+                        <button
+                          className={`team-invite__tab${activeInviteTab === 'sector' ? ' is-active' : ''}`}
+                          type="button"
+                          onClick={() => setActiveInviteTab('sector')}
+                        >
+                          Convidar para setores
+                        </button>
+                        <button
+                          className={`team-invite__tab${activeInviteTab === 'company' ? ' is-active' : ''}`}
+                          type="button"
+                          onClick={() => setActiveInviteTab('company')}
+                        >
+                          Adicionar à empresa
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
-                  {activeInviteTab === 'sector' ? (
+                  {companyUsesSectors && activeInviteTab === 'sector' ? (
                     <form onSubmit={handleInviteSubmit}>
                       <label className="ticket-field ticket-field--combobox">
                         <span>CPF do funcionário</span>
@@ -1002,8 +1047,9 @@ function Team({
 
                       <div className="team-invite__footer">
                         <span>
-                          Se o CPF já existir na plataforma, a pessoa recebe a notificação. Se ainda
-                          não existir, enviamos um email com link direto para o cadastro.
+                          {companyUsesSectors
+                            ? 'Se o CPF já existir na plataforma, a pessoa recebe a notificação. Se ainda não existir, enviamos um email com link direto para o cadastro.'
+                            : 'A pessoa ficará vinculada diretamente à empresa para criar chamados, sem precisar ser distribuída em setores.'}
                         </span>
                         <button
                           className="team-invite__button"
@@ -1023,62 +1069,76 @@ function Team({
                 </div>
               ) : null}
 
+              {companyUsesSectors ? (
+                <div className="team-panel">
+                  <div className="team-panel__header">
+                    <div>
+                      <span className="home-panel__eyebrow">Setores da equipe</span>
+                      <h2>
+                        {userRole === 'admin'
+                          ? 'Setores cadastrados pelo administrador'
+                          : 'Setores em que você participa'}
+                      </h2>
+                    </div>
+                    {userRole === 'admin' ? (
+                      <button
+                        className="home-content__button home-content__button--ghost"
+                        type="button"
+                        onClick={() => onNavigatePage('createSector')}
+                      >
+                        Criar setor
+                      </button>
+                    ) : null}
+                  </div>
+
+                  {sectors.length > 0 ? (
+                    <div className="team-sectors">
+                      {sectors.map((sector) => (
+                        <div className="team-sectors__item is-active" key={sector.id}>
+                          <span>{sector.name}</span>
+                          <strong>{sector.description}</strong>
+                          {userRole === 'admin' ? (
+                            <button
+                              className="team-panel__action-button team-panel__action-button--danger"
+                              type="button"
+                              onClick={() => requestDeleteSectorConfirmation(sector)}
+                              disabled={isTeamDataLoading || processingSectorId === sector.id}
+                            >
+                              {processingSectorId === sector.id ? 'Excluindo...' : 'Excluir setor'}
+                            </button>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="team-panel__empty">
+                      {userRole === 'admin'
+                        ? 'Nenhum setor criado. Use a tela de criação de setores para começar.'
+                        : 'Você ainda não foi vinculado a nenhum setor.'}
+                    </span>
+                  )}
+                </div>
+              ) : null}
+
               <div className="team-panel">
                 <div className="team-panel__header">
                   <div>
-                    <span className="home-panel__eyebrow">Setores da equipe</span>
+                    <span className="home-panel__eyebrow">
+                      {companyUsesSectors ? 'Direcionamento da equipe' : 'Participantes da empresa'}
+                    </span>
                     <h2>
-                      {userRole === 'admin'
-                        ? 'Setores cadastrados pelo administrador'
-                        : 'Setores em que você participa'}
+                      {companyUsesSectors
+                        ? userRole === 'admin'
+                          ? 'Definir setores dos funcionários'
+                          : 'Funcionários por setor'
+                        : userRole === 'admin'
+                          ? 'Participantes vinculados à empresa'
+                          : 'Participantes da empresa'}
                     </h2>
                   </div>
-                  {userRole === 'admin' ? (
-                    <button
-                      className="home-content__button home-content__button--ghost"
-                      type="button"
-                      onClick={() => onNavigatePage('createSector')}
-                    >
-                      Criar setor
-                    </button>
-                  ) : null}
-                </div>
-
-                {sectors.length > 0 ? (
-                  <div className="team-sectors">
-                    {sectors.map((sector) => (
-                      <div className="team-sectors__item is-active" key={sector.id}>
-                        <span>{sector.name}</span>
-                        <strong>{sector.description}</strong>
-                        {userRole === 'admin' ? (
-                          <button
-                            className="team-panel__action-button team-panel__action-button--danger"
-                            type="button"
-                            onClick={() => requestDeleteSectorConfirmation(sector)}
-                            disabled={isTeamDataLoading || processingSectorId === sector.id}
-                          >
-                            {processingSectorId === sector.id ? 'Excluindo...' : 'Excluir setor'}
-                          </button>
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <span className="team-panel__empty">
-                    {userRole === 'admin'
-                      ? 'Nenhum setor criado. Use a tela de criação de setores para começar.'
-                      : 'Você ainda não foi vinculado a nenhum setor.'}
+                  <span className="home-panel__badge">
+                    {companyUsesSectors ? 'Acesso compartilhado' : 'Sem setores'}
                   </span>
-                )}
-              </div>
-
-              <div className="team-panel">
-                <div className="team-panel__header">
-                  <div>
-                    <span className="home-panel__eyebrow">Direcionamento da equipe</span>
-                    <h2>{userRole === 'admin' ? 'Definir setores dos funcionários' : 'Funcionários por setor'}</h2>
-                  </div>
-                  <span className="home-panel__badge">Acesso compartilhado</span>
                 </div>
 
                 <div className="team-panel__table">
@@ -1087,7 +1147,7 @@ function Team({
                       <div className={`team-panel__head${userRole === 'admin' ? ' team-panel__head--admin' : ''}`}>
                         <span>Nome</span>
                         <span>Função</span>
-                        <span>Setores</span>
+                        <span>{directionColumnTitle}</span>
                         <span>Status</span>
                         {userRole === 'admin' ? <span>Ações</span> : null}
                       </div>
@@ -1100,36 +1160,44 @@ function Team({
                           <span>{member.name}</span>
                           <span>{member.role}</span>
                           <span className="team-panel__sectors">
-                            {sectors.map((sector) => {
-                              const isAssigned = (member.sectors ?? []).includes(sector.id)
+                            {companyUsesSectors ? (
+                              <>
+                                {sectors.map((sector) => {
+                                  const isAssigned = (member.sectors ?? []).includes(sector.id)
 
-                              return (
-                                <button
-                                  className={`team-sector-chip${isAssigned ? ' is-active' : ''}`}
-                                  key={`${member.id}-${sector.id}`}
-                                  type="button"
-                                  onClick={
-                                    userRole === 'admin'
-                                      ? () => toggleMemberSector(member.id, sector.id)
-                                      : undefined
-                                  }
-                                  disabled={userRole !== 'admin' || sectors.length === 0 || isTeamDataLoading}
-                                >
-                                  {sector.name}
-                                </button>
-                              )
-                            })}
-                            {(member.sectors ?? []).length > 0 && sectors.length === 0 ? (
+                                  return (
+                                    <button
+                                      className={`team-sector-chip${isAssigned ? ' is-active' : ''}`}
+                                      key={`${member.id}-${sector.id}`}
+                                      type="button"
+                                      onClick={
+                                        userRole === 'admin'
+                                          ? () => toggleMemberSector(member.id, sector.id)
+                                          : undefined
+                                      }
+                                      disabled={userRole !== 'admin' || sectors.length === 0 || isTeamDataLoading}
+                                    >
+                                      {sector.name}
+                                    </button>
+                                  )
+                                })}
+                                {(member.sectors ?? []).length > 0 && sectors.length === 0 ? (
+                                  <span className="team-panel__empty">
+                                    {member.sectors
+                                      .map((sectorId) => sectorNameById[sectorId])
+                                      .filter(Boolean)
+                                      .join(', ')}
+                                  </span>
+                                ) : null}
+                                {sectors.length === 0 ? (
+                                  <span className="team-panel__empty">Nenhum setor definido</span>
+                                ) : null}
+                              </>
+                            ) : (
                               <span className="team-panel__empty">
-                                {member.sectors
-                                  .map((sectorId) => sectorNameById[sectorId])
-                                  .filter(Boolean)
-                                  .join(', ')}
+                                {member.companyName || 'Acesso livre na empresa, sem setores'}
                               </span>
-                            ) : null}
-                            {sectors.length === 0 ? (
-                              <span className="team-panel__empty">Nenhum setor definido</span>
-                            ) : null}
+                            )}
                           </span>
                           <span className="team-panel__status">{formatMemberStatus(member.status)}</span>
                           {userRole === 'admin' ? (

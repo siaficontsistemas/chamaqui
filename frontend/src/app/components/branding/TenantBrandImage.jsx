@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { isBrandImageLoaded, preloadBrandImage } from '../../context/TenantBrandingContext'
+import {
+  isBrandImageLoaded,
+  markBrandImageAsLoaded,
+  preloadBrandImage,
+} from '../../context/TenantBrandingContext'
 
 function buildPlaceholderDataUri(label) {
   const normalizedLabel = String(label || 'Logo')
@@ -27,7 +31,15 @@ function buildPlaceholderDataUri(label) {
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`
 }
 
-function TenantBrandImage({ src, alt, className, label, placeholderClassName, wrapperClassName }) {
+function TenantBrandImage({
+  src,
+  alt,
+  className,
+  label,
+  placeholderClassName,
+  wrapperClassName,
+  loadingMode = 'auto',
+}) {
   const [isLoaded, setIsLoaded] = useState(() => isBrandImageLoaded(src))
 
   useEffect(() => {
@@ -66,7 +78,7 @@ function TenantBrandImage({ src, alt, className, label, placeholderClassName, wr
   }, [src])
 
   const placeholderSrc = useMemo(() => buildPlaceholderDataUri(label || alt), [alt, label])
-  const shouldLazyLoad = !isBrandImageLoaded(src)
+  const shouldLazyLoad = loadingMode !== 'eager' && !isBrandImageLoaded(src)
 
   return (
     <div className={wrapperClassName} style={{ position: 'relative', display: 'inline-flex' }}>
@@ -85,7 +97,10 @@ function TenantBrandImage({ src, alt, className, label, placeholderClassName, wr
           alt={alt}
           loading={shouldLazyLoad ? 'lazy' : 'eager'}
           decoding="async"
-          onLoad={() => setIsLoaded(true)}
+          onLoad={() => {
+            markBrandImageAsLoaded(src)
+            setIsLoaded(true)
+          }}
           style={
             isLoaded
               ? {}

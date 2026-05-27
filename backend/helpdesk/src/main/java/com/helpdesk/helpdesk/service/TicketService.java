@@ -44,6 +44,7 @@ import com.helpdesk.helpdesk.dto.ticket.TicketResponse;
 import com.helpdesk.helpdesk.dto.ticket.TicketSummaryResponse;
 import com.helpdesk.helpdesk.dto.ticket.TicketTargetAssigneeResponse;
 import com.helpdesk.helpdesk.dto.ticket.TicketTransferCandidateResponse;
+import com.helpdesk.helpdesk.dto.ticket.UpdateTicketTitleRequest;
 import com.helpdesk.helpdesk.repository.CompanyPartnershipRepository;
 import com.helpdesk.helpdesk.repository.SectorMemberRepository;
 import com.helpdesk.helpdesk.repository.SectorRepository;
@@ -229,11 +230,12 @@ public class TicketService {
 			throw new IllegalArgumentException("O setor informado não pertence a empresa selecionada.");
 		}
 		ensureAcceptedPartnership(requesterCompany, sector.getCreatedBy());
+		String initialDescription = normalizeMessage(request.description());
 
 		Ticket ticket = new Ticket();
 		ticket.setProtocol(nextProtocol());
-		ticket.setTitle(request.title().trim());
-		ticket.setDescription(request.description().trim());
+		ticket.setTitle(buildAutoTicketTitle(initialDescription));
+		ticket.setDescription(initialDescription);
 		ticket.setRequester(requester);
 		ticket.setAssignedTo(resolveAssignee(sector, request.assignedToUserId()));
 		ticket.setSector(sector);
@@ -273,11 +275,12 @@ public class TicketService {
 		if (sector.getCreatedBy().getCompanyType() != CompanyType.RESPONDER) {
 			throw new IllegalArgumentException("O chamado só pode ser enviado para empresas que respondem chamados.");
 		}
+		String initialDescription = resolveWhatsappInboundMessage(request.description(), incomingAttachments);
 
 		Ticket ticket = new Ticket();
 		ticket.setProtocol(nextProtocol());
-		ticket.setTitle(buildWhatsappTicketTitle(request.subject(), requester.getFullName()));
-		ticket.setDescription(resolveWhatsappInboundMessage(request.description(), incomingAttachments));
+		ticket.setTitle(buildAutoTicketTitle(initialDescription));
+		ticket.setDescription(initialDescription);
 		ticket.setRequester(requester);
 		ticket.setAssignedTo(resolveAssignee(sector, request.assignedToUserId()));
 		ticket.setSector(sector);
@@ -292,6 +295,18 @@ public class TicketService {
 		saveIncomingAttachments(savedTicket, initialMessage, requester, incomingAttachments);
 
 		return savedTicket;
+	}
+
+	@Transactional
+	public TicketResponse updateTitle(UUID ticketId, UpdateTicketTitleRequest request) {
+		User author = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(request.authorEmail()))
+			.orElseThrow(() -> new NotFoundException("Usuário responsável pela edição do título não encontrado."));
+		Ticket ticket = loadDetailedAccessibleTicket(ticketId, author.getEmail());
+
+		ensureTitleCanBeUpdated(ticket, author);
+		ticket.setTitle(normalizeTitle(request.title()));
+
+		return toResponse(ticketRepository.save(ticket));
 	}
 
 	@Transactional
@@ -472,6 +487,20 @@ public class TicketService {
 		}
 	}
 
+	private void ensureTitleCanBeUpdated(Ticket ticket, User author) {
+		if (hasRole(author, "admin")) {
+			return;
+		}
+
+		if (!hasRole(author, "employee")) {
+			throw new IllegalArgumentException("Apenas o administrador ou o funcionário responsável podem alterar o título do chamado.");
+		}
+
+		if (ticket.getAssignedTo() == null || !ticket.getAssignedTo().getId().equals(author.getId())) {
+			throw new IllegalArgumentException("Somente o administrador ou o funcionário atualmente responsável podem alterar o título do chamado.");
+		}
+	}
+
 	private boolean isTicketClosed(Ticket ticket) {
 		return ticket != null
 			&& ticket.getStatus() != null
@@ -570,6 +599,7 @@ public class TicketService {
 
 	private TicketResponse toResponse(Ticket ticket) {
 		DisplayStatus displayStatus = resolveDisplayStatus(ticket);
+		User requesterCompany = resolveRequesterCompanyForDisplay(ticket.getRequester());
 		return new TicketResponse(
 			ticket.getId(),
 			ticket.getProtocol(),
@@ -579,6 +609,7 @@ public class TicketService {
 			ticket.getRequester().getEmail(),
 			ticket.getRequester().getPhoneNumber(),
 			ticket.getRequester().getDocumentNumber(),
+			requesterCompany == null ? null : resolveCompanyName(requesterCompany),
 			ticket.getAssignedTo() == null ? null : ticket.getAssignedTo().getFullName(),
 			ticket.getAssignedTo() == null ? null : ticket.getAssignedTo().getEmail(),
 			ticket.getSector().getName(),
@@ -591,6 +622,34 @@ public class TicketService {
 			ticket.getClosedAt(),
 			ticket.getPendingTransferTo() == null ? null : ticket.getPendingTransferTo().getFullName()
 		);
+	}
+
+	private User resolveRequesterCompanyForDisplay(User requester) {
+		if (requester == null) {
+			return null;
+		}
+
+		if (hasRole(requester, "ADMIN")
+			&& requester.getCompanyName() != null
+			&& !requester.getCompanyName().isBlank()) {
+			return requester;
+		}
+
+		if (requester.getCompanyOwner() != null) {
+			return requester.getCompanyOwner();
+		}
+
+		return null;
+	}
+
+	private String resolveCompanyName(User companyOwner) {
+		if (companyOwner == null) {
+			return null;
+		}
+		if (companyOwner.getCompanyName() != null && !companyOwner.getCompanyName().isBlank()) {
+			return companyOwner.getCompanyName().trim();
+		}
+		return companyOwner.getFullName();
 	}
 
 	private DisplayStatus resolveDisplayStatus(Ticket ticket) {
@@ -978,6 +1037,12 @@ public class TicketService {
 			: attachments.size() + " arquivos enviados via WhatsApp.";
 	}
 
+	private String buildAutoTicketTitle(String firstMessage) {
+		String normalizedMessage = normalizeTitleSource(firstMessage);
+		String preview = normalizedMessage.length() <= 10 ? normalizedMessage : normalizedMessage.substring(0, 10);
+		return normalizeTitle(preview + "...");
+	}
+
 	private boolean hasRole(User user, String roleCode) {
 		return user.getRoles().stream()
 			.anyMatch(role -> roleCode.equalsIgnoreCase(role.getCode()));
@@ -1144,13 +1209,20 @@ public class TicketService {
 		return firstNonBlank(conversationRecipient, requesterRecipient);
 	}
 
-	private String buildWhatsappTicketTitle(String subject, String fullName) {
-		String normalizedSubject = subject == null ? "" : subject.trim();
-		String normalizedName = fullName == null || fullName.isBlank() ? "Cliente" : fullName.trim();
-		String title = normalizedSubject.isBlank()
-			? "WhatsApp - " + normalizedName
-			: "WhatsApp - " + normalizedSubject;
-		return title.length() <= 180 ? title : title.substring(0, 180);
+	private String normalizeTitle(String title) {
+		String normalizedTitle = normalizeTitleSource(title);
+		if (normalizedTitle.length() > 180) {
+			return normalizedTitle.substring(0, 180);
+		}
+		return normalizedTitle;
+	}
+
+	private String normalizeTitleSource(String value) {
+		String normalizedValue = value == null ? "" : value.replaceAll("\\s+", " ").trim();
+		if (normalizedValue.isBlank()) {
+			return "Chamado";
+		}
+		return normalizedValue;
 	}
 
 	private User resolveWhatsappCompanyOwner(Ticket ticket) {
@@ -1264,7 +1336,6 @@ public class TicketService {
 		UUID companyOwnerId,
 		UUID sectorId,
 		UUID assignedToUserId,
-		String subject,
 		String description,
 		List<IncomingAttachment> attachments
 	) {
