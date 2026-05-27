@@ -6,6 +6,17 @@ import Sidebar from '../../components/sidebar/Sidebar'
 import { PlusCircleIcon } from '../../dashboardIcons'
 import './TicketConversation.css'
 
+function PencilIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path
+        d="M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25zm2.92 2.33H5v-.92l9.06-9.06.92.92L5.92 19.58zM20.71 7.04a1.003 1.003 0 0 0 0-1.42l-2.34-2.33a1.003 1.003 0 0 0-1.42 0L15.12 5.1l3.75 3.75 1.84-1.81z"
+        fill="currentColor"
+      />
+    </svg>
+  )
+}
+
 function mergeUniqueFiles(currentFiles, nextFiles) {
   const existingKeys = new Set(
     currentFiles.map((file) => `${file.name}-${file.size}-${file.lastModified}`)
@@ -48,6 +59,7 @@ function TicketConversation({
   onCloseTicket,
   onLoadTransferCandidates,
   onRequestTicketTransfer,
+  onUpdateTicketTitle,
   ticket,
   userRole,
 }) {
@@ -61,11 +73,15 @@ function TicketConversation({
   const [selectedTransferRecipientId, setSelectedTransferRecipientId] = useState('')
   const [isLoadingTransferCandidates, setIsLoadingTransferCandidates] = useState(false)
   const [isSubmittingTransfer, setIsSubmittingTransfer] = useState(false)
+  const [titleDraft, setTitleDraft] = useState('')
+  const [isEditingTitle, setIsEditingTitle] = useState(false)
+  const [isSavingTitle, setIsSavingTitle] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [isTransferConfirmationOpen, setIsTransferConfirmationOpen] = useState(false)
   const [isConfirmingTransfer, setIsConfirmingTransfer] = useState(false)
   const [isCloseConfirmationOpen, setIsCloseConfirmationOpen] = useState(false)
   const fileInputRef = useRef(null)
+  const titleInputRef = useRef(null)
   const dateFormatter = useMemo(
     () =>
       new Intl.DateTimeFormat('pt-BR', {
@@ -143,11 +159,30 @@ function TicketConversation({
 
   const isTicketClosed = ticket?.statusCode === 'CLOSED' || Boolean(ticket?.closedAt)
 
+  const canEditTitle =
+    userRole === 'admin' ||
+    (userRole === 'employee' &&
+      ticket?.assignedToEmail?.toLowerCase() === currentUser?.email?.toLowerCase())
+
   const canTransferTicket =
     userRole === 'employee' &&
     !isTicketClosed &&
     ticket?.assignedToEmail?.toLowerCase() === currentUser?.email?.toLowerCase() &&
     !ticket?.pendingTransferToName
+
+  useEffect(() => {
+    setTitleDraft(ticket?.title || '')
+    setIsEditingTitle(false)
+  }, [ticket?.id, ticket?.title])
+
+  useEffect(() => {
+    if (!isEditingTitle) {
+      return
+    }
+
+    titleInputRef.current?.focus()
+    titleInputRef.current?.select()
+  }, [isEditingTitle])
 
   useEffect(() => {
     if (!ticket?.id || !canTransferTicket || !onLoadTransferCandidates) {
@@ -401,6 +436,57 @@ function TicketConversation({
     }
   }
 
+  async function handleUpdateCurrentTitle(event) {
+    event.preventDefault()
+
+    const nextTitle = titleDraft.trim()
+    const currentTitle = ticket?.title?.trim() || ''
+
+    if (
+      !ticket?.id ||
+      !currentUser?.email ||
+      !canEditTitle ||
+      !onUpdateTicketTitle ||
+      !nextTitle ||
+      nextTitle === currentTitle
+    ) {
+      return
+    }
+
+    setIsSavingTitle(true)
+    setErrorMessage('')
+
+    try {
+      const updatedTicket = await onUpdateTicketTitle(ticket.id, nextTitle)
+
+      if (updatedTicket?.title) {
+        setTitleDraft(updatedTicket.title)
+      }
+      setIsEditingTitle(false)
+    } catch (error) {
+      setErrorMessage(error.message)
+    } finally {
+      setIsSavingTitle(false)
+    }
+  }
+
+  function handleStartTitleEditing() {
+    if (!canEditTitle || isSavingTitle) {
+      return
+    }
+
+    setTitleDraft(ticket?.title || '')
+    setIsEditingTitle(true)
+  }
+
+  function handleTitleInputKeyDown(event) {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      setTitleDraft(ticket?.title || '')
+      setIsEditingTitle(false)
+    }
+  }
+
   function openCloseConfirmation() {
     if (isClosingTicket || !canCloseTicket) {
       return
@@ -510,9 +596,43 @@ function TicketConversation({
                   {isWhatsappTicket ? (
                     <span className="ticket-chat__channel-badge">Canal: WhatsApp</span>
                   ) : null}
-                  <h1 className="ticket-chat__title">
-                    #{ticket.protocol} - {ticket.title}
-                  </h1>
+                  {canEditTitle ? (
+                    <form className="ticket-chat__title-editor" onSubmit={handleUpdateCurrentTitle}>
+                      <span className="ticket-chat__title-prefix">#{ticket.protocol} - </span>
+                      {isEditingTitle ? (
+                        <input
+                          ref={titleInputRef}
+                          className="ticket-chat__title-input"
+                          id="ticket-title"
+                          type="text"
+                          value={titleDraft}
+                          onChange={(event) => setTitleDraft(event.target.value)}
+                          onKeyDown={handleTitleInputKeyDown}
+                          maxLength={180}
+                          disabled={isSavingTitle}
+                        />
+                      ) : (
+                        <h1 className="ticket-chat__title">{ticket.title}</h1>
+                      )}
+                      {!isEditingTitle ? (
+                        <button
+                          className="ticket-chat__title-edit-button"
+                          type="button"
+                          onClick={handleStartTitleEditing}
+                          disabled={isSavingTitle}
+                          aria-label="Editar assunto"
+                          title="Editar assunto"
+                        >
+                          <PencilIcon />
+                        </button>
+                      ) : null}
+                    </form>
+                  ) : (
+                    <div className="ticket-chat__title-display">
+                      <span className="ticket-chat__title-prefix">#{ticket.protocol} - </span>
+                      <h1 className="ticket-chat__title">{ticket.title}</h1>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -676,6 +796,12 @@ function TicketConversation({
                     <dt>Solicitante</dt>
                     <dd>{ticket.requesterName || 'Não informado'}</dd>
                   </div>
+                  {!isWhatsappTicket && ticket.requesterCompanyName ? (
+                    <div>
+                      <dt>Empresa do solicitante</dt>
+                      <dd>{ticket.requesterCompanyName}</dd>
+                    </div>
+                  ) : null}
                   <div>
                     <dt>E-mail</dt>
                     <dd>{ticket.requesterEmail || 'Não informado'}</dd>

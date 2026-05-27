@@ -96,7 +96,7 @@ function getTeamMembers(userRole, teamMembers = []) {
 }
 
 function isTeamRole(userRole) {
-  return userRole === 'admin' || userRole === 'employee'
+  return userRole === 'admin' || userRole === 'employee' || userRole === 'user'
 }
 
 function createSectorId(sectorName) {

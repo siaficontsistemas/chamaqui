@@ -57,6 +57,7 @@ import {
   requestTicketTransfer,
   searchCompanyPartnershipTargets,
   unlinkCompanyPartnership,
+  updateTicketTitle as updateTicketTitleRequest,
   updateProfile as updateProfileRequest,
   uploadCompanyLogo as uploadCompanyLogoRequest,
   updateTeamMemberSectors,
@@ -119,6 +120,13 @@ function normalizeSector(sector) {
     companyDocument: sector.companyDocument || '',
     createdByEmail: sector.createdByEmail || '',
     memberCount: sector.memberCount ?? 0,
+    assignees: Array.isArray(sector.assignees)
+      ? sector.assignees.map((assignee) => ({
+          id: assignee.id,
+          fullName: assignee.fullName || 'Funcionário não informado',
+          email: assignee.email || '',
+        }))
+      : [],
   }
 }
 
@@ -140,6 +148,7 @@ function normalizeTeamMember(member) {
     name: member.fullName,
     email: member.email,
     documentNumber: member.documentNumber || '',
+    companyName: member.companyName || '',
     role: member.role,
     status: member.status,
     sectors: Array.isArray(member.sectorIds) ? Array.from(new Set(member.sectorIds)) : [],
@@ -449,6 +458,7 @@ function TicketConversationRoute({
   onLoadTransferCandidates,
   onNavigatePage,
   onRequestTicketTransfer,
+  onUpdateTicketTitle,
   selectedTicket,
   setSelectedTicket,
   userRole,
@@ -537,6 +547,7 @@ function TicketConversationRoute({
       onLoadTransferCandidates={onLoadTransferCandidates}
       onNavigatePage={onNavigatePage}
       onRequestTicketTransfer={onRequestTicketTransfer}
+      onUpdateTicketTitle={onUpdateTicketTitle}
       ticket={ticket}
       userRole={userRole}
     />
@@ -589,25 +600,37 @@ function App() {
   const currentMemberId =
     teamMembers.find((member) => member.email?.toLowerCase() === currentUserEmail.toLowerCase())?.id ?? null
   const effectiveUserRole = currentUserRole
+  const currentCompanyUsesSectors = currentUser?.companyType === 'RESPONDER'
   const hasPendingTeamInvites = receivedInvites.some((invite) => invite.status === 'PENDING')
   const canAccessTeamPage =
     currentUserRole === 'admin' || currentMemberId !== null || hasPendingTeamInvites
-  const canAccessCreateSector = currentUserRole === 'admin' && currentUser?.companyType === 'RESPONDER'
+  const canAccessCreateSector = currentUserRole === 'admin' && currentCompanyUsesSectors
   const navigationGroups = useMemo(
     () =>
       buildNavigationGroups({
         canAccessTeamPage,
         canCreateSector: canAccessCreateSector,
         userRole: effectiveUserRole,
-        sectors: createdSectors,
+        sectors: currentCompanyUsesSectors ? createdSectors : [],
         teamMembers,
         currentMemberId,
       }),
-    [canAccessCreateSector, canAccessTeamPage, createdSectors, currentMemberId, effectiveUserRole, teamMembers]
+    [
+      canAccessCreateSector,
+      canAccessTeamPage,
+      createdSectors,
+      currentCompanyUsesSectors,
+      currentMemberId,
+      effectiveUserRole,
+      teamMembers,
+    ]
   )
   const visibleSectors = useMemo(
-    () => getVisibleSectors(effectiveUserRole, createdSectors, teamMembers, currentMemberId),
-    [createdSectors, currentMemberId, effectiveUserRole, teamMembers]
+    () =>
+      currentCompanyUsesSectors
+        ? getVisibleSectors(effectiveUserRole, createdSectors, teamMembers, currentMemberId)
+        : [],
+    [createdSectors, currentCompanyUsesSectors, currentMemberId, effectiveUserRole, teamMembers]
   )
   const sectorPage = visibleSectors.find((sector) => sector.id === currentRouteSection)
   const notificationItems = useMemo(() => {
@@ -897,7 +920,6 @@ function App() {
   }
 
   async function handleCreateTicket({
-    title,
     description,
     priorityCode,
     companyOwnerId,
@@ -906,12 +928,10 @@ function App() {
     copyEmail,
     files = [],
   }) {
-    const trimmedTitle = title.trim()
     const trimmedDescription = description.trim()
     const trimmedCopyEmail = copyEmail?.trim() || ''
 
     if (
-      !trimmedTitle ||
       !trimmedDescription ||
       !priorityCode ||
       !companyOwnerId ||
@@ -922,7 +942,6 @@ function App() {
     }
 
     const createdTicket = await createTicket({
-      title: trimmedTitle,
       description: trimmedDescription,
       files,
       priorityCode,
@@ -937,6 +956,24 @@ function App() {
     setSelectedTicket(null)
     navigate(SECTION_ROUTE_PATHS.all)
     return createdTicket
+  }
+
+  async function handleUpdateTicketTitle(ticketId, title) {
+    const trimmedTitle = title?.trim() || ''
+
+    if (!ticketId || !trimmedTitle || !currentUserEmail) {
+      return null
+    }
+
+    const updatedTicket = await updateTicketTitleRequest(ticketId, {
+      title: trimmedTitle,
+      authorEmail: currentUserEmail,
+    })
+
+    setSelectedTicket(updatedTicket)
+    await refreshDashboardData(currentUserEmail)
+
+    return updatedTicket
   }
 
   async function handleSearchPartnershipCompanies(query) {
@@ -1587,6 +1624,7 @@ function App() {
                   onLoadTransferCandidates={handleLoadTransferCandidates}
                   onNavigatePage={handleNavigatePage}
                   onRequestTicketTransfer={handleRequestTicketTransfer}
+                  onUpdateTicketTitle={handleUpdateTicketTitle}
                   selectedTicket={selectedTicket}
                   setSelectedTicket={setSelectedTicket}
                   userRole={effectiveUserRole}

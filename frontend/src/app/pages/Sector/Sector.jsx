@@ -105,7 +105,7 @@ function Sector({
         />
 
         <section className="home-content">
-          <div className="home-content__card">
+          <div className="home-content__card home-content__card--team">
             <div className="home-content__header">
               <div className="home-content__heading">
                 <span className="home-content__eyebrow">Setor da equipe</span>

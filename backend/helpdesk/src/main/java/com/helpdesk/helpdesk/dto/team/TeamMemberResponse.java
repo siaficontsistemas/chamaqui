@@ -8,6 +8,7 @@ public record TeamMemberResponse(
 	String fullName,
 	String email,
 	String documentNumber,
+	String companyName,
 	String role,
 	String status,
 	List<UUID> sectorIds

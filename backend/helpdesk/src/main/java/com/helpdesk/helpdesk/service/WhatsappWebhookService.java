@@ -222,8 +222,8 @@ public class WhatsappWebhookService {
 			case ASK_NAME -> handleNameStep(companyOwner, conversation, replyTarget, normalizedBody);
 			case ASK_EMAIL -> handleEmailStep(companyOwner, conversation, replyTarget, normalizedBody);
 			case ASK_DOCUMENT -> handleDocumentStep(companyOwner, conversation, replyTarget);
-			case ASK_SUBJECT -> handleSubjectStep(companyOwner, conversation, replyTarget, normalizedBody);
-			case ASK_DESCRIPTION -> handleDescriptionStep(companyOwner, conversation, replyTarget, normalizedBody, incomingAttachments);
+			case ASK_SUBJECT, ASK_DESCRIPTION ->
+				handleDescriptionStep(companyOwner, conversation, replyTarget, normalizedBody, incomingAttachments);
 			case ACTIVE_TICKET -> {
 				startNewTicketFlow(companyOwner, conversation, replyTarget, "Vamos abrir um novo chamado.");
 			}
@@ -694,7 +694,7 @@ public class WhatsappWebhookService {
 
 		conversation.setPendingAssignedUserId(selection.assignedToUserId());
 		if (hasReusableRequesterData(conversation)) {
-			conversation.setCurrentStep(WhatsappConversationStep.ASK_SUBJECT);
+			conversation.setCurrentStep(WhatsappConversationStep.ASK_DESCRIPTION);
 			whatsappConversationRepository.save(conversation);
 			replyWithMessage(
 				companyOwner,
@@ -705,8 +705,8 @@ public class WhatsappWebhookService {
 				Nome: *%s*
 				Email: *%s*
 
-				Qual e o *assunto* do seu chamado?
-			Se desistir, envie *cancelar*.
+				Agora envie a *primeira mensagem* do seu chamado.
+				Se desistir, envie *cancelar*.
 				""".formatted(
 					describeAssigneeSelection(selection.assignedToUserId(), assignees),
 					conversation.getPendingName(),
@@ -757,35 +757,22 @@ public class WhatsappWebhookService {
 
 		conversation.setPendingEmail(normalizedEmail);
 		conversation.setPendingDocument(null);
-		conversation.setCurrentStep(WhatsappConversationStep.ASK_SUBJECT);
-		whatsappConversationRepository.save(conversation);
-		replyWithMessage(companyOwner, replyTarget, "Perfeito. Qual é o *assunto* do seu chamado? Se desistir, envie *cancelar*.");
-	}
-
-	private void handleDocumentStep(User companyOwner, WhatsappConversation conversation, String replyTarget) {
-		conversation.setCurrentStep(WhatsappConversationStep.ASK_SUBJECT);
-		whatsappConversationRepository.save(conversation);
-		replyWithMessage(
-			companyOwner,
-			replyTarget,
-			"Não precisamos mais do CPF. Agora me informe o *assunto* do seu chamado. Se desistir, envie *cancelar*."
-		);
-	}
-
-	private void handleSubjectStep(User companyOwner, WhatsappConversation conversation, String replyTarget, String body) {
-		String normalizedSubject = normalizeSubject(body);
-		if (normalizedSubject.isBlank()) {
-			replyWithMessage(companyOwner, replyTarget, "Informe o *assunto* do chamado para continuarmos.");
-			return;
-		}
-
-		conversation.setPendingSubject(normalizedSubject);
 		conversation.setCurrentStep(WhatsappConversationStep.ASK_DESCRIPTION);
 		whatsappConversationRepository.save(conversation);
 		replyWithMessage(
 			companyOwner,
 			replyTarget,
-			"Agora envie a *primeira mensagem* com os detalhes do atendimento. Se desistir, envie *cancelar*."
+			"Perfeito. Agora envie a *primeira mensagem* do seu chamado. Se desistir, envie *cancelar*."
+		);
+	}
+
+	private void handleDocumentStep(User companyOwner, WhatsappConversation conversation, String replyTarget) {
+		conversation.setCurrentStep(WhatsappConversationStep.ASK_DESCRIPTION);
+		whatsappConversationRepository.save(conversation);
+		replyWithMessage(
+			companyOwner,
+			replyTarget,
+			"Não precisamos mais do CPF. Agora envie a *primeira mensagem* do seu chamado. Se desistir, envie *cancelar*."
 		);
 	}
 
@@ -827,7 +814,6 @@ public class WhatsappWebhookService {
 
 		String pendingName = normalizePersonName(conversation.getPendingName());
 		String pendingEmail = normalizeContactEmail(conversation.getPendingEmail());
-		String pendingSubject = normalizeSubject(conversation.getPendingSubject());
 		if (!isValidPersonName(pendingName)) {
 			conversation.setPendingName("");
 			conversation.setCurrentStep(WhatsappConversationStep.ASK_NAME);
@@ -835,7 +821,7 @@ public class WhatsappWebhookService {
 			replyWithMessage(companyOwner, replyTarget, "Não consegui validar seu nome. Informe novamente seu *nome completo*.");
 			return;
 		}
-		if (pendingEmail.isBlank() || pendingSubject.isBlank()) {
+		if (pendingEmail.isBlank()) {
 			resetConversation(conversation);
 			whatsappConversationRepository.save(conversation);
 			replyWithMessage(
@@ -863,7 +849,6 @@ public class WhatsappWebhookService {
 					companyOwner.getId(),
 					conversation.getSector().getId(),
 					conversation.getPendingAssignedUserId(),
-					pendingSubject,
 					normalizedDescription,
 					attachments == null ? List.of() : attachments
 				)
@@ -892,7 +877,6 @@ public class WhatsappWebhookService {
 				Protocolo: %s
 				Setor: %s
 				Destinatário: %s
-				Assunto: %s
 
 				Pode continuar enviando mensagens por aqui que elas serão adicionadas ao chamado.
 				Se quiser abrir mais um chamado, digite *abrir novo chamado*.
@@ -901,7 +885,6 @@ public class WhatsappWebhookService {
 					createdTicket.getProtocol(),
 					conversation.getSector().getName(),
 					createdTicket.getAssignedTo() == null ? "Não informado" : createdTicket.getAssignedTo().getFullName(),
-					pendingSubject,
 					multipleOpenTicketsGuidance.isBlank() ? "" : "\n" + multipleOpenTicketsGuidance
 				).trim()
 			);
@@ -1029,7 +1012,7 @@ public class WhatsappWebhookService {
 
 		if (prefix == null || prefix.isBlank()) {
 			builder.append("Olá. Para abrir seu chamado, escolha o setor desejado:");
-			builder.append("\nDepois vou pedir nome, email, assunto e sua primeira mensagem.");
+			builder.append("\nDepois vou pedir nome, email e sua primeira mensagem.");
 			builder.append("\nSe precisar corrigir algum dado informado durante essa etapa, envie *reiniciar*.");
 			builder.append("\nSe desistir de abrir o chamado, envie *cancelar*.");
 		} else {
@@ -1628,14 +1611,6 @@ public class WhatsappWebhookService {
 			return "";
 		}
 		return normalized;
-	}
-
-	private String normalizeSubject(String value) {
-		String normalized = value == null ? "" : value.trim().replaceAll("\\s+", " ");
-		if (normalized.isBlank()) {
-			return "";
-		}
-		return normalized.length() <= 180 ? normalized : normalized.substring(0, 180);
 	}
 
 	private boolean isHelpdeskPlaceholderEmail(String value) {

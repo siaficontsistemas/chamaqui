@@ -58,6 +58,18 @@ public class ScopedUserLookupService {
 	}
 
 	@Transactional(readOnly = true)
+	public Optional<User> findUniqueByEmailForRegistrationScope(String email) {
+		List<User> matches = findUsersByEmailForRegistrationScope(email);
+		if (matches.isEmpty()) {
+			return Optional.empty();
+		}
+		if (matches.size() > 1) {
+			throw new IllegalStateException("Existe mais de um usuário com esse email no escopo atual de cadastro.");
+		}
+		return Optional.of(matches.getFirst());
+	}
+
+	@Transactional(readOnly = true)
 	public List<User> findStandaloneUsersByEmail(String email) {
 		String normalizedEmail = normalizeEmail(email);
 		if (normalizedEmail == null) {
@@ -77,6 +89,39 @@ public class ScopedUserLookupService {
 		}
 
 		return userRepository.findAllByEmailIgnoreCaseOrderByCreatedAtAsc(normalizedEmail);
+	}
+
+	@Transactional(readOnly = true)
+	public List<User> findUsersByEmailForRegistrationScope(String email) {
+		if (tenantAccessService.hasCurrentTenant()) {
+			return findAllByEmailInCurrentTenant(email);
+		}
+
+		return findStandaloneUsersByEmail(email);
+	}
+
+	@Transactional(readOnly = true)
+	public List<User> findAllByDocumentInCurrentTenant(String documentNumber) {
+		String normalizedDocumentNumber = normalizeDocumentNumber(documentNumber);
+		if (normalizedDocumentNumber == null) {
+			return List.of();
+		}
+
+		return userRepository.findAllByDocumentNumberOrderByCreatedAtAsc(normalizedDocumentNumber).stream()
+			.filter(tenantAccessService::belongsToCurrentTenant)
+			.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public List<User> findStandaloneUsersByDocument(String documentNumber) {
+		String normalizedDocumentNumber = normalizeDocumentNumber(documentNumber);
+		if (normalizedDocumentNumber == null) {
+			return List.of();
+		}
+
+		return userRepository.findAllByDocumentNumberOrderByCreatedAtAsc(normalizedDocumentNumber).stream()
+			.filter(user -> tenantAccessService.findPrimaryCompanyForUser(user).isEmpty())
+			.toList();
 	}
 
 	@Transactional(readOnly = true)
@@ -119,5 +164,14 @@ public class ScopedUserLookupService {
 		}
 
 		return email.trim().toLowerCase(Locale.ROOT);
+	}
+
+	private String normalizeDocumentNumber(String documentNumber) {
+		if (documentNumber == null || documentNumber.isBlank()) {
+			return null;
+		}
+
+		String normalizedDocumentNumber = documentNumber.trim().replaceAll("\\D", "");
+		return normalizedDocumentNumber.isBlank() ? null : normalizedDocumentNumber;
 	}
 }

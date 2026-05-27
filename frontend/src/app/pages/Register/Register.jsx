@@ -65,6 +65,7 @@ function Register({ onNavigateHome, onNavigateLogin }) {
   const [isTermsModalOpen, setIsTermsModalOpen] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
+  const [pendingApprovalRegistration, setPendingApprovalRegistration] = useState(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const participantCompanyType = useMemo(
     () => getParticipantCompanyType(selectedParticipation),
@@ -81,6 +82,12 @@ function Register({ onNavigateHome, onNavigateLogin }) {
     () => getTenantParticipationOptions(tenantBranding),
     [tenantBranding]
   )
+  const isResponderTenant = String(tenantBranding?.companyType || '').toUpperCase() === 'RESPONDER'
+  const requiresTenantApproval =
+    isTenantExperience &&
+    selectedRole === 'user' &&
+    isResponderTenant &&
+    (selectedParticipation === 'requester' || selectedParticipation === 'responder')
   const visibleFormFields = [
     ...formFields,
     ...(selectedRole === 'admin' ? adminOnlyFields : []),
@@ -197,6 +204,7 @@ function Register({ onNavigateHome, onNavigateLogin }) {
     setSelectedParticipation('')
     setErrorMessage('')
     setSuccessMessage('')
+    setPendingApprovalRegistration(null)
     setAvailableCompanies([])
     setIsLoadingCompanies(false)
     setFormValues((currentValues) => ({
@@ -216,6 +224,7 @@ function Register({ onNavigateHome, onNavigateLogin }) {
     setSelectedParticipation(participation)
     setErrorMessage('')
     setSuccessMessage('')
+    setPendingApprovalRegistration(null)
     setFormValues((currentValues) => ({
       ...currentValues,
       companyOwnerId:
@@ -334,11 +343,18 @@ function Register({ onNavigateHome, onNavigateLogin }) {
       })
 
       if (selectedRole === 'user' && user?.status === 'PENDING') {
-        setSelectedRole('')
-        setSelectedParticipation('')
-        setAvailableCompanies([])
+        setPendingApprovalRegistration({
+          companyName: effectiveSelectedCompanyName,
+          participationLabel: selectedParticipationLabel || 'Criar chamados',
+        })
         setAcceptedTerms(false)
-        setFormValues(INITIAL_FORM_VALUES)
+        setFormValues((currentValues) => ({
+          ...INITIAL_FORM_VALUES,
+          companyOwnerId:
+            isTenantExperience && selectedParticipation === 'requester'
+              ? currentValues.companyOwnerId
+              : INITIAL_FORM_VALUES.companyOwnerId,
+        }))
         setSuccessMessage(
           `Cadastro concluído. Sua solicitação foi enviada para a empresa ${effectiveSelectedCompanyName} e precisa ser aprovada por um administrador antes do acesso.`
         )
@@ -400,9 +416,10 @@ function Register({ onNavigateHome, onNavigateLogin }) {
               {inviteContext
                 ? `Você está entrando na empresa ${inviteContext.companyName}. Confira os dados e conclua o cadastro.`
                 : isTenantExperience
-                  ? String(tenantBranding?.companyType || '').toUpperCase() === 'RESPONDER' &&
-                      selectedParticipation === 'requester'
-                    ? `Seu cadastro será iniciado pela empresa provedora ${tenantBranding.companyName}, com escolha posterior da empresa cliente.`
+                  ? requiresTenantApproval
+                    ? selectedParticipation === 'requester'
+                      ? `Seu cadastro será enviado para aprovação na empresa cliente selecionada dentro da provedora ${tenantBranding.companyName}.`
+                      : `Seu cadastro será enviado para aprovação da empresa ${tenantBranding.companyName}.`
                     : `Seu cadastro será vinculado à empresa ${tenantBranding.companyName}.`
                 : selectedRole
                   ? `Preencha os dados para concluir seu cadastro como ${selectedRoleLabel.toLowerCase()}.`
@@ -455,11 +472,11 @@ function Register({ onNavigateHome, onNavigateLogin }) {
                 ) : isTenantExperience ? (
                   <div className="signup-form__flow-block">
                     <span className="signup-form__role-label">Empresa identificada pelo subdomínio</span>
-                    {String(tenantBranding?.companyType || '').toUpperCase() === 'RESPONDER' &&
-                    selectedParticipation === 'requester' ? (
+                    {requiresTenantApproval ? (
                       <p className="signup-form__role-text">
-                        Você está se cadastrando no portal da empresa provedora {tenantBranding.companyName}.
-                        {' '}Escolha abaixo qual empresa cliente deve aprovar seu acesso para criar chamados.
+                        {selectedParticipation === 'requester'
+                          ? `Você está se cadastrando no portal da empresa provedora ${tenantBranding.companyName}. Escolha abaixo a empresa cliente que deverá aprovar esse acesso para criar chamados.`
+                          : `Você está se cadastrando para responder chamados na empresa ${tenantBranding.companyName}. Esse acesso ficará aguardando aprovação de um administrador.`}
                       </p>
                     ) : (
                       <p className="signup-form__role-text">
@@ -548,7 +565,27 @@ function Register({ onNavigateHome, onNavigateLogin }) {
                   </div>
                 ) : null}
 
-                {visibleFormFields.map((field) => (
+                {pendingApprovalRegistration ? (
+                  <div className="signup-form__flow-block">
+                    <span className="signup-form__role-label">Cadastro enviado para aprovação</span>
+                    <p className="signup-form__role-text">
+                      O acesso para {pendingApprovalRegistration.participationLabel.toLowerCase()} foi solicitado
+                      para a empresa {pendingApprovalRegistration.companyName}. Assim que um administrador aprovar,
+                      essa pessoa poderá entrar com o email e a senha cadastrados.
+                    </p>
+                    <button
+                      className="signup-form__change-role"
+                      type="button"
+                      onClick={() => {
+                        setPendingApprovalRegistration(null)
+                        setSuccessMessage('')
+                        setErrorMessage('')
+                      }}
+                    >
+                      Fazer outro cadastro
+                    </button>
+                  </div>
+                ) : visibleFormFields.map((field) => (
                   <label className="form-field" htmlFor={field.id} key={field.id}>
                     <span className="form-field__icon" aria-hidden="true">
                       {field.icon()}
@@ -588,7 +625,8 @@ function Register({ onNavigateHome, onNavigateLogin }) {
                   </label>
                 ))}
 
-                {selectedRole === 'user' &&
+                {!pendingApprovalRegistration &&
+                selectedRole === 'user' &&
                 selectedParticipation &&
                 !inviteContext &&
                 (
@@ -634,7 +672,7 @@ function Register({ onNavigateHome, onNavigateLogin }) {
                     </label>
                     {isTenantExperience ? (
                       <p className="signup-form__role-text">
-                        Escolha qual empresa cliente receberá sua solicitação de acesso para criar chamados.
+                        Escolha qual empresa cliente deverá aprovar esse acesso para criar chamados.
                       </p>
                     ) : (
                       <p className="signup-form__role-text">
@@ -650,6 +688,7 @@ function Register({ onNavigateHome, onNavigateLogin }) {
                   {errorMessage ? <p className="signup-form__feedback">{errorMessage}</p> : null}
                 </div>
 
+                {!pendingApprovalRegistration ? (
                 <label className="terms-check" htmlFor="terms">
                   <input
                     id="terms"
@@ -672,7 +711,9 @@ function Register({ onNavigateHome, onNavigateLogin }) {
                     </button>
                   </span>
                 </label>
+                ) : null}
 
+                {!pendingApprovalRegistration ? (
                 <button
                   className="signup-form__submit"
                   type="submit"
@@ -680,6 +721,7 @@ function Register({ onNavigateHome, onNavigateLogin }) {
                 >
                   {isSubmitting ? 'Cadastrando...' : 'Cadastrar'}
                 </button>
+                ) : null}
               </>
             ) : isLoadingInvite ? (
               <div className="signup-form__role-step">

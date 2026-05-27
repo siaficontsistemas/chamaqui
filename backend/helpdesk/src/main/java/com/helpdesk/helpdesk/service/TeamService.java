@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.helpdesk.helpdesk.common.NotFoundException;
+import com.helpdesk.helpdesk.domain.CompanyType;
 import com.helpdesk.helpdesk.domain.InviteStatus;
 import com.helpdesk.helpdesk.domain.Role;
 import com.helpdesk.helpdesk.domain.Sector;
@@ -88,7 +89,8 @@ public class TeamService {
 		User viewer = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizedEmail)
 			.orElseThrow(() -> new NotFoundException("Usuário responsável pela consulta não encontrado."));
 		tenantAccessService.ensureUserBelongsToCurrentTenant(viewer, "Esse usuário não pertence ao tenant atual.");
-		List<SectorMember> sectorMembers = resolveVisibleSectorMembers(viewer);
+		boolean viewerCompanyUsesSectors = companyUsesSectors(viewer);
+		List<SectorMember> sectorMembers = viewerCompanyUsesSectors ? resolveVisibleSectorMembers(viewer) : List.of();
 		Map<UUID, List<UUID>> sectorsByUserId = sectorMembers.stream()
 			.collect(Collectors.groupingBy(
 				member -> member.getUser().getId(),
@@ -100,8 +102,8 @@ public class TeamService {
 					List::copyOf
 				)
 			));
-		Map<UUID, User> teamUsersById = loadVisibleTeamUsers(viewer, sectorMembers).stream()
-			.filter(user -> hasRole(user, "EMPLOYEE"))
+		Map<UUID, User> teamUsersById = loadVisibleTeamUsers(viewer, sectorMembers, viewerCompanyUsesSectors).stream()
+			.filter(user -> isManagedTeamParticipant(user, viewerCompanyUsesSectors))
 			.collect(Collectors.toMap(User::getId, Function.identity(), (firstUser, ignoredUser) -> firstUser));
 
 		return teamUsersById.values().stream()
@@ -111,6 +113,7 @@ public class TeamService {
 				user.getFullName(),
 				user.getEmail(),
 				user.getDocumentNumber(),
+				resolveTeamCompanyName(viewer, user, viewerCompanyUsesSectors),
 				primaryRole(user),
 				user.getStatus().name(),
 				sectorsByUserId.getOrDefault(user.getId(), List.of())
@@ -136,7 +139,7 @@ public class TeamService {
 		return sectorMemberRepository.findBySectorIdInOrderByAssignedAtAsc(visibleSectorIds);
 	}
 
-	private List<User> loadVisibleTeamUsers(User viewer, List<SectorMember> sectorMembers) {
+	private List<User> loadVisibleTeamUsers(User viewer, List<SectorMember> sectorMembers, boolean currentTenantUsesSectors) {
 		if (hasRole(viewer, "ADMIN")) {
 			Map<UUID, User> usersById = companyMembershipRepository.findByCompanyOwnerIdOrderByJoinedAtAsc(viewer.getId())
 				.stream()
@@ -153,6 +156,10 @@ public class TeamService {
 			}
 
 			return List.copyOf(usersById.values());
+		}
+
+		if (!currentTenantUsesSectors) {
+			return List.of(viewer);
 		}
 
 		return sectorMembers.stream()
@@ -195,6 +202,7 @@ public class TeamService {
 		String invitedByEmail = normalizeEmail(request.invitedByEmail());
 		User invitedBy = scopedUserLookupService.findUniqueByEmailInCurrentTenant(invitedByEmail)
 			.orElseThrow(() -> new NotFoundException("Usuário responsável pelo convite não encontrado."));
+		ensureCompanyUsesSectors(invitedBy, "Empresas que criam chamados não trabalham com setores para funcionários.");
 		ensureAdmin(invitedBy, "Somente administradores podem convidar funcionários para a equipe.");
 		User invitedUser = findUserByDocumentNumber(
 			request.documentNumber(),
@@ -304,6 +312,7 @@ public class TeamService {
 			.orElseThrow(() -> new NotFoundException("Funcionário não encontrado."));
 		User assignedBy = scopedUserLookupService.findUniqueByEmailInCurrentTenant(request.assignedByEmail().trim())
 			.orElseThrow(() -> new NotFoundException("Usuário responsável pela atribuição não encontrado."));
+		ensureCompanyUsesSectors(assignedBy, "Empresas que criam chamados não possuem setores para distribuir funcionários.");
 		ensureAdmin(assignedBy, "Somente administradores podem alterar os setores dos funcionários.");
 		ensureManagedEmployee(assignedBy, member, "Esse funcionário não pertence à empresa administrada por você.");
 		if (!hasRole(member, "EMPLOYEE")) {
@@ -360,9 +369,13 @@ public class TeamService {
 			.orElseThrow(() -> new NotFoundException("Usuário responsável pela remoção não encontrado."));
 		ensureAdmin(removedBy, "Somente administradores podem remover funcionários da empresa.");
 		ensureManagedEmployee(removedBy, member, "Esse funcionário não pertence à empresa administrada por você.");
+		boolean companyUsesSectors = companyUsesSectors(removedBy);
 
-		if (!hasRole(member, "EMPLOYEE")) {
+		if (companyUsesSectors && !hasRole(member, "EMPLOYEE")) {
 			throw new IllegalArgumentException("Somente funcionários podem ser removidos da empresa.");
+		}
+		if (!companyUsesSectors && hasRole(member, "ADMIN")) {
+			throw new IllegalArgumentException("Administradores não podem ser removidos por essa ação.");
 		}
 		if (member.getId().equals(removedBy.getId())) {
 			throw new IllegalArgumentException("Você não pode remover a si mesmo da empresa.");
@@ -391,6 +404,7 @@ public class TeamService {
 	public void deleteSector(UUID sectorId, String email) {
 		User deletedBy = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(email))
 			.orElseThrow(() -> new NotFoundException("Usuário responsável pela exclusão não encontrado."));
+		ensureCompanyUsesSectors(deletedBy, "Empresas que criam chamados não possuem setores para excluir.");
 		ensureAdmin(deletedBy, "Somente administradores podem excluir setores.");
 
 		Sector sector = sectorRepository.findById(sectorId)
@@ -568,6 +582,75 @@ public class TeamService {
 		if (!hasRole(user, "ADMIN")) {
 			throw new IllegalArgumentException(message);
 		}
+	}
+
+	private void ensureCompanyUsesSectors(User user, String message) {
+		if (!companyUsesSectors(user)) {
+			throw new IllegalArgumentException(message);
+		}
+	}
+
+	private boolean companyUsesSectors(User user) {
+		User companyOwner = resolveManagedCompanyOwner(user);
+		return companyOwner != null && companyOwner.getCompanyType() == CompanyType.RESPONDER;
+	}
+
+	private User resolveManagedCompanyOwner(User user) {
+		if (user == null) {
+			return null;
+		}
+		if (user.getCompanyType() != null) {
+			return user;
+		}
+		if (user.getCompanyOwner() != null) {
+			return user.getCompanyOwner();
+		}
+
+		return companyMembershipRepository.findByUserIdOrderByJoinedAtAsc(user.getId()).stream()
+			.map(com.helpdesk.helpdesk.domain.CompanyMembership::getCompanyOwner)
+			.filter(companyOwner -> companyOwner != null)
+			.findFirst()
+			.orElse(null);
+	}
+
+	private boolean isManagedTeamParticipant(User user, boolean currentTenantUsesSectors) {
+		if (hasRole(user, "ADMIN")) {
+			return false;
+		}
+
+		return currentTenantUsesSectors
+			? hasRole(user, "EMPLOYEE")
+			: true;
+	}
+
+	private String resolveTeamCompanyName(User viewer, User user, boolean viewerCompanyUsesSectors) {
+		if (!viewerCompanyUsesSectors && !hasRole(viewer, "ADMIN")) {
+			String joinedCompanyNames = companyMembershipRepository.findByUserIdOrderByJoinedAtAsc(user.getId()).stream()
+				.map(com.helpdesk.helpdesk.domain.CompanyMembership::getCompanyOwner)
+				.filter(companyOwner -> companyOwner != null)
+				.filter(companyOwner -> companyOwner.getCompanyType() == CompanyType.REQUESTER)
+				.filter(tenantAccessService::belongsToCurrentTenant)
+				.map(this::resolveCompanyName)
+				.distinct()
+				.collect(Collectors.joining(", "));
+
+			if (!joinedCompanyNames.isBlank()) {
+				return joinedCompanyNames;
+			}
+		}
+
+		User companyOwner = resolveManagedCompanyOwner(user);
+		return companyOwner == null ? "Empresa não informada" : resolveCompanyName(companyOwner);
+	}
+
+	private String resolveCompanyName(User companyOwner) {
+		if (companyOwner == null) {
+			return "Empresa não informada";
+		}
+		if (companyOwner.getCompanyName() != null && !companyOwner.getCompanyName().isBlank()) {
+			return companyOwner.getCompanyName().trim();
+		}
+		return companyOwner.getFullName();
 	}
 
 	private void ensureManagedEmployee(User admin, User member, String message) {
