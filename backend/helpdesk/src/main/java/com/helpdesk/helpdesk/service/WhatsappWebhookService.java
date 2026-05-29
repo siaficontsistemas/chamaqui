@@ -83,11 +83,11 @@ public class WhatsappWebhookService {
 		JsonNode payloadJson = parsePayload(payload);
 		String event = firstNonBlank(extractText(payloadJson, "event"), extractDeepText(payloadJson, "event"));
 		String sessionName = resolveSessionName(payloadJson);
-		String transportId = resolveIncomingTransportId(payloadJson);
-		String phone = resolveIncomingPhone(payloadJson, transportId);
+		boolean fromMe = resolveFromMe(payloadJson);
+		String transportId = resolveIncomingTransportId(payloadJson, fromMe);
+		String phone = resolveIncomingPhone(payloadJson, transportId, fromMe);
 		String body = resolveIncomingBody(payloadJson);
 		List<TicketService.IncomingAttachment> attachments = resolveIncomingAttachments(payloadJson);
-		boolean fromMe = resolveFromMe(payloadJson);
 		boolean groupMessage = isGroupMessage(payloadJson);
 
 		logger.info(
@@ -103,6 +103,30 @@ public class WhatsappWebhookService {
 			attachments.size(),
 			preview(body)
 		);
+
+		if (fromMe && !groupMessage) {
+			logger.info(
+				"Webhook WhatsApp fromMe debug: session={}, event={}, phone={}, transportId={}, isMessageEvent={}, isFinishConversationCommand={}, bodyPreview={}, rawPayloadPreview={}",
+				sessionName,
+				event,
+				phone,
+				transportId,
+				isMessageEvent(event),
+				isFinishConversationCommand(body),
+				preview(body),
+				previewRawPayload(payload)
+			);
+		}
+
+		if (isMessageEvent(event)
+			&& fromMe
+			&& !groupMessage
+			&& !sessionName.isBlank()
+			&& (!phone.isBlank() || !transportId.isBlank())
+			&& isFinishConversationCommand(body)) {
+			handleOutgoingConversationClosureCommand(sessionName, firstNonBlank(phone, transportId), transportId);
+			return;
+		}
 
 		if (!isMessageEvent(event)
 			|| payloadJson == null
@@ -154,7 +178,7 @@ public class WhatsappWebhookService {
 				WhatsappConversation createdConversation = new WhatsappConversation();
 				createdConversation.setCompanyOwner(companyOwner);
 				createdConversation.setPhoneNumber(normalizedPhone);
-				createdConversation.setCurrentStep(WhatsappConversationStep.ASK_SECTOR);
+				createdConversation.setCurrentStep(WhatsappConversationStep.ASK_INITIAL_MODE);
 				return createdConversation;
 			});
 
@@ -163,16 +187,58 @@ public class WhatsappWebhookService {
 		conversation.setWhatsappTransportId(whatsappTransportId);
 		conversation.setLastInboundMessageAt(OffsetDateTime.now());
 		if (conversation.getCurrentStep() == null) {
-			conversation.setCurrentStep(WhatsappConversationStep.ASK_SECTOR);
-		}
-
-		if (isCancelCommand(normalizedBody) && isNewTicketCreationStep(conversation.getCurrentStep())) {
-			cancelNewTicketFlow(companyOwner, conversation, resolveReplyTarget(conversation, normalizedPhone));
-			return;
+			conversation.setCurrentStep(WhatsappConversationStep.ASK_INITIAL_MODE);
 		}
 
 		String replyTarget = resolveReplyTarget(conversation, normalizedPhone);
 		boolean isNewConversation = conversation.getId() == null;
+
+		if (isNewConversation) {
+			promptForInitialMode(companyOwner, conversation, replyTarget, null);
+			return;
+		}
+
+		if (conversation.getCurrentStep() == WhatsappConversationStep.NORMAL_CONVERSATION_CLOSED) {
+			promptForInitialMode(companyOwner, conversation, replyTarget, null);
+			return;
+		}
+
+		if (conversation.isNormalConversationActive()
+			&& conversation.getCurrentStep() != WhatsappConversationStep.NORMAL_CONVERSATION_ACTIVE
+			&& conversation.getCurrentStep() != WhatsappConversationStep.NORMAL_CONVERSATION_CLOSED
+			&& conversation.getCurrentStep() != WhatsappConversationStep.ASK_INITIAL_MODE
+			&& isNormalConversationSelection(normalizedBody)) {
+			startNormalConversation(
+				companyOwner,
+				conversation,
+				replyTarget,
+				"Tudo bem. Vamos continuar por aqui em conversa normal, sem vincular as próximas mensagens a um chamado."
+			);
+			return;
+		}
+
+		if (conversation.getCurrentStep() == WhatsappConversationStep.NORMAL_CONVERSATION_ACTIVE) {
+			if (isTicketModeSelection(normalizedBody)) {
+				startNewTicketFlow(companyOwner, conversation, replyTarget, "Vamos abrir um novo chamado.");
+				return;
+			}
+			if (isSwitchTicketCommand(normalizedBody)) {
+				handleOpenTicketSelectionFromNormalConversation(companyOwner, conversation, replyTarget);
+				return;
+			}
+			whatsappConversationRepository.save(conversation);
+			return;
+		}
+
+		if (conversation.getCurrentStep() == WhatsappConversationStep.ASK_INITIAL_MODE) {
+			handleInitialModeStep(companyOwner, conversation, replyTarget, normalizedBody);
+			return;
+		}
+
+		if (isCancelCommand(normalizedBody) && isNewTicketCreationStep(conversation.getCurrentStep())) {
+			cancelNewTicketFlow(companyOwner, conversation, replyTarget);
+			return;
+		}
 
 		if (handleOpenTicketRouting(companyOwner, conversation, replyTarget, normalizedBody, incomingAttachments)) {
 			return;
@@ -208,12 +274,14 @@ public class WhatsappWebhookService {
 			return;
 		}
 
-		if (isNewConversation || isGreetingMessage(normalizedBody)) {
-			startNewTicketFlow(companyOwner, conversation, replyTarget, null);
+		if (isGreetingMessage(normalizedBody)) {
+			promptForInitialMode(companyOwner, conversation, replyTarget, null);
 			return;
 		}
 
 		switch (conversation.getCurrentStep()) {
+			case ASK_INITIAL_MODE -> handleInitialModeStep(companyOwner, conversation, replyTarget, normalizedBody);
+			case NORMAL_CONVERSATION_ACTIVE, NORMAL_CONVERSATION_CLOSED -> whatsappConversationRepository.save(conversation);
 			case ASK_REUSE_REQUESTER_DATA -> handleReuseRequesterDataStep(companyOwner, conversation, replyTarget, normalizedBody);
 			case ASK_ACTIVE_TICKET_SELECTION ->
 				startNewTicketFlow(companyOwner, conversation, replyTarget, "Não encontrei mais chamados abertos para continuar.");
@@ -228,6 +296,66 @@ public class WhatsappWebhookService {
 				startNewTicketFlow(companyOwner, conversation, replyTarget, "Vamos abrir um novo chamado.");
 			}
 		}
+	}
+
+	private void handleOutgoingConversationClosureCommand(String sessionName, String phoneNumber, String incomingTransportId) {
+		try {
+			User companyOwner = whatsappService.resolveCompanyAdminBySession(sessionName);
+			tenantExecutionService.runInTenantByOwnerUserId(
+				companyOwner.getId(),
+				() -> closeNormalConversationByAgent(companyOwner, phoneNumber, incomingTransportId)
+			);
+		} catch (Exception exception) {
+			logger.error(
+				"Falha ao encerrar conversa normal por comando do atendente: session={}, phone={}, transportId={}",
+				sessionName,
+				phoneNumber,
+				incomingTransportId,
+				exception
+			);
+		}
+	}
+
+	@Transactional
+	void closeNormalConversationByAgent(User companyOwner, String phoneNumber, String incomingTransportId) {
+		String whatsappTransportId = normalizeWhatsappTransportId(incomingTransportId);
+		String normalizedPhone = normalizePhone(phoneNumber);
+		resolveConversation(companyOwner.getId(), normalizedPhone, whatsappTransportId)
+			.filter(WhatsappConversation::isNormalConversationActive)
+			.ifPresent(conversation -> {
+				String replyTarget = resolveReplyTarget(conversation, normalizedPhone);
+				closeNormalConversation(conversation);
+				whatsappConversationRepository.save(conversation);
+				replyWithMessage(companyOwner, replyTarget, buildNormalConversationClosedMessage(false));
+			});
+	}
+
+	@Transactional
+	public int closeInactiveNormalConversations(OffsetDateTime inactiveSince) {
+		List<WhatsappConversation> conversations = whatsappConversationRepository.findInactiveNormalConversations(inactiveSince);
+		for (WhatsappConversation conversation : conversations) {
+			String replyTarget = resolveReplyTarget(conversation, normalizePhone(conversation.getPhoneNumber()));
+			closeNormalConversation(conversation);
+			replyWithMessage(conversation.getCompanyOwner(), replyTarget, buildNormalConversationClosedMessage(true));
+		}
+		if (!conversations.isEmpty()) {
+			whatsappConversationRepository.saveAll(conversations);
+		}
+		return conversations.size();
+	}
+
+	private String buildNormalConversationClosedMessage(boolean closedByInactivity) {
+		if (closedByInactivity) {
+			return """
+				Seu atendimento foi finalizado por inatividade.
+				Se precisar de um novo atendimento, envie uma nova mensagem para reiniciar o processo.
+				""".trim();
+		}
+
+		return """
+			Seu atendimento foi finalizado.
+			Se precisar de um novo atendimento, envie uma nova mensagem para reiniciar o processo.
+			""".trim();
 	}
 
 	private boolean handleOpenTicketRouting(
@@ -376,10 +504,16 @@ public class WhatsappWebhookService {
 		replyWithMessage(
 			companyOwner,
 			replyTarget,
-			"""
-			Perfeito. Vou direcionar suas próximas mensagens para o chamado *%s*.
-			Se quiser trocar depois, envie *trocar chamado*.
-			""".formatted(selectedTicket.getProtocol()).trim()
+			(conversation.isNormalConversationActive()
+				? """
+				Perfeito. Vou direcionar suas próximas mensagens para o chamado *%s*.
+				Se quiser trocar depois, envie *trocar chamado*.
+				Se quiser voltar para a conversa normal, envie *conversa normal*.
+				"""
+				: """
+				Perfeito. Vou direcionar suas próximas mensagens para o chamado *%s*.
+				Se quiser trocar depois, envie *trocar chamado*.
+				""").formatted(selectedTicket.getProtocol()).trim()
 		);
 		return true;
 	}
@@ -395,6 +529,134 @@ public class WhatsappWebhookService {
 		conversation.setLastTicketSelectionPromptAt(OffsetDateTime.now());
 		whatsappConversationRepository.save(conversation);
 		replyWithMessage(companyOwner, replyTarget, buildOpenTicketSelectionPrompt(prefix, openTickets));
+	}
+
+	private void handleInitialModeStep(
+		User companyOwner,
+		WhatsappConversation conversation,
+		String replyTarget,
+		String body
+	) {
+		if (isTicketModeSelection(body)) {
+			startNewTicketFlow(companyOwner, conversation, replyTarget, null);
+			return;
+		}
+
+		if (isNormalConversationSelection(body)) {
+			startNormalConversation(companyOwner, conversation, replyTarget);
+			return;
+		}
+
+		promptForInitialMode(companyOwner, conversation, replyTarget, "Escolha uma opção válida para continuar:");
+	}
+
+	private void handleOpenTicketSelectionFromNormalConversation(
+		User companyOwner,
+		WhatsappConversation conversation,
+		String replyTarget
+	) {
+		List<Ticket> openTickets = loadOpenTicketsForConversation(companyOwner, conversation);
+		if (openTickets.isEmpty()) {
+			replyWithMessage(
+				companyOwner,
+				replyTarget,
+				"Você não possui chamado aberto para continuar agora. Se quiser, envie *criar chamado* para abrir um novo."
+			);
+			return;
+		}
+
+		if (openTickets.size() == 1) {
+			Ticket selectedTicket = openTickets.get(0);
+			conversation.setActiveTicket(selectedTicket);
+			conversation.setCurrentStep(WhatsappConversationStep.ACTIVE_TICKET);
+			conversation.setLastTicketSelectionPromptAt(null);
+			whatsappConversationRepository.save(conversation);
+			replyWithMessage(
+				companyOwner,
+				replyTarget,
+				"""
+				Vou direcionar suas próximas mensagens para o chamado *%s*.
+				Se quiser voltar para a conversa normal, envie *conversa normal*.
+				""".formatted(selectedTicket.getProtocol()).trim()
+			);
+			return;
+		}
+
+		promptForActiveTicketSelection(
+			companyOwner,
+			conversation,
+			replyTarget,
+			openTickets,
+			"Escolha qual chamado aberto você quer continuar agora:"
+		);
+	}
+
+	private void promptForInitialMode(
+		User companyOwner,
+		WhatsappConversation conversation,
+		String replyTarget,
+		String prefix
+	) {
+		prepareForInitialMode(conversation);
+		whatsappConversationRepository.save(conversation);
+		replyWithMessage(companyOwner, replyTarget, buildInitialModePrompt(prefix));
+	}
+
+	private void startNormalConversation(User companyOwner, WhatsappConversation conversation, String replyTarget) {
+		startNormalConversation(companyOwner, conversation, replyTarget, null);
+	}
+
+	private void startNormalConversation(
+		User companyOwner,
+		WhatsappConversation conversation,
+		String replyTarget,
+		String prefix
+	) {
+		conversation.setNormalConversationActive(true);
+		conversation.setCurrentStep(WhatsappConversationStep.NORMAL_CONVERSATION_ACTIVE);
+		conversation.setSector(null);
+		conversation.setPendingMessage(null);
+		conversation.setPendingName(null);
+		conversation.setPendingEmail(null);
+		conversation.setPendingSubject(null);
+		conversation.setPendingDocument(null);
+		conversation.setPendingAssignedUserId(null);
+		conversation.setActiveTicket(null);
+		conversation.setLastTicketSelectionPromptAt(null);
+		whatsappConversationRepository.save(conversation);
+		String baseMessage = """
+			Entendido! Você pode enviar suas dúvidas, comentários ou qualquer assunto que desejar tratar, e nossa equipe responderá em breve. A conversa será mantida sem registro de chamado oficial.
+			Se depois quiser tratar algum chamado em aberto, envie *trocar chamado*. Se quiser abrir um novo, envie *criar chamado*.
+			""".trim();
+		replyWithMessage(companyOwner, replyTarget, prefix == null || prefix.isBlank() ? baseMessage : prefix.trim() + "\n" + baseMessage);
+	}
+
+	private void prepareForInitialMode(WhatsappConversation conversation) {
+		conversation.setNormalConversationActive(false);
+		conversation.setCurrentStep(WhatsappConversationStep.ASK_INITIAL_MODE);
+		conversation.setSector(null);
+		conversation.setPendingMessage(null);
+		conversation.setPendingName(null);
+		conversation.setPendingEmail(null);
+		conversation.setPendingDocument(null);
+		conversation.setPendingAssignedUserId(null);
+		conversation.setPendingSubject(null);
+		conversation.setActiveTicket(null);
+		conversation.setLastTicketSelectionPromptAt(null);
+	}
+
+	private void closeNormalConversation(WhatsappConversation conversation) {
+		conversation.setNormalConversationActive(false);
+		conversation.setCurrentStep(WhatsappConversationStep.NORMAL_CONVERSATION_CLOSED);
+		conversation.setSector(null);
+		conversation.setPendingMessage(null);
+		conversation.setPendingName(null);
+		conversation.setPendingEmail(null);
+		conversation.setPendingDocument(null);
+		conversation.setPendingAssignedUserId(null);
+		conversation.setPendingSubject(null);
+		conversation.setActiveTicket(null);
+		conversation.setLastTicketSelectionPromptAt(null);
 	}
 
 	private List<Ticket> loadOpenTicketsForConversation(User companyOwner, WhatsappConversation conversation) {
@@ -486,6 +748,18 @@ public class WhatsappWebhookService {
 		return builder.toString();
 	}
 
+	private String buildInitialModePrompt(String prefix) {
+		String basePrompt = """
+			Olá! Seja bem-vindo(a). Para melhor atendê-lo(a), gostaria de saber se você deseja criar um chamado para acompanhamento ou se prefere manter uma conversa normal sem registro de chamado? Por favor, escolha uma das opções:
+			1) Criar chamado
+			2) Conversa normal
+			""".trim();
+		if (prefix == null || prefix.isBlank()) {
+			return basePrompt;
+		}
+		return prefix.trim() + "\n" + basePrompt;
+	}
+
 	private String trimTicketSummary(String value) {
 		String normalized = value == null ? "" : value.trim().replaceAll("\\s+", " ");
 		if (normalized.length() <= 80) {
@@ -524,15 +798,28 @@ public class WhatsappWebhookService {
 	}
 
 	private void cancelNewTicketFlow(User companyOwner, WhatsappConversation conversation, String replyTarget) {
-		resetConversation(conversation);
+		discardInProgressNewTicketData(conversation);
+		conversation.setLastTicketSelectionPromptAt(null);
+		conversation.setActiveTicket(null);
+		if (conversation.isNormalConversationActive()) {
+			conversation.setCurrentStep(WhatsappConversationStep.NORMAL_CONVERSATION_ACTIVE);
+		} else {
+			resetConversation(conversation);
+		}
 		whatsappConversationRepository.save(conversation);
 		replyWithMessage(
 			companyOwner,
 			replyTarget,
-			"""
-			Tudo bem. Cancelei a abertura deste chamado e apaguei os dados informados até agora.
-			Se quiser abrir outro depois, envie *abrir novo chamado*.
-			""".trim()
+			conversation.isNormalConversationActive()
+				? """
+				Tudo bem. Cancelei a abertura deste chamado e apaguei os dados informados até agora.
+				Sua conversa normal continua ativa por aqui.
+				Se quiser abrir outro depois, envie *criar chamado*.
+				""".trim()
+				: """
+				Tudo bem. Cancelei a abertura deste chamado e apaguei os dados informados até agora.
+				Se quiser abrir outro depois, envie *abrir novo chamado*.
+				""".trim()
 		);
 	}
 
@@ -834,6 +1121,7 @@ public class WhatsappWebhookService {
 
 		conversation.setPendingMessage(normalizedDescription);
 		try {
+			boolean keepNormalConversation = conversation.isNormalConversationActive();
 			User requester = resolveOrCreateRequester(
 				conversation.getPhoneNumber(),
 				conversation.getWhatsappTransportId(),
@@ -853,12 +1141,18 @@ public class WhatsappWebhookService {
 					attachments == null ? List.of() : attachments
 				)
 			);
-			conversation.setActiveTicket(createdTicket);
 			conversation.setPendingName(requester.getFullName());
 			conversation.setPendingEmail(requester.getEmail());
 			conversation.setPendingDocument(requester.getDocumentNumber());
 			conversation.setPendingMessage(null);
-			conversation.setCurrentStep(WhatsappConversationStep.ACTIVE_TICKET);
+			conversation.setLastTicketSelectionPromptAt(null);
+			if (keepNormalConversation) {
+				conversation.setActiveTicket(null);
+				conversation.setCurrentStep(WhatsappConversationStep.NORMAL_CONVERSATION_ACTIVE);
+			} else {
+				conversation.setActiveTicket(createdTicket);
+				conversation.setCurrentStep(WhatsappConversationStep.ACTIVE_TICKET);
+			}
 			whatsappConversationRepository.saveAndFlush(conversation);
 			List<Ticket> openTickets = loadOpenTicketsForConversation(companyOwner, conversation);
 			String multipleOpenTicketsGuidance = openTickets.size() >= 2
@@ -872,21 +1166,33 @@ public class WhatsappWebhookService {
 			replyWithMessage(
 				companyOwner,
 				replyTarget,
-				"""
-				Chamado aberto com sucesso.
-				Protocolo: %s
-				Setor: %s
-				Destinatário: %s
+				(keepNormalConversation
+					? """
+					Chamado aberto com sucesso.
+					Protocolo: %s
+					Setor: %s
+					Destinatário: %s
 
-				Pode continuar enviando mensagens por aqui que elas serão adicionadas ao chamado.
-				Se quiser abrir mais um chamado, digite *abrir novo chamado*.
-				%s
-				""".formatted(
-					createdTicket.getProtocol(),
-					conversation.getSector().getName(),
-					createdTicket.getAssignedTo() == null ? "Não informado" : createdTicket.getAssignedTo().getFullName(),
-					multipleOpenTicketsGuidance.isBlank() ? "" : "\n" + multipleOpenTicketsGuidance
-				).trim()
+					Sua conversa normal continua ativa por aqui.
+					Se quiser voltar a enviar mensagens para um chamado aberto, envie *trocar chamado*.
+					Se quiser abrir mais um chamado, digite *abrir novo chamado*.
+					%s
+					"""
+					: """
+					Chamado aberto com sucesso.
+					Protocolo: %s
+					Setor: %s
+					Destinatário: %s
+
+					Pode continuar enviando mensagens por aqui que elas serão adicionadas ao chamado.
+					Se quiser abrir mais um chamado, digite *abrir novo chamado*.
+					%s
+					""").formatted(
+						createdTicket.getProtocol(),
+						conversation.getSector().getName(),
+						createdTicket.getAssignedTo() == null ? "Não informado" : createdTicket.getAssignedTo().getFullName(),
+						multipleOpenTicketsGuidance.isBlank() ? "" : "\n" + multipleOpenTicketsGuidance
+					).trim()
 			);
 		} catch (RuntimeException exception) {
 			logger.error(
@@ -1113,6 +1419,11 @@ public class WhatsappWebhookService {
 		}
 
 		return switch (step) {
+			case ASK_INITIAL_MODE,
+				NORMAL_CONVERSATION_ACTIVE,
+				NORMAL_CONVERSATION_CLOSED,
+				ASK_ACTIVE_TICKET_SELECTION,
+				ACTIVE_TICKET -> false;
 			case ASK_REUSE_REQUESTER_DATA,
 				ASK_SECTOR,
 				ASK_ASSIGNEE,
@@ -1121,7 +1432,6 @@ public class WhatsappWebhookService {
 				ASK_DOCUMENT,
 				ASK_SUBJECT,
 				ASK_DESCRIPTION -> true;
-			case ASK_ACTIVE_TICKET_SELECTION, ACTIVE_TICKET -> false;
 		};
 	}
 
@@ -1131,6 +1441,9 @@ public class WhatsappWebhookService {
 		}
 
 		return switch (step) {
+			case ASK_INITIAL_MODE,
+				NORMAL_CONVERSATION_ACTIVE,
+				NORMAL_CONVERSATION_CLOSED -> false;
 			case ASK_REUSE_REQUESTER_DATA,
 				ASK_SECTOR,
 				ASK_ASSIGNEE,
@@ -1154,16 +1467,7 @@ public class WhatsappWebhookService {
 	}
 
 	private void resetConversation(WhatsappConversation conversation) {
-		conversation.setCurrentStep(WhatsappConversationStep.ASK_SECTOR);
-		conversation.setSector(null);
-		conversation.setPendingMessage(null);
-		conversation.setPendingName(null);
-		conversation.setPendingEmail(null);
-		conversation.setPendingDocument(null);
-		conversation.setPendingAssignedUserId(null);
-		conversation.setPendingSubject(null);
-		conversation.setActiveTicket(null);
-		conversation.setLastTicketSelectionPromptAt(null);
+		prepareForInitialMode(conversation);
 	}
 
 	private boolean isRestartCommand(String body) {
@@ -1179,6 +1483,23 @@ public class WhatsappWebhookService {
 			|| normalizedBody.equals("abrir chamado");
 	}
 
+	private boolean isTicketModeSelection(String body) {
+		String normalizedBody = normalizeComparable(body);
+		return normalizedBody.equals("1")
+			|| normalizedBody.equals("criar chamado")
+			|| normalizedBody.equals("criar um chamado")
+			|| isOpenNewTicketCommand(body);
+	}
+
+	private boolean isNormalConversationSelection(String body) {
+		String normalizedBody = normalizeComparable(body);
+		return normalizedBody.equals("2")
+			|| normalizedBody.equals("conversa normal")
+			|| normalizedBody.equals("normal")
+			|| normalizedBody.equals("sem chamado")
+			|| normalizedBody.equals("conversa sem chamado");
+	}
+
 	private boolean isSwitchTicketCommand(String body) {
 		String normalizedBody = normalizeComparable(body);
 		return normalizedBody.equals("trocar chamado")
@@ -1192,6 +1513,10 @@ public class WhatsappWebhookService {
 		return normalizedBody.equals("cancelar")
 			|| normalizedBody.equals("cancelar chamado")
 			|| normalizedBody.equals("desistir");
+	}
+
+	private boolean isFinishConversationCommand(String body) {
+		return normalizeComparable(body).equals("finalizar conversa");
 	}
 
 	private boolean isGreetingMessage(String body) {
@@ -1254,16 +1579,58 @@ public class WhatsappWebhookService {
 		);
 	}
 
-	private String resolveIncomingTransportId(JsonNode payload) {
+	private String resolveIncomingTransportId(JsonNode payload, boolean fromMe) {
+		if (fromMe) {
+			return firstWhatsappAddress(
+				extractPathText(payload, "key.remoteJid"),
+				extractPathText(payload, "message.key.remoteJid"),
+				extractPathText(payload, "chat.id"),
+				extractPathText(payload, "chatId._serialized"),
+				extractPathText(payload, "id.remote"),
+				extractPathText(payload, "payload.key.remoteJid"),
+				extractPathText(payload, "payload.message.key.remoteJid"),
+				extractPathText(payload, "payload.chat.id"),
+				extractPathText(payload, "payload.chatId._serialized"),
+				extractPathText(payload, "payload.id.remote"),
+				extractPathText(payload, "data.key.remoteJid"),
+				extractPathText(payload, "data.message.key.remoteJid"),
+				extractPathText(payload, "data.chat.id"),
+				extractPathText(payload, "data.chatId._serialized"),
+				extractPathText(payload, "data.id.remote"),
+				extractText(payload, "chatId"),
+				extractText(payload, "from"),
+				extractNestedText(payload, "payload", "chatId"),
+				extractNestedText(payload, "payload", "from"),
+				extractNestedText(payload, "data", "chatId"),
+				extractNestedText(payload, "data", "from"),
+				extractDeepText(payload, "remoteJid"),
+				extractDeepText(payload, "chat_id"),
+				extractDeepText(payload, "from"),
+				extractPathText(payload, "sender.id"),
+				extractPathText(payload, "payload.sender.id"),
+				extractPathText(payload, "data.sender.id"),
+				extractText(payload, "sender_id"),
+				extractNestedText(payload, "payload", "sender_id"),
+				extractNestedText(payload, "data", "sender_id"),
+				extractDeepText(payload, "sender_id")
+			);
+		}
+
 		return firstWhatsappAddress(
+			extractPathText(payload, "key.remoteJid"),
+			extractPathText(payload, "message.key.remoteJid"),
 			extractPathText(payload, "sender.id"),
 			extractPathText(payload, "chat.id"),
 			extractPathText(payload, "chatId._serialized"),
 			extractPathText(payload, "id.remote"),
+			extractPathText(payload, "payload.key.remoteJid"),
+			extractPathText(payload, "payload.message.key.remoteJid"),
 			extractPathText(payload, "payload.sender.id"),
 			extractPathText(payload, "payload.chat.id"),
 			extractPathText(payload, "payload.chatId._serialized"),
 			extractPathText(payload, "payload.id.remote"),
+			extractPathText(payload, "data.key.remoteJid"),
+			extractPathText(payload, "data.message.key.remoteJid"),
 			extractPathText(payload, "data.sender.id"),
 			extractPathText(payload, "data.chat.id"),
 			extractPathText(payload, "data.chatId._serialized"),
@@ -1277,13 +1644,40 @@ public class WhatsappWebhookService {
 			extractNestedText(payload, "data", "chatId"),
 			extractNestedText(payload, "data", "sender_id"),
 			extractNestedText(payload, "data", "from"),
+			extractDeepText(payload, "remoteJid"),
 			extractDeepText(payload, "chat_id"),
 			extractDeepText(payload, "sender_id"),
 			extractDeepText(payload, "from")
 		);
 	}
 
-	private String resolveIncomingPhone(JsonNode payload, String transportId) {
+	private String resolveIncomingPhone(JsonNode payload, String transportId, boolean fromMe) {
+		if (fromMe) {
+			String rawPhone = firstNonBlank(
+				extractPathText(payload, "key.remoteJid"),
+				extractPathText(payload, "message.key.remoteJid"),
+				extractText(payload, "chatId"),
+				extractPathText(payload, "chat.id"),
+				extractPathText(payload, "chatId._serialized"),
+				extractPathText(payload, "id.remote"),
+				extractPathText(payload, "payload.key.remoteJid"),
+				extractPathText(payload, "payload.message.key.remoteJid"),
+				extractNestedText(payload, "payload", "chatId"),
+				extractNestedText(payload, "payload", "from"),
+				extractPathText(payload, "data.key.remoteJid"),
+				extractPathText(payload, "data.message.key.remoteJid"),
+				extractNestedText(payload, "data", "chatId"),
+				extractNestedText(payload, "data", "from"),
+				extractText(payload, "phone"),
+				extractNestedText(payload, "payload", "phone"),
+				extractNestedText(payload, "data", "phone"),
+				extractDeepText(payload, "remoteJid"),
+				extractDeepText(payload, "phone"),
+				transportId
+			);
+			return normalizeWhatsappAddress(rawPhone);
+		}
+
 		String rawPhone = firstNonBlank(
 			extractText(payload, "phone"),
 			extractNestedText(payload, "payload", "phone"),
@@ -1299,6 +1693,10 @@ public class WhatsappWebhookService {
 			extractText(payload, "body"),
 			extractText(payload, "text"),
 			extractText(payload, "content"),
+			extractPathText(payload, "message.conversation"),
+			extractPathText(payload, "message.extendedTextMessage.text"),
+			extractPathText(payload, "message.imageMessage.caption"),
+			extractPathText(payload, "message.videoMessage.caption"),
 			extractNestedText(payload, "message", "text"),
 			extractNestedText(payload, "message", "body"),
 			extractNestedText(payload, "payload", "body"),
@@ -1306,13 +1704,23 @@ public class WhatsappWebhookService {
 			extractNestedText(payload, "data", "body"),
 			extractNestedText(payload, "data", "text"),
 			extractPathText(payload, "message.content"),
+			extractPathText(payload, "payload.message.conversation"),
+			extractPathText(payload, "payload.message.extendedTextMessage.text"),
+			extractPathText(payload, "payload.message.imageMessage.caption"),
+			extractPathText(payload, "payload.message.videoMessage.caption"),
 			extractPathText(payload, "payload.message.text"),
 			extractPathText(payload, "payload.message.body"),
+			extractPathText(payload, "data.message.conversation"),
+			extractPathText(payload, "data.message.extendedTextMessage.text"),
+			extractPathText(payload, "data.message.imageMessage.caption"),
+			extractPathText(payload, "data.message.videoMessage.caption"),
 			extractPathText(payload, "data.message.text"),
 			extractPathText(payload, "data.message.body"),
 			extractDeepText(payload, "body"),
 			extractDeepText(payload, "text"),
-			extractDeepText(payload, "content")
+			extractDeepText(payload, "content"),
+			extractDeepText(payload, "conversation"),
+			extractDeepText(payload, "caption")
 		);
 	}
 
@@ -1621,6 +2029,11 @@ public class WhatsappWebhookService {
 	private String preview(String value) {
 		String normalized = value == null ? "" : value.trim();
 		return normalized.length() <= 100 ? normalized : normalized.substring(0, 100) + "...";
+	}
+
+	private String previewRawPayload(String value) {
+		String normalized = value == null ? "" : value.trim().replaceAll("\\s+", " ");
+		return normalized.length() <= 1200 ? normalized : normalized.substring(0, 1200) + "...";
 	}
 
 	private boolean isMessageEvent(String event) {

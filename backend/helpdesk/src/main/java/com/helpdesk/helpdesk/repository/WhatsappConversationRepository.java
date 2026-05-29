@@ -27,6 +27,16 @@ public interface WhatsappConversationRepository extends JpaRepository<WhatsappCo
 	@Query("""
 		select conversation
 		from WhatsappConversation conversation
+		where conversation.normalConversationActive = true
+			and conversation.lastInboundMessageAt is not null
+			and conversation.lastInboundMessageAt <= :inactiveSince
+		""")
+	@EntityGraph(attributePaths = {"companyOwner", "sector", "activeTicket"})
+	List<WhatsappConversation> findInactiveNormalConversations(@Param("inactiveSince") OffsetDateTime inactiveSince);
+
+	@Query("""
+		select conversation
+		from WhatsappConversation conversation
 		where conversation.lastInboundMessageAt is not null
 			and conversation.lastInboundMessageAt <= :inactiveSince
 			and (

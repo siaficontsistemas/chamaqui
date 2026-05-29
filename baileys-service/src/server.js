@@ -3,14 +3,21 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import pino from 'pino';
 import QRCode from 'qrcode';
-import makeWASocket, {
+import * as Baileys from '@whiskeysockets/baileys';
+const {
   DisconnectReason,
   downloadMediaMessage,
   fetchLatestBaileysVersion,
   getContentType,
   jidNormalizedUser,
   useMultiFileAuthState,
-} from '@whiskeysockets/baileys';
+} = Baileys;
+const makeWASocket =
+  typeof Baileys.default === 'function'
+    ? Baileys.default
+    : typeof Baileys.makeWASocket === 'function'
+      ? Baileys.makeWASocket
+      : null;
 
 const app = express();
 app.use(express.json({ limit: '100mb' }));
@@ -69,26 +76,28 @@ function serializeStatus(session) {
 }
 
 function extractTextMessage(message) {
-  if (!message) {
+  const content = unwrapMessageContent(message);
+  if (!content) {
     return '';
   }
 
   return (
-    message.conversation ||
-    message.extendedTextMessage?.text ||
-    message.imageMessage?.caption ||
-    message.videoMessage?.caption ||
-    message.documentMessage?.caption ||
-    message.buttonsResponseMessage?.selectedDisplayText ||
-    message.listResponseMessage?.title ||
-    message.listResponseMessage?.singleSelectReply?.title ||
-    message.templateButtonReplyMessage?.selectedDisplayText ||
+    content.conversation ||
+    content.extendedTextMessage?.text ||
+    content.imageMessage?.caption ||
+    content.videoMessage?.caption ||
+    content.documentMessage?.caption ||
+    content.buttonsResponseMessage?.selectedDisplayText ||
+    content.listResponseMessage?.title ||
+    content.listResponseMessage?.singleSelectReply?.title ||
+    content.templateButtonReplyMessage?.selectedDisplayText ||
     ''
   ).trim();
 }
 
 function detectMediaMessageType(message) {
-  const messageType = getContentType(message || {});
+  const content = unwrapMessageContent(message);
+  const messageType = getContentType(content || {});
   if (
     messageType === 'imageMessage' ||
     messageType === 'videoMessage' ||
@@ -100,6 +109,48 @@ function detectMediaMessageType(message) {
   }
 
   return '';
+}
+
+function unwrapMessageContent(message) {
+  let current = message || null;
+
+  while (current) {
+    if (current.deviceSentMessage?.message) {
+      current = current.deviceSentMessage.message;
+      continue;
+    }
+    if (current.ephemeralMessage?.message) {
+      current = current.ephemeralMessage.message;
+      continue;
+    }
+    if (current.viewOnceMessage?.message) {
+      current = current.viewOnceMessage.message;
+      continue;
+    }
+    if (current.viewOnceMessageV2?.message) {
+      current = current.viewOnceMessageV2.message;
+      continue;
+    }
+    if (current.viewOnceMessageV2Extension?.message) {
+      current = current.viewOnceMessageV2Extension.message;
+      continue;
+    }
+    if (current.editedMessage?.message) {
+      current = current.editedMessage.message;
+      continue;
+    }
+    break;
+  }
+
+  return current || {};
+}
+
+function resolveRemoteJid(message) {
+  return (
+    String(message?.key?.remoteJid || '').trim() ||
+    String(message?.message?.deviceSentMessage?.destinationJid || '').trim() ||
+    String(message?.message?.editedMessage?.message?.protocolMessage?.key?.remoteJid || '').trim()
+  );
 }
 
 function inferMediaMimeType(messageType, mediaMessage) {
@@ -175,7 +226,8 @@ async function extractMessageAttachments(message, sock) {
     return [];
   }
 
-  const mediaMessage = message?.message?.[messageType];
+  const content = unwrapMessageContent(message?.message);
+  const mediaMessage = content?.[messageType];
   if (!mediaMessage) {
     return [];
   }
@@ -332,9 +384,50 @@ async function postWebhook(session, payload) {
   }
 }
 
+async function forwardMessageEvent(session, sock, message, source, type = '') {
+  const remoteJid = resolveRemoteJid(message);
+  const fromMe = Boolean(message?.key?.fromMe);
+  if (!remoteJid || remoteJid.endsWith('@g.us')) {
+    return;
+  }
+
+  const body = extractTextMessage(message?.message);
+  const attachments = source === 'messages.update' ? [] : await extractMessageAttachments(message, sock);
+  logger.info(
+    {
+      session: session.name,
+      source,
+      type,
+      fromMe,
+      remoteJid,
+      bodyPreview: body.slice(0, 120),
+      attachmentCount: attachments.length,
+    },
+    'Baileys evento de mensagem processado'
+  );
+
+  const webhookPayload = {
+    event: 'onmessage',
+    session: session.name,
+    fromMe,
+    isGroup: false,
+    phone: remoteJid,
+    transportId: remoteJid,
+    from: remoteJid,
+    chatId: remoteJid,
+    body,
+    attachments,
+  };
+
+  await postWebhook(session, webhookPayload);
+}
+
 async function openSocket(session) {
   if (session.connecting) {
     return;
+  }
+  if (typeof makeWASocket !== 'function') {
+    throw new Error('Export makeWASocket não encontrado no módulo @whiskeysockets/baileys.');
   }
 
   session.connecting = true;
@@ -401,30 +494,22 @@ async function openSocket(session) {
     }
   });
 
-  sock.ev.on('messages.upsert', async ({ messages }) => {
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
     for (const message of messages || []) {
-      const remoteJid = message?.key?.remoteJid || '';
-      const fromMe = Boolean(message?.key?.fromMe);
-      if (!remoteJid || fromMe || remoteJid.endsWith('@g.us')) {
+      await forwardMessageEvent(session, sock, message, 'messages.upsert', type);
+    }
+  });
+
+  sock.ev.on('messages.update', async (updates) => {
+    for (const entry of updates || []) {
+      const message = {
+        key: entry?.key || {},
+        message: entry?.update?.message || null,
+      };
+      if (!message.message) {
         continue;
       }
-
-      const body = extractTextMessage(message.message);
-      const attachments = await extractMessageAttachments(message, sock);
-      const webhookPayload = {
-        event: 'onmessage',
-        session: session.name,
-        fromMe: false,
-        isGroup: false,
-        phone: remoteJid,
-        transportId: remoteJid,
-        from: remoteJid,
-        chatId: remoteJid,
-        body,
-        attachments,
-      };
-
-      await postWebhook(session, webhookPayload);
+      await forwardMessageEvent(session, sock, message, 'messages.update');
     }
   });
 }

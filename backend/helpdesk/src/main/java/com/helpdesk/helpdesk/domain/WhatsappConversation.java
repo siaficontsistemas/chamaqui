@@ -44,9 +44,12 @@ public class WhatsappConversation {
 	@Column(name = "whatsapp_transport_id", length = 80)
 	private String whatsappTransportId;
 
+	@Column(name = "normal_conversation_active", nullable = false)
+	private boolean normalConversationActive;
+
 	@Enumerated(EnumType.STRING)
 	@Column(name = "current_step", nullable = false, length = 40)
-	private WhatsappConversationStep currentStep = WhatsappConversationStep.ASK_SECTOR;
+	private WhatsappConversationStep currentStep = WhatsappConversationStep.ASK_INITIAL_MODE;
 
 	@ManyToOne(fetch = FetchType.LAZY)
 	@JoinColumn(name = "sector_id")
@@ -132,6 +135,14 @@ public class WhatsappConversation {
 
 	public void setCurrentStep(WhatsappConversationStep currentStep) {
 		this.currentStep = currentStep;
+	}
+
+	public boolean isNormalConversationActive() {
+		return normalConversationActive;
+	}
+
+	public void setNormalConversationActive(boolean normalConversationActive) {
+		this.normalConversationActive = normalConversationActive;
 	}
 
 	public Sector getSector() {
