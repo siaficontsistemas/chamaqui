@@ -346,16 +346,10 @@ public class WhatsappWebhookService {
 
 	private String buildNormalConversationClosedMessage(boolean closedByInactivity) {
 		if (closedByInactivity) {
-			return """
-				Seu atendimento foi finalizado por inatividade.
-				Se precisar de um novo atendimento, envie uma nova mensagem para reiniciar o processo.
-				""".trim();
+			return "Atendimento encerrado por inatividade. Se precisar, envie nova mensagem.";
 		}
 
-		return """
-			Seu atendimento foi finalizado.
-			Se precisar de um novo atendimento, envie uma nova mensagem para reiniciar o processo.
-			""".trim();
+		return "Atendimento encerrado. Se precisar, envie nova mensagem.";
 	}
 
 	private boolean handleOpenTicketRouting(
@@ -390,10 +384,8 @@ public class WhatsappWebhookService {
 					replyWithMessage(
 						companyOwner,
 						replyTarget,
-						"""
-						Você possui 1 chamado em aberto. Vou direcionar suas próximas mensagens para o chamado *%s*.
-						Se quiser abrir outro depois, envie *abrir novo chamado*.
-						""".formatted(selectedTicket.getProtocol()).trim()
+						"Vou usar o chamado *%s*. Para abrir outro, envie *abrir novo chamado*."
+							.formatted(selectedTicket.getProtocol())
 					);
 					return true;
 				}
@@ -430,7 +422,7 @@ public class WhatsappWebhookService {
 				replyWithMessage(
 					companyOwner,
 					replyTarget,
-					"Seu atendimento já está em andamento e não pode ser reiniciado agora. Aguarde o encerramento pelo funcionário."
+					"Seu atendimento já está em andamento."
 				);
 				return true;
 			}
@@ -506,13 +498,13 @@ public class WhatsappWebhookService {
 			replyTarget,
 			(conversation.isNormalConversationActive()
 				? """
-				Perfeito. Vou direcionar suas próximas mensagens para o chamado *%s*.
-				Se quiser trocar depois, envie *trocar chamado*.
-				Se quiser voltar para a conversa normal, envie *conversa normal*.
+				Vou usar o chamado *%s*.
+				Para trocar, envie *trocar chamado*.
+				Para voltar, envie *conversa normal*.
 				"""
 				: """
-				Perfeito. Vou direcionar suas próximas mensagens para o chamado *%s*.
-				Se quiser trocar depois, envie *trocar chamado*.
+				Vou usar o chamado *%s*.
+				Para trocar, envie *trocar chamado*.
 				""").formatted(selectedTicket.getProtocol()).trim()
 		);
 		return true;
@@ -574,10 +566,8 @@ public class WhatsappWebhookService {
 			replyWithMessage(
 				companyOwner,
 				replyTarget,
-				"""
-				Vou direcionar suas próximas mensagens para o chamado *%s*.
-				Se quiser voltar para a conversa normal, envie *conversa normal*.
-				""".formatted(selectedTicket.getProtocol()).trim()
+				"Vou usar o chamado *%s*. Para voltar, envie *conversa normal*."
+					.formatted(selectedTicket.getProtocol())
 			);
 			return;
 		}
@@ -625,8 +615,9 @@ public class WhatsappWebhookService {
 		conversation.setLastTicketSelectionPromptAt(null);
 		whatsappConversationRepository.save(conversation);
 		String baseMessage = """
-			Entendido! Você pode enviar suas dúvidas, comentários ou qualquer assunto que desejar tratar, e nossa equipe responderá em breve. A conversa será mantida sem registro de chamado oficial.
-			Se depois quiser tratar algum chamado em aberto, envie *trocar chamado*. Se quiser abrir um novo, envie *criar chamado*.
+			Conversa normal iniciada.
+			Para usar um chamado aberto, envie *trocar chamado*.
+			Para abrir um novo, envie *criar chamado*.
 			""".trim();
 		replyWithMessage(companyOwner, replyTarget, prefix == null || prefix.isBlank() ? baseMessage : prefix.trim() + "\n" + baseMessage);
 	}
@@ -750,7 +741,7 @@ public class WhatsappWebhookService {
 
 	private String buildInitialModePrompt(String prefix) {
 		String basePrompt = """
-			Olá! Seja bem-vindo(a). Para melhor atendê-lo(a), gostaria de saber se você deseja criar um chamado para acompanhamento ou se prefere manter uma conversa normal sem registro de chamado? Por favor, escolha uma das opções:
+			Olá! Escolha uma opção:
 			1) Criar chamado
 			2) Conversa normal
 			""".trim();
@@ -812,13 +803,13 @@ public class WhatsappWebhookService {
 			replyTarget,
 			conversation.isNormalConversationActive()
 				? """
-				Tudo bem. Cancelei a abertura deste chamado e apaguei os dados informados até agora.
-				Sua conversa normal continua ativa por aqui.
-				Se quiser abrir outro depois, envie *criar chamado*.
+				Chamado cancelado.
+				A conversa normal continua ativa.
+				Para abrir outro, envie *criar chamado*.
 				""".trim()
 				: """
-				Tudo bem. Cancelei a abertura deste chamado e apaguei os dados informados até agora.
-				Se quiser abrir outro depois, envie *abrir novo chamado*.
+				Chamado cancelado.
+				Para abrir outro, envie *abrir novo chamado*.
 				""".trim()
 		);
 	}
@@ -894,10 +885,9 @@ public class WhatsappWebhookService {
 			builder.append(prefix.trim());
 			builder.append("\n");
 		}
-		builder.append("Esses são os dados do último chamado que você fez:");
+		builder.append("Usar os dados do último chamado?");
 		builder.append("\nNome: ").append(conversation.getPendingName());
 		builder.append("\nEmail: ").append(conversation.getPendingEmail());
-		builder.append("\n\nQuer prosseguir com o próximo chamado usando esses mesmos dados?");
 		builder.append("\n1. *Sim*");
 		builder.append("\n2. *Não*");
 		return builder.toString();
@@ -987,12 +977,10 @@ public class WhatsappWebhookService {
 				companyOwner,
 				replyTarget,
 				"""
-				Perfeito. O chamado vai para %s.
-				Vamos usar os mesmos dados do ultimo atendimento:
+				Chamado para %s.
 				Nome: *%s*
 				Email: *%s*
-
-				Agora envie a *primeira mensagem* do seu chamado.
+				Envie a *primeira mensagem*.
 				Se desistir, envie *cancelar*.
 				""".formatted(
 					describeAssigneeSelection(selection.assignedToUserId(), assignees),
@@ -1009,8 +997,8 @@ public class WhatsappWebhookService {
 			companyOwner,
 			replyTarget,
 			"""
-			Perfeito. O chamado vai para %s.
-			Para continuar, me informe seu *nome completo*.
+			Chamado para %s.
+			Informe seu *nome completo*.
 			Se desistir, envie *cancelar*.
 			""".formatted(describeAssigneeSelection(selection.assignedToUserId(), assignees)).trim()
 		);
@@ -1168,24 +1156,21 @@ public class WhatsappWebhookService {
 				replyTarget,
 				(keepNormalConversation
 					? """
-					Chamado aberto com sucesso.
+					Chamado aberto.
 					Protocolo: %s
 					Setor: %s
 					Destinatário: %s
-
-					Sua conversa normal continua ativa por aqui.
-					Se quiser voltar a enviar mensagens para um chamado aberto, envie *trocar chamado*.
-					Se quiser abrir mais um chamado, digite *abrir novo chamado*.
+					A conversa normal continua ativa.
+					Para usar um chamado, envie *trocar chamado*.
+					Para abrir outro, envie *abrir novo chamado*.
 					%s
 					"""
 					: """
-					Chamado aberto com sucesso.
+					Chamado aberto.
 					Protocolo: %s
 					Setor: %s
 					Destinatário: %s
-
-					Pode continuar enviando mensagens por aqui que elas serão adicionadas ao chamado.
-					Se quiser abrir mais um chamado, digite *abrir novo chamado*.
+					Para abrir outro, envie *abrir novo chamado*.
 					%s
 					""").formatted(
 						createdTicket.getProtocol(),
@@ -1317,10 +1302,8 @@ public class WhatsappWebhookService {
 		StringBuilder builder = new StringBuilder();
 
 		if (prefix == null || prefix.isBlank()) {
-			builder.append("Olá. Para abrir seu chamado, escolha o setor desejado:");
-			builder.append("\nDepois vou pedir nome, email e sua primeira mensagem.");
-			builder.append("\nSe precisar corrigir algum dado informado durante essa etapa, envie *reiniciar*.");
-			builder.append("\nSe desistir de abrir o chamado, envie *cancelar*.");
+			builder.append("Escolha o setor:");
+			builder.append("\nEnvie *reiniciar* para recomeçar ou *cancelar* para sair.");
 		} else {
 			builder.append(prefix.trim());
 		}
@@ -1353,7 +1336,7 @@ public class WhatsappWebhookService {
 			builder.append(assignees.get(index).fullName());
 		}
 
-		builder.append("\n\nResponda com o número, nome do funcionário ou *aleatoriamente*.");
+		builder.append("\n\nResponda com o número, nome ou *aleatoriamente*.");
 		return builder.toString();
 	}
 

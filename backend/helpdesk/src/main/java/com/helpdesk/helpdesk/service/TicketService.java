@@ -2,6 +2,7 @@ package com.helpdesk.helpdesk.service;
 
 import java.io.IOException;
 import java.time.OffsetDateTime;
+import java.time.Year;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Comparator;
@@ -14,6 +15,7 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.Resource;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -233,7 +235,6 @@ public class TicketService {
 		String initialDescription = normalizeMessage(request.description());
 
 		Ticket ticket = new Ticket();
-		ticket.setProtocol(nextProtocol());
 		ticket.setTitle(buildAutoTicketTitle(initialDescription));
 		ticket.setDescription(initialDescription);
 		ticket.setRequester(requester);
@@ -244,7 +245,7 @@ public class TicketService {
 		ticket.setChannel(TicketChannel.PORTAL);
 		ticket.setCopyEmail(normalizeOptionalEmail(request.copyEmail()));
 
-		Ticket savedTicket = ticketRepository.save(ticket);
+		Ticket savedTicket = saveTicketWithUniqueProtocol(ticket);
 		createAssignmentNotification(savedTicket);
 		TicketMessage initialMessage = ensureInitialMessage(savedTicket);
 		saveAttachments(savedTicket, initialMessage, requester, files);
@@ -278,7 +279,6 @@ public class TicketService {
 		String initialDescription = resolveWhatsappInboundMessage(request.description(), incomingAttachments);
 
 		Ticket ticket = new Ticket();
-		ticket.setProtocol(nextProtocol());
 		ticket.setTitle(buildAutoTicketTitle(initialDescription));
 		ticket.setDescription(initialDescription);
 		ticket.setRequester(requester);
@@ -289,7 +289,7 @@ public class TicketService {
 		ticket.setChannel(TicketChannel.WHATSAPP);
 		ticket.setCopyEmail(normalizeOptionalEmail(requester.getEmail()));
 
-		Ticket savedTicket = ticketRepository.save(ticket);
+		Ticket savedTicket = saveTicketWithUniqueProtocol(ticket);
 		createAssignmentNotification(savedTicket);
 		TicketMessage initialMessage = ensureInitialMessage(savedTicket);
 		saveIncomingAttachments(savedTicket, initialMessage, requester, incomingAttachments);
@@ -592,9 +592,54 @@ public class TicketService {
 		);
 	}
 
+	private Ticket saveTicketWithUniqueProtocol(Ticket ticket) {
+		for (int attempt = 1; attempt <= 5; attempt++) {
+			ticket.setProtocol(nextProtocol());
+			try {
+				return ticketRepository.saveAndFlush(ticket);
+			} catch (DataIntegrityViolationException exception) {
+				if (!isProtocolConflict(exception) || attempt == 5) {
+					throw exception;
+				}
+
+				logger.warn(
+					"Colisão de protocolo detectada ao criar chamado. Tentando novamente com novo protocolo. tentativa={}, canal={}",
+					attempt,
+					ticket.getChannel()
+				);
+			}
+		}
+
+		throw new IllegalStateException("Não foi possível gerar um protocolo único para o chamado.");
+	}
+
+	private boolean isProtocolConflict(DataIntegrityViolationException exception) {
+		String message = buildExceptionMessage(exception).toLowerCase(Locale.ROOT);
+		return message.contains("tickets_protocol_key") || (message.contains("protocol") && message.contains("duplicate"));
+	}
+
+	private String buildExceptionMessage(Throwable throwable) {
+		StringBuilder builder = new StringBuilder();
+		Throwable current = throwable;
+		int depth = 0;
+		while (current != null && depth < 10) {
+			if (current.getMessage() != null && !current.getMessage().isBlank()) {
+				if (!builder.isEmpty()) {
+					builder.append(' ');
+				}
+				builder.append(current.getMessage());
+			}
+			current = current.getCause();
+			depth++;
+		}
+		return builder.toString();
+	}
+
 	private String nextProtocol() {
-		long nextNumber = ticketRepository.count() + 1;
-		return "CA-2026-" + String.format("%04d", nextNumber);
+		int currentYear = Year.now().getValue();
+		String prefix = "CA-" + currentYear + "-";
+		long nextNumber = ticketRepository.findMaxProtocolSequenceByPrefix(prefix) + 1;
+		return prefix + String.format("%04d", nextNumber);
 	}
 
 	private TicketResponse toResponse(Ticket ticket) {
