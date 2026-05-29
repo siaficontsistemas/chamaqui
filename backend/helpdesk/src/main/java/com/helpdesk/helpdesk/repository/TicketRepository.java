@@ -173,4 +173,14 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
 		@Param("phoneNumber") String phoneNumber,
 		@Param("whatsappTransportId") String whatsappTransportId
 	);
+
+	@Query(
+		value = """
+			select coalesce(max(cast(split_part(protocol, '-', 3) as bigint)), 0)
+			from tickets
+			where protocol like concat(:protocolPrefix, '%')
+			""",
+		nativeQuery = true
+	)
+	long findMaxProtocolSequenceByPrefix(@Param("protocolPrefix") String protocolPrefix);
 }
