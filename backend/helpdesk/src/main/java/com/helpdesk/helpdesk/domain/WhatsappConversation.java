@@ -73,12 +73,21 @@ public class WhatsappConversation {
 	@Column(name = "pending_subject", length = 180)
 	private String pendingSubject;
 
+	@Column(name = "pending_resume_message", columnDefinition = "text")
+	private String pendingResumeMessage;
+
+	@Column(name = "pending_resume_attachments", columnDefinition = "text")
+	private String pendingResumeAttachments;
+
 	@ManyToOne(fetch = FetchType.LAZY)
 	@JoinColumn(name = "active_ticket_id")
 	private Ticket activeTicket;
 
 	@Column(name = "last_inbound_message_at")
 	private OffsetDateTime lastInboundMessageAt;
+
+	@Column(name = "last_outbound_message_at")
+	private OffsetDateTime lastOutboundMessageAt;
 
 	@Column(name = "last_ticket_selection_prompt_at")
 	private OffsetDateTime lastTicketSelectionPromptAt;
@@ -201,6 +210,22 @@ public class WhatsappConversation {
 		this.pendingSubject = pendingSubject;
 	}
 
+	public String getPendingResumeMessage() {
+		return pendingResumeMessage;
+	}
+
+	public void setPendingResumeMessage(String pendingResumeMessage) {
+		this.pendingResumeMessage = pendingResumeMessage;
+	}
+
+	public String getPendingResumeAttachments() {
+		return pendingResumeAttachments;
+	}
+
+	public void setPendingResumeAttachments(String pendingResumeAttachments) {
+		this.pendingResumeAttachments = pendingResumeAttachments;
+	}
+
 	public Ticket getActiveTicket() {
 		return activeTicket;
 	}
@@ -215,6 +240,14 @@ public class WhatsappConversation {
 
 	public void setLastInboundMessageAt(OffsetDateTime lastInboundMessageAt) {
 		this.lastInboundMessageAt = lastInboundMessageAt;
+	}
+
+	public OffsetDateTime getLastOutboundMessageAt() {
+		return lastOutboundMessageAt;
+	}
+
+	public void setLastOutboundMessageAt(OffsetDateTime lastOutboundMessageAt) {
+		this.lastOutboundMessageAt = lastOutboundMessageAt;
 	}
 
 	public OffsetDateTime getLastTicketSelectionPromptAt() {

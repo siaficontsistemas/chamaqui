@@ -483,7 +483,7 @@ function NewTicket({
                 <span>Primeira mensagem</span>
                 <div className="ticket-field__control ticket-field__control--textarea">
                   <textarea
-                    placeholder="Descreva aqui o seu chamado. O assunto sera gerado automaticamente a partir desta mensagem."
+                    placeholder="Descreva aqui o seu chamado. O assunto sera gerado automaticamente com os 30 primeiros caracteres desta mensagem."
                     rows="6"
                     value={formValues.description}
                     onChange={(event) => handleChange('description', event.target.value)}

@@ -64,6 +64,8 @@ import com.helpdesk.helpdesk.repository.WhatsappConversationRepository;
 @Service
 public class TicketService {
 
+	private static final int AUTO_TICKET_TITLE_PREVIEW_LENGTH = 30;
+
 	private static final Logger logger = LoggerFactory.getLogger(TicketService.class);
 
 	private final TicketRepository ticketRepository;
@@ -1084,7 +1086,10 @@ public class TicketService {
 
 	private String buildAutoTicketTitle(String firstMessage) {
 		String normalizedMessage = normalizeTitleSource(firstMessage);
-		String preview = normalizedMessage.length() <= 10 ? normalizedMessage : normalizedMessage.substring(0, 10);
+		if (normalizedMessage.length() <= AUTO_TICKET_TITLE_PREVIEW_LENGTH) {
+			return normalizeTitle(normalizedMessage);
+		}
+		String preview = normalizedMessage.substring(0, AUTO_TICKET_TITLE_PREVIEW_LENGTH);
 		return normalizeTitle(preview + "...");
 	}
 
