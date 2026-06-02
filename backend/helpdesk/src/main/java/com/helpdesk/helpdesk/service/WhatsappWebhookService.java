@@ -9,6 +9,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,6 +41,8 @@ import jakarta.servlet.http.HttpServletRequest;
 public class WhatsappWebhookService {
 
 	private static final Logger logger = LoggerFactory.getLogger(WhatsappWebhookService.class);
+	private static final long INACTIVITY_ROUTING_WINDOW_HOURS = 2;
+	private static final long AUTOMATED_OUTBOUND_CACHE_MINUTES = 5;
 
 	private final ObjectMapper objectMapper = new ObjectMapper();
 	private final UserRepository userRepository;
@@ -52,6 +56,7 @@ public class WhatsappWebhookService {
 	private final EmailDomainValidationService emailDomainValidationService;
 	private final TenantExecutionService tenantExecutionService;
 	private final ScopedUserLookupService scopedUserLookupService;
+	private final ConcurrentMap<String, OffsetDateTime> automatedOutboundMessageCache = new ConcurrentHashMap<>();
 
 	public WhatsappWebhookService(
 		UserRepository userRepository,
@@ -89,6 +94,7 @@ public class WhatsappWebhookService {
 		String body = resolveIncomingBody(payloadJson);
 		List<TicketService.IncomingAttachment> attachments = resolveIncomingAttachments(payloadJson);
 		boolean groupMessage = isGroupMessage(payloadJson);
+		boolean automaticOutboundMessage = fromMe && matchesRecentAutomatedOutbound(sessionName, firstNonBlank(phone, transportId), body);
 
 		logger.info(
 			"Webhook WhatsApp recebido: method={}, path={}, session={}, event={}, phone={}, transportId={}, fromMe={}, groupMessage={}, attachments={}, bodyPreview={}",
@@ -106,11 +112,12 @@ public class WhatsappWebhookService {
 
 		if (fromMe && !groupMessage) {
 			logger.info(
-				"Webhook WhatsApp fromMe debug: session={}, event={}, phone={}, transportId={}, isMessageEvent={}, isFinishConversationCommand={}, bodyPreview={}, rawPayloadPreview={}",
+				"Webhook WhatsApp fromMe debug: session={}, event={}, phone={}, transportId={}, automatic={}, isMessageEvent={}, isFinishConversationCommand={}, bodyPreview={}, rawPayloadPreview={}",
 				sessionName,
 				event,
 				phone,
 				transportId,
+				automaticOutboundMessage,
 				isMessageEvent(event),
 				isFinishConversationCommand(body),
 				preview(body),
@@ -121,6 +128,16 @@ public class WhatsappWebhookService {
 		if (isMessageEvent(event)
 			&& fromMe
 			&& !groupMessage
+			&& !automaticOutboundMessage
+			&& !sessionName.isBlank()
+			&& (!phone.isBlank() || !transportId.isBlank())) {
+			handleOutgoingConversationActivity(sessionName, firstNonBlank(phone, transportId), transportId);
+		}
+
+		if (isMessageEvent(event)
+			&& fromMe
+			&& !groupMessage
+			&& !automaticOutboundMessage
 			&& !sessionName.isBlank()
 			&& (!phone.isBlank() || !transportId.isBlank())
 			&& isFinishConversationCommand(body)) {
@@ -185,6 +202,8 @@ public class WhatsappWebhookService {
 		conversation.setCompanyOwner(companyOwner);
 		conversation.setPhoneNumber(normalizedPhone);
 		conversation.setWhatsappTransportId(whatsappTransportId);
+		OffsetDateTime previousInboundMessageAt = conversation.getLastInboundMessageAt();
+		OffsetDateTime previousOutboundMessageAt = conversation.getLastOutboundMessageAt();
 		conversation.setLastInboundMessageAt(OffsetDateTime.now());
 		if (conversation.getCurrentStep() == null) {
 			conversation.setCurrentStep(WhatsappConversationStep.ASK_INITIAL_MODE);
@@ -198,8 +217,24 @@ public class WhatsappWebhookService {
 			return;
 		}
 
+		if (shouldPromptForInactivityDestination(
+			conversation,
+			previousInboundMessageAt,
+			previousOutboundMessageAt,
+			normalizedBody,
+			incomingAttachments
+		)) {
+			promptForInactivityMessageDestination(companyOwner, conversation, replyTarget, normalizedBody, incomingAttachments);
+			return;
+		}
+
 		if (conversation.getCurrentStep() == WhatsappConversationStep.NORMAL_CONVERSATION_CLOSED) {
 			promptForInitialMode(companyOwner, conversation, replyTarget, null);
+			return;
+		}
+
+		if (conversation.getCurrentStep() == WhatsappConversationStep.ASK_INACTIVITY_MESSAGE_DESTINATION) {
+			handleInactivityMessageDestinationStep(companyOwner, conversation, replyTarget, normalizedBody);
 			return;
 		}
 
@@ -228,7 +263,7 @@ public class WhatsappWebhookService {
 			}
 			whatsappConversationRepository.save(conversation);
 			return;
-		}
+		}	
 
 		if (conversation.getCurrentStep() == WhatsappConversationStep.ASK_INITIAL_MODE) {
 			handleInitialModeStep(companyOwner, conversation, replyTarget, normalizedBody);
@@ -281,6 +316,8 @@ public class WhatsappWebhookService {
 
 		switch (conversation.getCurrentStep()) {
 			case ASK_INITIAL_MODE -> handleInitialModeStep(companyOwner, conversation, replyTarget, normalizedBody);
+			case ASK_INACTIVITY_MESSAGE_DESTINATION ->
+				handleInactivityMessageDestinationStep(companyOwner, conversation, replyTarget, normalizedBody);
 			case NORMAL_CONVERSATION_ACTIVE, NORMAL_CONVERSATION_CLOSED -> whatsappConversationRepository.save(conversation);
 			case ASK_REUSE_REQUESTER_DATA -> handleReuseRequesterDataStep(companyOwner, conversation, replyTarget, normalizedBody);
 			case ASK_ACTIVE_TICKET_SELECTION ->
@@ -330,6 +367,35 @@ public class WhatsappWebhookService {
 			});
 	}
 
+	private void handleOutgoingConversationActivity(String sessionName, String phoneNumber, String incomingTransportId) {
+		try {
+			User companyOwner = whatsappService.resolveCompanyAdminBySession(sessionName);
+			tenantExecutionService.runInTenantByOwnerUserId(
+				companyOwner.getId(),
+				() -> touchConversationOutbound(companyOwner, phoneNumber, incomingTransportId)
+			);
+		} catch (Exception exception) {
+			logger.error(
+				"Falha ao atualizar atividade de saída do WhatsApp: session={}, phone={}, transportId={}",
+				sessionName,
+				phoneNumber,
+				incomingTransportId,
+				exception
+			);
+		}
+	}
+
+	@Transactional
+	void touchConversationOutbound(User companyOwner, String phoneNumber, String incomingTransportId) {
+		String whatsappTransportId = normalizeWhatsappTransportId(incomingTransportId);
+		String normalizedPhone = normalizePhone(phoneNumber);
+		resolveConversation(companyOwner.getId(), normalizedPhone, whatsappTransportId)
+			.ifPresent(conversation -> {
+				conversation.setLastOutboundMessageAt(OffsetDateTime.now());
+				whatsappConversationRepository.save(conversation);
+			});
+	}
+
 	@Transactional
 	public int closeInactiveNormalConversations(OffsetDateTime inactiveSince) {
 		List<WhatsappConversation> conversations = whatsappConversationRepository.findInactiveNormalConversations(inactiveSince);
@@ -342,6 +408,95 @@ public class WhatsappWebhookService {
 			whatsappConversationRepository.saveAll(conversations);
 		}
 		return conversations.size();
+	}
+
+	private boolean shouldPromptForInactivityDestination(
+		WhatsappConversation conversation,
+		OffsetDateTime previousInboundMessageAt,
+		OffsetDateTime previousOutboundMessageAt,
+		String body,
+		List<TicketService.IncomingAttachment> attachments
+	) {
+		if (conversation.getCurrentStep() == WhatsappConversationStep.ASK_INITIAL_MODE
+			|| conversation.getCurrentStep() == WhatsappConversationStep.NORMAL_CONVERSATION_CLOSED
+			|| conversation.getCurrentStep() == WhatsappConversationStep.ASK_INACTIVITY_MESSAGE_DESTINATION
+			|| isNewTicketCreationStep(conversation.getCurrentStep())
+			|| (body.isBlank() && (attachments == null || attachments.isEmpty()))) {
+			return false;
+		}
+
+		OffsetDateTime lastInteractionAt = maxTimestamp(previousInboundMessageAt, previousOutboundMessageAt);
+		return lastInteractionAt != null && lastInteractionAt.isBefore(OffsetDateTime.now().minusHours(INACTIVITY_ROUTING_WINDOW_HOURS));
+	}
+
+	private void promptForInactivityMessageDestination(
+		User companyOwner,
+		WhatsappConversation conversation,
+		String replyTarget,
+		String messageBody,
+		List<TicketService.IncomingAttachment> attachments
+	) {
+		List<Ticket> openTickets = loadOpenTicketsForConversation(companyOwner, conversation);
+		if (openTickets.isEmpty()) {
+			whatsappConversationRepository.save(conversation);
+			return;
+		}
+
+		conversation.setPendingResumeMessage(messageBody);
+		conversation.setPendingResumeAttachments(serializePendingAttachments(attachments));
+		conversation.setCurrentStep(WhatsappConversationStep.ASK_INACTIVITY_MESSAGE_DESTINATION);
+		conversation.setActiveTicket(null);
+		conversation.setLastTicketSelectionPromptAt(OffsetDateTime.now());
+		whatsappConversationRepository.save(conversation);
+		replyWithMessage(companyOwner, replyTarget, buildInactivityDestinationPrompt(openTickets));
+	}
+
+	private void handleInactivityMessageDestinationStep(
+		User companyOwner,
+		WhatsappConversation conversation,
+		String replyTarget,
+		String body
+	) {
+		List<Ticket> openTickets = loadOpenTicketsForConversation(companyOwner, conversation);
+		if (openTickets.isEmpty()) {
+			clearPendingResumeState(conversation);
+			startNewTicketFlow(companyOwner, conversation, replyTarget, "Não encontrei chamados abertos. Vamos abrir um novo chamado.");
+			return;
+		}
+
+		if (isTicketModeSelection(body)) {
+			startNewTicketFlow(companyOwner, conversation, replyTarget, "Vamos abrir um novo chamado com sua última mensagem.");
+			return;
+		}
+
+		Ticket selectedTicket = resolveInactivityTicketSelection(body, openTickets);
+		if (selectedTicket == null) {
+			replyWithMessage(
+				companyOwner,
+				replyTarget,
+				buildInactivityDestinationPrompt(openTickets)
+			);
+			return;
+		}
+
+		List<TicketService.IncomingAttachment> pendingAttachments = deserializePendingAttachments(conversation.getPendingResumeAttachments());
+		String pendingMessage = firstNonBlank(conversation.getPendingResumeMessage(), "");
+
+		clearPendingResumeState(conversation);
+		conversation.setActiveTicket(selectedTicket);
+		conversation.setCurrentStep(WhatsappConversationStep.ACTIVE_TICKET);
+		conversation.setLastTicketSelectionPromptAt(null);
+		whatsappConversationRepository.save(conversation);
+
+		if (!pendingMessage.isBlank() || !pendingAttachments.isEmpty()) {
+			ticketService.addWhatsappMessage(selectedTicket.getId(), pendingMessage, pendingAttachments);
+		}
+
+		replyWithMessage(
+			companyOwner,
+			replyTarget,
+			"Mensagem enviada para o chamado *%s*.".formatted(selectedTicket.getProtocol())
+		);
 	}
 
 	private String buildNormalConversationClosedMessage(boolean closedByInactivity) {
@@ -510,6 +665,23 @@ public class WhatsappWebhookService {
 		return true;
 	}
 
+	private Ticket resolveInactivityTicketSelection(String body, List<Ticket> openTickets) {
+		String normalizedBody = normalizeComparable(body);
+		if (normalizedBody.isBlank() || normalizedBody.equals("1") || isTicketModeSelection(body)) {
+			return null;
+		}
+
+		try {
+			int position = Integer.parseInt(normalizedBody);
+			if (position >= 2 && position <= openTickets.size() + 1) {
+				return openTickets.get(position - 2);
+			}
+		} catch (NumberFormatException ignored) {
+		}
+
+		return resolveTicketSelection(body, openTickets);
+	}
+
 	private void promptForActiveTicketSelection(
 		User companyOwner,
 		WhatsappConversation conversation,
@@ -611,6 +783,7 @@ public class WhatsappWebhookService {
 		conversation.setPendingSubject(null);
 		conversation.setPendingDocument(null);
 		conversation.setPendingAssignedUserId(null);
+		clearPendingResumeState(conversation);
 		conversation.setActiveTicket(null);
 		conversation.setLastTicketSelectionPromptAt(null);
 		whatsappConversationRepository.save(conversation);
@@ -632,6 +805,7 @@ public class WhatsappWebhookService {
 		conversation.setPendingDocument(null);
 		conversation.setPendingAssignedUserId(null);
 		conversation.setPendingSubject(null);
+		clearPendingResumeState(conversation);
 		conversation.setActiveTicket(null);
 		conversation.setLastTicketSelectionPromptAt(null);
 	}
@@ -646,6 +820,7 @@ public class WhatsappWebhookService {
 		conversation.setPendingDocument(null);
 		conversation.setPendingAssignedUserId(null);
 		conversation.setPendingSubject(null);
+		clearPendingResumeState(conversation);
 		conversation.setActiveTicket(null);
 		conversation.setLastTicketSelectionPromptAt(null);
 	}
@@ -739,6 +914,26 @@ public class WhatsappWebhookService {
 		return builder.toString();
 	}
 
+	private String buildInactivityDestinationPrompt(List<Ticket> openTickets) {
+		StringBuilder builder = new StringBuilder();
+		builder.append("Sua última mensagem chegou após 2 horas sem interação.");
+		builder.append("\nEscolha o destino:");
+		builder.append("\n1. Abrir novo chamado");
+
+		for (int index = 0; index < openTickets.size(); index++) {
+			Ticket ticket = openTickets.get(index);
+			builder.append("\n");
+			builder.append(index + 2);
+			builder.append(". ");
+			builder.append(ticket.getProtocol());
+			builder.append(" - ");
+			builder.append(trimTicketSummary(ticket.getTitle()));
+		}
+
+		builder.append("\n\nResponda com o número desejado.");
+		return builder.toString();
+	}
+
 	private String buildInitialModePrompt(String prefix) {
 		String basePrompt = """
 			Olá! Escolha uma opção:
@@ -790,6 +985,7 @@ public class WhatsappWebhookService {
 
 	private void cancelNewTicketFlow(User companyOwner, WhatsappConversation conversation, String replyTarget) {
 		discardInProgressNewTicketData(conversation);
+		clearPendingResumeState(conversation);
 		conversation.setLastTicketSelectionPromptAt(null);
 		conversation.setActiveTicket(null);
 		if (conversation.isNormalConversationActive()) {
@@ -877,6 +1073,11 @@ public class WhatsappWebhookService {
 	private boolean hasReusableRequesterData(WhatsappConversation conversation) {
 		return isValidPersonName(normalizePersonName(conversation.getPendingName()))
 			&& !normalizeContactEmail(conversation.getPendingEmail()).isBlank();
+	}
+
+	private boolean hasPendingResumeContent(WhatsappConversation conversation) {
+		return !firstNonBlank(conversation.getPendingResumeMessage(), "").isBlank()
+			|| !firstNonBlank(conversation.getPendingResumeAttachments(), "").isBlank();
 	}
 
 	private String buildReuseRequesterPrompt(String prefix, WhatsappConversation conversation) {
@@ -971,6 +1172,12 @@ public class WhatsappWebhookService {
 
 		conversation.setPendingAssignedUserId(selection.assignedToUserId());
 		if (hasReusableRequesterData(conversation)) {
+			if (hasPendingResumeContent(conversation)) {
+				conversation.setCurrentStep(WhatsappConversationStep.ASK_DESCRIPTION);
+				whatsappConversationRepository.save(conversation);
+				continueTicketCreationFromPendingResume(companyOwner, conversation, replyTarget);
+				return;
+			}
 			conversation.setCurrentStep(WhatsappConversationStep.ASK_DESCRIPTION);
 			whatsappConversationRepository.save(conversation);
 			replyWithMessage(
@@ -1032,6 +1239,12 @@ public class WhatsappWebhookService {
 
 		conversation.setPendingEmail(normalizedEmail);
 		conversation.setPendingDocument(null);
+		if (hasPendingResumeContent(conversation)) {
+			conversation.setCurrentStep(WhatsappConversationStep.ASK_DESCRIPTION);
+			whatsappConversationRepository.save(conversation);
+			continueTicketCreationFromPendingResume(companyOwner, conversation, replyTarget);
+			return;
+		}
 		conversation.setCurrentStep(WhatsappConversationStep.ASK_DESCRIPTION);
 		whatsappConversationRepository.save(conversation);
 		replyWithMessage(
@@ -1042,6 +1255,12 @@ public class WhatsappWebhookService {
 	}
 
 	private void handleDocumentStep(User companyOwner, WhatsappConversation conversation, String replyTarget) {
+		if (hasPendingResumeContent(conversation)) {
+			conversation.setCurrentStep(WhatsappConversationStep.ASK_DESCRIPTION);
+			whatsappConversationRepository.save(conversation);
+			continueTicketCreationFromPendingResume(companyOwner, conversation, replyTarget);
+			return;
+		}
 		conversation.setCurrentStep(WhatsappConversationStep.ASK_DESCRIPTION);
 		whatsappConversationRepository.save(conversation);
 		replyWithMessage(
@@ -1057,6 +1276,17 @@ public class WhatsappWebhookService {
 		String replyTarget,
 		String body,
 		List<TicketService.IncomingAttachment> attachments
+	) {
+		handleDescriptionStep(companyOwner, conversation, replyTarget, body, attachments, false);
+	}
+
+	private void handleDescriptionStep(
+		User companyOwner,
+		WhatsappConversation conversation,
+		String replyTarget,
+		String body,
+		List<TicketService.IncomingAttachment> attachments,
+		boolean allowShortDescription
 	) {
 		if (conversation.getSector() == null) {
 			resetConversation(conversation);
@@ -1075,10 +1305,10 @@ public class WhatsappWebhookService {
 		}
 
 		String normalizedDescription = body.trim();
-		if (normalizedDescription.length() < 10 && attachments != null && !attachments.isEmpty()) {
+		if (normalizedDescription.isBlank() && attachments != null && !attachments.isEmpty()) {
 			normalizedDescription = "Arquivo enviado pelo WhatsApp.";
 		}
-		if (normalizedDescription.length() < 10) {
+		if (!allowShortDescription && normalizedDescription.length() < 10) {
 			replyWithMessage(
 				companyOwner,
 				replyTarget,
@@ -1133,6 +1363,7 @@ public class WhatsappWebhookService {
 			conversation.setPendingEmail(requester.getEmail());
 			conversation.setPendingDocument(requester.getDocumentNumber());
 			conversation.setPendingMessage(null);
+			clearPendingResumeState(conversation);
 			conversation.setLastTicketSelectionPromptAt(null);
 			if (keepNormalConversation) {
 				conversation.setActiveTicket(null);
@@ -1195,6 +1426,29 @@ public class WhatsappWebhookService {
 			conversation.setCurrentStep(WhatsappConversationStep.ASK_DESCRIPTION);
 			whatsappConversationRepository.save(conversation);
 		}
+	}
+
+	private void continueTicketCreationFromPendingResume(
+		User companyOwner,
+		WhatsappConversation conversation,
+		String replyTarget
+	) {
+		String pendingMessage = firstNonBlank(conversation.getPendingResumeMessage(), "");
+		List<TicketService.IncomingAttachment> pendingAttachments =
+			deserializePendingAttachments(conversation.getPendingResumeAttachments());
+
+		if (pendingMessage.isBlank() && pendingAttachments.isEmpty()) {
+			clearPendingResumeState(conversation);
+			replyWithMessage(
+				companyOwner,
+				replyTarget,
+				"Não consegui recuperar sua última mensagem. Envie a primeira mensagem do chamado."
+			);
+			return;
+		}
+
+		replyWithMessage(companyOwner, replyTarget, "Vou usar sua última mensagem para abrir o novo chamado.");
+		handleDescriptionStep(companyOwner, conversation, replyTarget, pendingMessage, pendingAttachments, true);
 	}
 
 	private User resolveOrCreateRequester(
@@ -1403,6 +1657,7 @@ public class WhatsappWebhookService {
 
 		return switch (step) {
 			case ASK_INITIAL_MODE,
+				ASK_INACTIVITY_MESSAGE_DESTINATION,
 				NORMAL_CONVERSATION_ACTIVE,
 				NORMAL_CONVERSATION_CLOSED,
 				ASK_ACTIVE_TICKET_SELECTION,
@@ -1425,6 +1680,7 @@ public class WhatsappWebhookService {
 
 		return switch (step) {
 			case ASK_INITIAL_MODE,
+				ASK_INACTIVITY_MESSAGE_DESTINATION,
 				NORMAL_CONVERSATION_ACTIVE,
 				NORMAL_CONVERSATION_CLOSED -> false;
 			case ASK_REUSE_REQUESTER_DATA,
@@ -1447,6 +1703,11 @@ public class WhatsappWebhookService {
 		conversation.setPendingDocument(null);
 		conversation.setPendingAssignedUserId(null);
 		conversation.setPendingSubject(null);
+	}
+
+	private void clearPendingResumeState(WhatsappConversation conversation) {
+		conversation.setPendingResumeMessage(null);
+		conversation.setPendingResumeAttachments(null);
 	}
 
 	private void resetConversation(WhatsappConversation conversation) {
@@ -1520,9 +1781,90 @@ public class WhatsappWebhookService {
 			preview(message)
 		);
 		try {
+			recordAutomatedOutboundMessage(companyOwner, phoneNumber, message);
 			whatsappService.sendMessage(companyOwner, phoneNumber, message);
 		} catch (RuntimeException exception) {
 			logger.error("Falha ao enviar resposta automática do WhatsApp para {}", phoneNumber, exception);
+		}
+	}
+
+	private void recordAutomatedOutboundMessage(User companyOwner, String phoneNumber, String message) {
+		automatedOutboundMessageCache.put(
+			buildAutomatedOutboundCacheKey(
+				whatsappService.buildSessionName(companyOwner),
+				phoneNumber,
+				message
+			),
+			OffsetDateTime.now()
+		);
+	}
+
+	private boolean matchesRecentAutomatedOutbound(String sessionName, String phoneNumber, String message) {
+		OffsetDateTime createdAt = automatedOutboundMessageCache.remove(
+			buildAutomatedOutboundCacheKey(sessionName, phoneNumber, message)
+		);
+		return createdAt != null && createdAt.isAfter(OffsetDateTime.now().minusMinutes(AUTOMATED_OUTBOUND_CACHE_MINUTES));
+	}
+
+	private String buildAutomatedOutboundCacheKey(String sessionName, String phoneNumber, String message) {
+		return normalizeComparable(sessionName)
+			+ "|"
+			+ normalizeComparable(firstNonBlank(phoneNumber, ""))
+			+ "|"
+			+ normalizeComparable(firstNonBlank(message, ""));
+	}
+
+	private OffsetDateTime maxTimestamp(OffsetDateTime first, OffsetDateTime second) {
+		if (first == null) {
+			return second;
+		}
+		if (second == null) {
+			return first;
+		}
+		return first.isAfter(second) ? first : second;
+	}
+
+	private String serializePendingAttachments(List<TicketService.IncomingAttachment> attachments) {
+		if (attachments == null || attachments.isEmpty()) {
+			return null;
+		}
+
+		try {
+			return objectMapper.writeValueAsString(
+				attachments.stream()
+					.map(attachment -> new PendingAttachmentPayload(
+						attachment.originalFileName(),
+						attachment.contentType(),
+						Base64.getEncoder().encodeToString(attachment.content())
+					))
+					.toList()
+			);
+		} catch (Exception exception) {
+			throw new IllegalArgumentException("Não foi possível guardar os anexos pendentes da conversa.", exception);
+		}
+	}
+
+	private List<TicketService.IncomingAttachment> deserializePendingAttachments(String serializedAttachments) {
+		if (serializedAttachments == null || serializedAttachments.isBlank()) {
+			return List.of();
+		}
+
+		try {
+			PendingAttachmentPayload[] payloads = objectMapper.readValue(serializedAttachments, PendingAttachmentPayload[].class);
+			List<TicketService.IncomingAttachment> attachments = new ArrayList<>();
+			for (PendingAttachmentPayload payload : payloads) {
+				attachments.add(
+					new TicketService.IncomingAttachment(
+						payload.originalFileName(),
+						payload.contentType(),
+						Base64.getDecoder().decode(payload.base64Content())
+					)
+				);
+			}
+			return attachments;
+		} catch (Exception exception) {
+			logger.warn("Anexos pendentes da conversa ignorados por conteúdo inválido.", exception);
+			return List.of();
 		}
 	}
 
@@ -2029,5 +2371,8 @@ public class WhatsappWebhookService {
 	}
 
 	private record AssigneeSelection(UUID assignedToUserId, boolean valid) {
+	}
+
+	private record PendingAttachmentPayload(String originalFileName, String contentType, String base64Content) {
 	}
 }

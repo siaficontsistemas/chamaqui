@@ -4,6 +4,7 @@ import ConfirmActionModal from '../../components/confirm-action-modal/ConfirmAct
 import Header from '../../components/header/Header'
 import Sidebar from '../../components/sidebar/Sidebar'
 import TicketListPagination from '../../components/TicketListPagination/TicketListPagination'
+import { truncateTicketTitle } from '../../utils/truncateTicketTitle'
 
 import { SearchIcon } from '../../dashboardIcons'
 import '../Home/Home.css'
@@ -296,7 +297,7 @@ function ClosedTickets({
                           </span>
                         ) : null}
                         <span>{ticket.protocol}</span>
-                        <span>{ticket.title}</span>
+                        <span title={ticket.title || ''}>{truncateTicketTitle(ticket.title)}</span>
                         <span className="ticket-list__status-cell">
                           <strong className="ticket-list__status ticket-list__status--closed">
                             {ticket.statusName}

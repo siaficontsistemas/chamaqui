@@ -2,6 +2,7 @@ package com.helpdesk.helpdesk.domain;
 
 public enum WhatsappConversationStep {
 	ASK_INITIAL_MODE,
+	ASK_INACTIVITY_MESSAGE_DESTINATION,
 	NORMAL_CONVERSATION_ACTIVE,
 	NORMAL_CONVERSATION_CLOSED,
 	ASK_REUSE_REQUESTER_DATA,
