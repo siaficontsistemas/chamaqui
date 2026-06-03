@@ -73,7 +73,7 @@ const dashboardPages = {
     label: 'Cadastrar empresa cliente',
     contentTitle: 'Cadastrar Empresa Cliente',
     contentText:
-      'Cadastre a empresa cliente e o administrador responsável já vinculando essa empresa à sua operação.',
+      'Cadastre a empresa cliente dentro da sua operação para que os funcionários dela possam solicitar acesso depois.',
   },
 }
 

@@ -148,6 +148,7 @@ function normalizeTeamMember(member) {
     name: member.fullName,
     email: member.email,
     documentNumber: member.documentNumber || '',
+    companyOwnerId: member.companyOwnerId || '',
     companyName: member.companyName || '',
     role: member.role,
     status: member.status,
@@ -682,6 +683,7 @@ function App() {
     onDeclineCompanyInvite: handleDeclineCompanyInvite,
     onDeclineInvite: handleDeclineInvite,
     onDeclineTicketTransfer: handleDeclineTicketTransfer,
+    onOpenNotification: handleOpenNotification,
     onNavigateLogin: handleNavigateLogin,
     onSectionChange: handleNavigatePage,
     roleLabel:
@@ -1320,6 +1322,16 @@ function App() {
 
     await deleteTeamNotification(inviteId, currentUserEmail)
     await refreshDashboardData(currentUserEmail)
+  }
+
+  function handleOpenNotification(notification) {
+    if (!notification) {
+      return
+    }
+
+    if (notification.type === 'calendar-reminder' && notification.obligationId) {
+      navigate(`${SECTION_ROUTE_PATHS.calendar}?obligationId=${notification.obligationId}`)
+    }
   }
 
   async function handleDeleteAccount() {
