@@ -1423,6 +1423,7 @@ public class WhatsappWebhookService {
 				replyTarget,
 				"Não consegui abrir seu chamado agora. Envie novamente a *primeira mensagem* para tentarmos de novo."
 			);
+			clearPendingResumeState(conversation);
 			conversation.setCurrentStep(WhatsappConversationStep.ASK_DESCRIPTION);
 			whatsappConversationRepository.save(conversation);
 		}
@@ -1447,8 +1448,41 @@ public class WhatsappWebhookService {
 			return;
 		}
 
+		if (shouldAskForFreshTicketDescription(pendingMessage, pendingAttachments)) {
+			clearPendingResumeState(conversation);
+			conversation.setCurrentStep(WhatsappConversationStep.ASK_DESCRIPTION);
+			whatsappConversationRepository.save(conversation);
+			replyWithMessage(
+				companyOwner,
+				replyTarget,
+				"Agora envie a *primeira mensagem* do seu chamado para eu continuar."
+			);
+			return;
+		}
+
 		replyWithMessage(companyOwner, replyTarget, "Vou usar sua última mensagem para abrir o novo chamado.");
 		handleDescriptionStep(companyOwner, conversation, replyTarget, pendingMessage, pendingAttachments, true);
+	}
+
+	private boolean shouldAskForFreshTicketDescription(
+		String pendingMessage,
+		List<TicketService.IncomingAttachment> pendingAttachments
+	) {
+		if (pendingAttachments != null && !pendingAttachments.isEmpty()) {
+			return false;
+		}
+
+		String normalizedMessage = normalizeComparable(pendingMessage);
+		if (normalizedMessage.isBlank()) {
+			return true;
+		}
+
+		return isTicketModeSelection(normalizedMessage)
+			|| normalizedMessage.equals("abrindo chamado")
+			|| isNormalConversationSelection(normalizedMessage)
+			|| isSwitchTicketCommand(normalizedMessage)
+			|| isRestartCommand(normalizedMessage)
+			|| isGreetingMessage(normalizedMessage);
 	}
 
 	private User resolveOrCreateRequester(
@@ -1505,14 +1539,15 @@ public class WhatsappWebhookService {
 
 	private java.util.Optional<User> resolveExistingRequester(String normalizedPhone, String whatsappTransportId) {
 		if (!whatsappTransportId.isBlank()) {
-			java.util.Optional<User> byTransportId = userRepository.findByWhatsappTransportId(whatsappTransportId);
+			java.util.Optional<User> byTransportId = scopedUserLookupService
+				.findUniqueByWhatsappTransportIdInCurrentTenant(whatsappTransportId);
 			if (byTransportId.isPresent()) {
 				return byTransportId;
 			}
 		}
 
 		if (!normalizedPhone.isBlank()) {
-			return userRepository.findByPhoneNumber(normalizedPhone);
+			return scopedUserLookupService.findUniqueByPhoneNumberInCurrentTenant(normalizedPhone);
 		}
 
 		return java.util.Optional.empty();
@@ -1724,7 +1759,8 @@ public class WhatsappWebhookService {
 		String normalizedBody = normalizeComparable(body);
 		return normalizedBody.equals("abrir novo chamado")
 			|| normalizedBody.equals("novo chamado")
-			|| normalizedBody.equals("abrir chamado");
+			|| normalizedBody.equals("abrir chamado")
+			|| normalizedBody.equals("abrindo chamado");
 	}
 
 	private boolean isTicketModeSelection(String body) {

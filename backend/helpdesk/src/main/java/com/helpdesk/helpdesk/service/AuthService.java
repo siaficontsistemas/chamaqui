@@ -74,6 +74,7 @@ public class AuthService {
 		String companyName = blankToNull(request.companyName());
 		String normalizedCompanyDocument = normalizeCompanyDocument(request.companyDocument());
 		User companyOwner = null;
+		User approvalTargetCompany = null;
 		User tenantCompany = tenantAccessService.hasCurrentTenant() ? tenantAccessService.loadCurrentTenantOwner() : null;
 		boolean directTenantMembership = false;
 		User existingUserByEmail = scopedUserLookupService.findUniqueByEmailForRegistrationScope(normalizedEmail)
@@ -150,6 +151,7 @@ public class AuthService {
 						"A empresa cliente selecionada não está vinculada à empresa provedora atual."
 					);
 				}
+				approvalTargetCompany = tenantCompany;
 
 			} else {
 				throw new IllegalArgumentException("Esse subdomínio só permite os tipos de cadastro disponíveis para a empresa atual.");
@@ -176,7 +178,7 @@ public class AuthService {
 		user.setCompanyName(isAdminRegistration ? companyName : null);
 		user.setCompanyDocument(isAdminRegistration ? normalizedCompanyDocument : null);
 		user.setCompanyType(isAdminRegistration ? companyType : null);
-		user.setCompanyOwner(null);
+		user.setCompanyOwner(isAdminRegistration ? null : companyOwner);
 		user.setPasswordHash(passwordEncoder.encode(request.password()));
 		user.setStatus(resolveInitialStatus(isAdminRegistration, normalizedInviteToken, companyOwner, directTenantMembership));
 		user.setEmailVerified(true);
@@ -194,6 +196,8 @@ public class AuthService {
 				companyAccessRequestService.acceptAdminInviteDuringRegistration(savedUser, normalizedInviteToken);
 			} else if (directTenantMembership && companyOwner != null) {
 				companyAccessRequestService.attachApprovedUserToCompany(savedUser, companyOwner);
+			} else if (approvalTargetCompany != null) {
+				companyAccessRequestService.createPendingRequest(savedUser, approvalTargetCompany);
 			} else if (companyOwner != null) {
 				companyAccessRequestService.createPendingRequest(savedUser, companyOwner);
 			} else {

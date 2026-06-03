@@ -7,8 +7,6 @@ public record ClientCompanyLookupResponse(
 	String message,
 	UUID companyOwnerId,
 	String companyName,
-	String companyDocument,
-	String adminName,
-	String adminEmail
+	String companyDocument
 ) {
 }

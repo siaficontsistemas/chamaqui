@@ -113,6 +113,41 @@ public class ScopedUserLookupService {
 	}
 
 	@Transactional(readOnly = true)
+	public Optional<User> findUniqueByPhoneNumberInCurrentTenant(String phoneNumber) {
+		List<User> matches = findAllByPhoneNumberInCurrentTenant(phoneNumber);
+		if (matches.isEmpty()) {
+			return Optional.empty();
+		}
+		if (matches.size() > 1) {
+			throw new IllegalStateException("Existe mais de um usuário com esse telefone no subdomínio atual.");
+		}
+		return Optional.of(matches.getFirst());
+	}
+
+	@Transactional(readOnly = true)
+	public List<User> findAllByPhoneNumberInCurrentTenant(String phoneNumber) {
+		String normalizedPhoneNumber = normalizePhoneNumber(phoneNumber);
+		if (normalizedPhoneNumber == null) {
+			return List.of();
+		}
+
+		return userRepository.findAllByPhoneNumberOrderByCreatedAtAsc(normalizedPhoneNumber).stream()
+			.filter(tenantAccessService::belongsToCurrentTenant)
+			.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public Optional<User> findUniqueByWhatsappTransportIdInCurrentTenant(String whatsappTransportId) {
+		String normalizedTransportId = normalizeTransportId(whatsappTransportId);
+		if (normalizedTransportId == null) {
+			return Optional.empty();
+		}
+
+		return userRepository.findByWhatsappTransportId(normalizedTransportId)
+			.filter(tenantAccessService::belongsToCurrentTenant);
+	}
+
+	@Transactional(readOnly = true)
 	public List<User> findStandaloneUsersByDocument(String documentNumber) {
 		String normalizedDocumentNumber = normalizeDocumentNumber(documentNumber);
 		if (normalizedDocumentNumber == null) {
@@ -173,5 +208,23 @@ public class ScopedUserLookupService {
 
 		String normalizedDocumentNumber = documentNumber.trim().replaceAll("\\D", "");
 		return normalizedDocumentNumber.isBlank() ? null : normalizedDocumentNumber;
+	}
+
+	private String normalizePhoneNumber(String phoneNumber) {
+		if (phoneNumber == null || phoneNumber.isBlank()) {
+			return null;
+		}
+
+		String normalizedPhoneNumber = phoneNumber.trim().replaceAll("\\D", "");
+		return normalizedPhoneNumber.isBlank() ? null : normalizedPhoneNumber;
+	}
+
+	private String normalizeTransportId(String whatsappTransportId) {
+		if (whatsappTransportId == null || whatsappTransportId.isBlank()) {
+			return null;
+		}
+
+		String normalizedTransportId = whatsappTransportId.trim();
+		return normalizedTransportId.isBlank() ? null : normalizedTransportId;
 	}
 }

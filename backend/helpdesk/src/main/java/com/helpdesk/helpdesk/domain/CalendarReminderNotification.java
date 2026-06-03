@@ -36,6 +36,9 @@ public class CalendarReminderNotification {
 	@Column(name = "created_at", nullable = false)
 	private OffsetDateTime createdAt;
 
+	@Column(name = "whatsapp_sent_at")
+	private OffsetDateTime whatsappSentAt;
+
 	@SuppressWarnings("unused")
 	@PrePersist
 	void onCreate() {
@@ -72,5 +75,13 @@ public class CalendarReminderNotification {
 
 	public OffsetDateTime getCreatedAt() {
 		return createdAt;
+	}
+
+	public OffsetDateTime getWhatsappSentAt() {
+		return whatsappSentAt;
+	}
+
+	public void setWhatsappSentAt(OffsetDateTime whatsappSentAt) {
+		this.whatsappSentAt = whatsappSentAt;
 	}
 }

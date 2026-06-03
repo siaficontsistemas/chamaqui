@@ -14,7 +14,7 @@ public interface TicketMessageRepository extends JpaRepository<TicketMessage, UU
 	@EntityGraph(attributePaths = {"author", "author.roles", "ticket"})
 	List<TicketMessage> findByTicketIdOrderByCreatedAtAsc(UUID ticketId);
 
-	@EntityGraph(attributePaths = {"author", "ticket", "ticket.requester"})
+	@EntityGraph(attributePaths = {"author", "ticket", "ticket.requester", "ticket.requester.companyOwner"})
 	List<TicketMessage> findByAuthorIdOrderByCreatedAtDesc(UUID authorId);
 
 	@EntityGraph(attributePaths = {"author", "author.roles", "ticket"})

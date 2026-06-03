@@ -19,6 +19,9 @@ public interface CompanyMembershipRepository extends JpaRepository<CompanyMember
 	@EntityGraph(attributePaths = {"user", "user.roles", "companyOwner", "companyOwner.roles"})
 	List<CompanyMembership> findByCompanyOwnerIdOrderByJoinedAtAsc(UUID companyOwnerId);
 
+	@EntityGraph(attributePaths = {"user", "user.roles", "companyOwner", "companyOwner.roles", "companyOwner.companyOwner"})
+	List<CompanyMembership> findByCompanyOwnerCompanyOwnerIdOrderByJoinedAtAsc(UUID companyOwnerOwnerId);
+
 	@EntityGraph(attributePaths = {"user", "user.roles", "companyOwner", "companyOwner.roles"})
 	List<CompanyMembership> findByUserIdOrderByJoinedAtAsc(UUID userId);
 
@@ -37,6 +40,19 @@ public interface CompanyMembershipRepository extends JpaRepository<CompanyMember
 		""")
 	boolean existsByUserIdAndCompanyType(
 		@Param("userId") UUID userId,
+		@Param("companyType") CompanyType companyType
+	);
+
+	@Query("""
+		select case when count(membership) > 0 then true else false end
+		from CompanyMembership membership
+		where membership.user.id = :userId
+		  and membership.companyOwner.companyOwner.id = :companyOwnerId
+		  and membership.companyOwner.companyType = :companyType
+		""")
+	boolean existsByUserIdAndNestedCompanyOwnerIdAndCompanyType(
+		@Param("userId") UUID userId,
+		@Param("companyOwnerId") UUID companyOwnerId,
 		@Param("companyType") CompanyType companyType
 	);
 }
