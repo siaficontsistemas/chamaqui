@@ -48,6 +48,7 @@ public class NotificationService {
 	private final TicketRepository ticketRepository;
 	private final TenantAccessService tenantAccessService;
 	private final ScopedUserLookupService scopedUserLookupService;
+	private final CalendarReminderWhatsappDispatchService calendarReminderWhatsappDispatchService;
 
 	public NotificationService(
 		TicketAssignmentNotificationRepository ticketAssignmentNotificationRepository,
@@ -59,7 +60,8 @@ public class NotificationService {
 		CalendarObligationRepository calendarObligationRepository,
 		TicketRepository ticketRepository,
 		TenantAccessService tenantAccessService,
-		ScopedUserLookupService scopedUserLookupService
+		ScopedUserLookupService scopedUserLookupService,
+		CalendarReminderWhatsappDispatchService calendarReminderWhatsappDispatchService
 	) {
 		this.ticketAssignmentNotificationRepository = ticketAssignmentNotificationRepository;
 		this.ticketTransferNotificationRepository = ticketTransferNotificationRepository;
@@ -71,6 +73,7 @@ public class NotificationService {
 		this.ticketRepository = ticketRepository;
 		this.tenantAccessService = tenantAccessService;
 		this.scopedUserLookupService = scopedUserLookupService;
+		this.calendarReminderWhatsappDispatchService = calendarReminderWhatsappDispatchService;
 	}
 
 	@Transactional(readOnly = true)
@@ -150,6 +153,11 @@ public class NotificationService {
 			.filter(notification -> shouldShowCalendarReminder(notification.getObligation(), now))
 			.map(notification -> toCalendarReminderResponse(notification, now))
 			.toList();
+	}
+
+	@Transactional
+	public int createMissingCalendarReminderNotificationsForCompanyOwner(UUID companyOwnerId, OffsetDateTime now) {
+		return calendarReminderWhatsappDispatchService.createMissingCalendarReminderNotificationsForCompanyOwner(companyOwnerId, now);
 	}
 
 	@Transactional
@@ -457,6 +465,12 @@ public class NotificationService {
 			? calendarObligationRepository.findVisibleByCompanyOwnerIdOrderByDueAtAsc(user.getId())
 			: calendarObligationRepository.findVisibleByRecipientIdOrderByDueAtAsc(user.getId());
 
+		createMissingCalendarReminderNotifications(obligations, now);
+	}
+
+	private int createMissingCalendarReminderNotifications(List<CalendarObligation> obligations, OffsetDateTime now) {
+		int createdCount = 0;
+
 		for (CalendarObligation obligation : obligations) {
 			if (!shouldShowCalendarReminder(obligation, now)) {
 				continue;
@@ -467,17 +481,32 @@ public class NotificationService {
 					continue;
 				}
 
-				if (calendarReminderNotificationRepository
-					.existsByObligationIdAndRecipientId(obligation.getId(), recipient.getId())) {
-					continue;
+				if (ensureCalendarReminderNotification(obligation, recipient)) {
+					createdCount++;
 				}
 
-				CalendarReminderNotification notification = new CalendarReminderNotification();
-				notification.setObligation(obligation);
-				notification.setRecipient(recipient);
-				calendarReminderNotificationRepository.save(notification);
+				calendarReminderWhatsappDispatchService.dispatchReminderIfNeeded(
+					resolveCompanyOwnerForWhatsappDispatch(obligation),
+					obligation,
+					recipient,
+					now
+				);
 			}
 		}
+
+		return createdCount;
+	}
+
+	private boolean ensureCalendarReminderNotification(CalendarObligation obligation, User recipient) {
+		if (calendarReminderNotificationRepository.findByObligationIdAndRecipientId(obligation.getId(), recipient.getId()).isPresent()) {
+			return false;
+		}
+
+		CalendarReminderNotification notification = new CalendarReminderNotification();
+		notification.setObligation(obligation);
+		notification.setRecipient(recipient);
+		calendarReminderNotificationRepository.save(notification);
+		return true;
 	}
 
 	private boolean shouldShowCalendarReminder(CalendarObligation obligation, OffsetDateTime now) {
@@ -494,6 +523,17 @@ public class NotificationService {
 		}
 
 		return obligation.getDueAt().toLocalDate().isEqual(now.toLocalDate());
+	}
+
+	private User resolveCompanyOwnerForWhatsappDispatch(CalendarObligation obligation) {
+		if (obligation == null || obligation.getCompanyOwner() == null || obligation.getCompanyOwner().getId() == null) {
+			return null;
+		}
+
+		return calendarObligationRepository.findDetailedById(obligation.getId())
+			.map(CalendarObligation::getCompanyOwner)
+			.flatMap(companyOwner -> scopedUserLookupService.findUniqueByEmailInCurrentTenant(companyOwner.getEmail()))
+			.orElse(obligation.getCompanyOwner());
 	}
 
 	private String resolveCalendarObligationStatus(CalendarObligation obligation, OffsetDateTime now) {

@@ -108,16 +108,20 @@ public class TeamService {
 
 		return teamUsersById.values().stream()
 			.sorted(Comparator.comparing(User::getFullName, String.CASE_INSENSITIVE_ORDER))
-			.map(user -> new TeamMemberResponse(
-				user.getId(),
-				user.getFullName(),
-				user.getEmail(),
-				user.getDocumentNumber(),
-				resolveTeamCompanyName(viewer, user, viewerCompanyUsesSectors),
-				primaryRole(user),
-				user.getStatus().name(),
-				sectorsByUserId.getOrDefault(user.getId(), List.of())
-			))
+			.map(user -> {
+				User managedCompanyOwner = resolveManagedCompanyOwner(user);
+				return new TeamMemberResponse(
+					user.getId(),
+					user.getFullName(),
+					user.getEmail(),
+					user.getDocumentNumber(),
+					managedCompanyOwner == null ? null : managedCompanyOwner.getId(),
+					resolveTeamCompanyName(viewer, user, viewerCompanyUsesSectors),
+					primaryRole(user),
+					user.getStatus().name(),
+					sectorsByUserId.getOrDefault(user.getId(), List.of())
+				);
+			})
 			.toList();
 	}
 
@@ -146,6 +150,13 @@ public class TeamService {
 				.map(com.helpdesk.helpdesk.domain.CompanyMembership::getUser)
 				.filter(user -> !user.getId().equals(viewer.getId()))
 				.collect(Collectors.toMap(User::getId, Function.identity(), (firstUser, ignoredUser) -> firstUser));
+
+			if (viewer.getCompanyType() == CompanyType.RESPONDER) {
+				companyMembershipRepository.findByCompanyOwnerCompanyOwnerIdOrderByJoinedAtAsc(viewer.getId()).stream()
+					.map(com.helpdesk.helpdesk.domain.CompanyMembership::getUser)
+					.filter(user -> user != null && !user.getId().equals(viewer.getId()))
+					.forEach(user -> usersById.putIfAbsent(user.getId(), user));
+			}
 
 			for (SectorMember sectorMember : sectorMembers) {
 				User user = sectorMember.getUser();
@@ -371,7 +382,7 @@ public class TeamService {
 		ensureManagedEmployee(removedBy, member, "Esse funcionário não pertence à empresa administrada por você.");
 		boolean companyUsesSectors = companyUsesSectors(removedBy);
 
-		if (companyUsesSectors && !hasRole(member, "EMPLOYEE")) {
+		if (companyUsesSectors && !hasRole(member, "EMPLOYEE") && !isManagedRequesterCompanyMember(removedBy, member)) {
 			throw new IllegalArgumentException("Somente funcionários podem ser removidos da empresa.");
 		}
 		if (!companyUsesSectors && hasRole(member, "ADMIN")) {
@@ -390,12 +401,20 @@ public class TeamService {
 		if (!membershipsToRemove.isEmpty()) {
 			sectorMemberRepository.deleteAll(membershipsToRemove);
 		}
-		companyMembershipRepository.deleteByUserIdAndCompanyOwnerId(member.getId(), removedBy.getId());
+		List<com.helpdesk.helpdesk.domain.CompanyMembership> managedCompanyMemberships = loadManagedCompanyMemberships(removedBy, member);
+		User removedCompanyOwner = managedCompanyMemberships.stream()
+			.map(com.helpdesk.helpdesk.domain.CompanyMembership::getCompanyOwner)
+			.filter(java.util.Objects::nonNull)
+			.findFirst()
+			.orElse(removedBy);
+		if (!managedCompanyMemberships.isEmpty()) {
+			companyMembershipRepository.deleteAll(managedCompanyMemberships);
+		}
 		clearTicketAccessForUser(member, removedSectorIds);
 		refreshPrimaryCompanyOwner(member);
 		removeEmployeeRoleIfWithoutCompanyMembershipsOrSectors(member);
 		userRepository.save(member);
-		createCompanyRemovalNotification(member, removedBy);
+		createCompanyRemovalNotification(member, removedBy, removedCompanyOwner);
 
 		return listMembers(email);
 	}
@@ -434,6 +453,7 @@ public class TeamService {
 			.map(member -> createMembershipNotification(
 				member,
 				deletedBy,
+				null,
 				sector,
 				TeamMembershipNotificationType.SECTOR_REMOVED
 			))
@@ -531,6 +551,7 @@ public class TeamService {
 			.map(sector -> createMembershipNotification(
 				member,
 				removedBy,
+				null,
 				sector,
 				TeamMembershipNotificationType.SECTOR_REMOVED
 			))
@@ -538,15 +559,16 @@ public class TeamService {
 		teamMembershipNotificationRepository.saveAll(notifications);
 	}
 
-	private void createCompanyRemovalNotification(User member, User removedBy) {
+	private void createCompanyRemovalNotification(User member, User removedBy, User removedCompanyOwner) {
 		teamMembershipNotificationRepository.save(
-			createMembershipNotification(member, removedBy, null, TeamMembershipNotificationType.COMPANY_REMOVED)
+			createMembershipNotification(member, removedBy, removedCompanyOwner, null, TeamMembershipNotificationType.COMPANY_REMOVED)
 		);
 	}
 
 	private TeamMembershipNotification createMembershipNotification(
 		User member,
 		User removedBy,
+		User removedCompanyOwner,
 		Sector sector,
 		TeamMembershipNotificationType type
 	) {
@@ -554,15 +576,20 @@ public class TeamService {
 		notification.setRecipient(member);
 		notification.setRemovedBy(removedBy);
 		notification.setSector(sector);
-		notification.setCompanyName(resolveCompanyName(removedBy, sector));
+		notification.setCompanyName(resolveCompanyName(removedBy, removedCompanyOwner, sector));
 		notification.setType(type);
 		return notification;
 	}
 
-	private String resolveCompanyName(User removedBy, Sector sector) {
+	private String resolveCompanyName(User removedBy, User removedCompanyOwner, Sector sector) {
 		if (sector != null && sector.getCreatedBy() != null && sector.getCreatedBy().getCompanyName() != null
 			&& !sector.getCreatedBy().getCompanyName().isBlank()) {
 			return sector.getCreatedBy().getCompanyName();
+		}
+		if (removedCompanyOwner != null
+			&& removedCompanyOwner.getCompanyName() != null
+			&& !removedCompanyOwner.getCompanyName().isBlank()) {
+			return removedCompanyOwner.getCompanyName();
 		}
 		if (removedBy.getCompanyName() != null && !removedBy.getCompanyName().isBlank()) {
 			return removedBy.getCompanyName();
@@ -618,9 +645,16 @@ public class TeamService {
 			return false;
 		}
 
-		return currentTenantUsesSectors
-			? hasRole(user, "EMPLOYEE")
-			: true;
+		if (!currentTenantUsesSectors) {
+			return true;
+		}
+
+		if (hasRole(user, "EMPLOYEE")) {
+			return true;
+		}
+
+		return user.getCompanyOwner() != null
+			&& user.getCompanyOwner().getCompanyType() == CompanyType.REQUESTER;
 	}
 
 	private String resolveTeamCompanyName(User viewer, User user, boolean viewerCompanyUsesSectors) {
@@ -655,11 +689,49 @@ public class TeamService {
 
 	private void ensureManagedEmployee(User admin, User member, String message) {
 		boolean managesMember = companyMembershipRepository.existsByUserIdAndCompanyOwnerId(member.getId(), admin.getId())
+			|| companyMembershipRepository.existsByUserIdAndNestedCompanyOwnerIdAndCompanyType(
+				member.getId(),
+				admin.getId(),
+				CompanyType.REQUESTER
+			)
 			|| sectorMemberRepository.findByUserIdOrderByAssignedAtAsc(member.getId()).stream()
 				.anyMatch(sectorMember -> admin.getId().equals(sectorMember.getSector().getCreatedBy().getId()));
 		if (!managesMember) {
 			throw new IllegalArgumentException(message);
 		}
+	}
+
+	private boolean isManagedRequesterCompanyMember(User admin, User member) {
+		return companyMembershipRepository.existsByUserIdAndNestedCompanyOwnerIdAndCompanyType(
+			member.getId(),
+			admin.getId(),
+			CompanyType.REQUESTER
+		);
+	}
+
+	private List<com.helpdesk.helpdesk.domain.CompanyMembership> loadManagedCompanyMemberships(User admin, User member) {
+		List<com.helpdesk.helpdesk.domain.CompanyMembership> managedMemberships =
+			companyMembershipRepository.findByUserIdOrderByJoinedAtAsc(member.getId()).stream()
+				.filter(membership -> membership.getCompanyOwner() != null)
+				.filter(membership -> admin.getId().equals(membership.getCompanyOwner().getId())
+					|| (
+						membership.getCompanyOwner().getCompanyOwner() != null
+							&& admin.getId().equals(membership.getCompanyOwner().getCompanyOwner().getId())
+							&& membership.getCompanyOwner().getCompanyType() == CompanyType.REQUESTER
+					))
+				.toList();
+
+		User primaryCompanyOwner = member.getCompanyOwner();
+		if (primaryCompanyOwner != null) {
+			List<com.helpdesk.helpdesk.domain.CompanyMembership> primaryMemberships = managedMemberships.stream()
+				.filter(membership -> primaryCompanyOwner.getId().equals(membership.getCompanyOwner().getId()))
+				.toList();
+			if (!primaryMemberships.isEmpty()) {
+				return primaryMemberships;
+			}
+		}
+
+		return managedMemberships.stream().limit(1).toList();
 	}
 
 	private void ensureInvitableUser(User invitedUser) {

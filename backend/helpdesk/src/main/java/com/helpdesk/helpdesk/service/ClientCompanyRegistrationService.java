@@ -3,6 +3,7 @@ package com.helpdesk.helpdesk.service;
 import java.time.OffsetDateTime;
 import java.util.EnumSet;
 import java.util.Locale;
+import java.util.UUID;
 
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -23,7 +24,6 @@ import com.helpdesk.helpdesk.dto.company.LinkExistingClientCompanyRequest;
 import com.helpdesk.helpdesk.repository.CompanyPartnershipRepository;
 import com.helpdesk.helpdesk.repository.RoleRepository;
 import com.helpdesk.helpdesk.repository.UserRepository;
-import com.helpdesk.helpdesk.util.BrazilianDocumentValidator;
 
 @Service
 public class ClientCompanyRegistrationService {
@@ -60,49 +60,44 @@ public class ClientCompanyRegistrationService {
 	@Transactional
 	public ClientCompanyRegistrationResponse register(CreateClientCompanyRequest request) {
 		User providerAdmin = loadProviderAdmin(request.createdByEmail());
-		String normalizedEmail = normalizeEmail(request.email());
 		String normalizedCompanyDocument = normalizeCompanyDocument(request.companyDocument());
-		String normalizedDocumentNumber = normalizeDocumentNumber(request.documentNumber());
+		String normalizedCompanyContactEmail = normalizeOptionalCompanyEmail(request.companyEmail());
+		String normalizedCompanyContactPhone = normalizePhoneNumber(request.companyPhoneNumber());
 
-		emailDomainValidationService.ensurePublicEmailDomainExists(normalizedEmail);
+		if (normalizedCompanyContactEmail != null) {
+			emailDomainValidationService.ensurePublicEmailDomainExists(normalizedCompanyContactEmail);
+		}
 		cnpjLookupService.ensureCompanyExists(normalizedCompanyDocument);
-
-		if (!BrazilianDocumentValidator.isValidCpf(normalizedDocumentNumber)) {
-			throw new IllegalArgumentException("Informe um CPF válido para o administrador da empresa cliente.");
-		}
-
-		User existingUserByEmail = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizedEmail).orElse(null);
-		if (existingUserByEmail != null && tenantAccessService.belongsToCurrentTenant(existingUserByEmail)) {
-			throw new IllegalArgumentException("Já existe um usuário cadastrado com esse email.");
-		}
 
 		User existingCompany = findTenantScopedAdminCompanyByDocument(normalizedCompanyDocument);
 		if (existingCompany != null) {
-			throw new IllegalArgumentException("Já existe uma empresa cadastrada com esse CNPJ.");
+			throw new IllegalArgumentException("Já existe uma empresa cliente cadastrada com esse CNPJ.");
 		}
 
 		Role adminRole = roleRepository.findByCode("ADMIN")
 			.orElseThrow(() -> new NotFoundException("Perfil de administrador não encontrado."));
 
-		User clientAdmin = new User();
-		clientAdmin.setFullName(request.fullName().trim());
-		clientAdmin.setEmail(normalizedEmail);
-		clientAdmin.setPhoneNumber(normalizePhoneNumber(request.phoneNumber()));
-		clientAdmin.setDocumentNumber(normalizedDocumentNumber);
-		clientAdmin.setCompanyName(request.companyName().trim());
-		clientAdmin.setCompanyDocument(normalizedCompanyDocument);
-		clientAdmin.setCompanyType(CompanyType.REQUESTER);
-		clientAdmin.setCompanyOwner(providerAdmin);
-		clientAdmin.setPasswordHash(passwordEncoder.encode(request.password()));
-		clientAdmin.setStatus(UserStatus.ACTIVE);
-		clientAdmin.setEmailVerified(true);
-		clientAdmin.setSimplified(false);
-		clientAdmin.getRoles().clear();
-		clientAdmin.getRoles().add(adminRole);
+		User clientCompanyOwner = new User();
+		clientCompanyOwner.setFullName(request.companyName().trim());
+		clientCompanyOwner.setEmail(generateInternalCompanyEmail(providerAdmin, normalizedCompanyDocument));
+		clientCompanyOwner.setPhoneNumber(null);
+		clientCompanyOwner.setDocumentNumber(null);
+		clientCompanyOwner.setCompanyName(request.companyName().trim());
+		clientCompanyOwner.setCompanyDocument(normalizedCompanyDocument);
+		clientCompanyOwner.setCompanyContactEmail(normalizedCompanyContactEmail);
+		clientCompanyOwner.setCompanyContactPhone(normalizedCompanyContactPhone);
+		clientCompanyOwner.setCompanyType(CompanyType.REQUESTER);
+		clientCompanyOwner.setCompanyOwner(providerAdmin);
+		clientCompanyOwner.setPasswordHash(passwordEncoder.encode(UUID.randomUUID().toString()));
+		clientCompanyOwner.setStatus(UserStatus.PENDING);
+		clientCompanyOwner.setEmailVerified(false);
+		clientCompanyOwner.setSimplified(true);
+		clientCompanyOwner.getRoles().clear();
+		clientCompanyOwner.getRoles().add(adminRole);
 
-		User savedClientAdmin = userRepository.save(clientAdmin);
-		ensureAcceptedPartnership(providerAdmin, savedClientAdmin);
-		return toResponse(savedClientAdmin, providerAdmin);
+		User savedClientCompanyOwner = userRepository.save(clientCompanyOwner);
+		ensureAcceptedPartnership(providerAdmin, savedClientCompanyOwner);
+		return toResponse(savedClientCompanyOwner, providerAdmin);
 	}
 
 	@Transactional(readOnly = true)
@@ -112,7 +107,7 @@ public class ClientCompanyRegistrationService {
 		User existingCompany = findTenantScopedAdminCompanyByDocument(normalizedCompanyDocument);
 
 		if (existingCompany == null) {
-			return new ClientCompanyLookupResponse("AVAILABLE", null, null, null, null, null, null);
+			return new ClientCompanyLookupResponse("AVAILABLE", null, null, null, null);
 		}
 
 		if (existingCompany.getId().equals(providerAdmin.getId()) || existingCompany.getCompanyType() != CompanyType.REQUESTER) {
@@ -121,9 +116,7 @@ public class ClientCompanyRegistrationService {
 				"Esse CNPJ já está vinculado a um cadastro que não pode ser usado como empresa cliente.",
 				existingCompany.getId(),
 				existingCompany.getCompanyName(),
-				existingCompany.getCompanyDocument(),
-				existingCompany.getFullName(),
-				existingCompany.getEmail()
+				existingCompany.getCompanyDocument()
 			);
 		}
 
@@ -132,54 +125,31 @@ public class ClientCompanyRegistrationService {
 			String status = partnership.getStatus() == CompanyPartnershipStatus.ACCEPTED ? "ALREADY_CLIENT" : "PENDING_LINK";
 			String message = partnership.getStatus() == CompanyPartnershipStatus.ACCEPTED
 				? "A empresa desse CNPJ já está vinculada à sua operação."
-				: "Já existe uma solicitação pendente para vincular essa empresa cliente.";
+				: "Já existe um cadastro pendente para essa empresa cliente.";
 			return new ClientCompanyLookupResponse(
 				status,
 				message,
 				existingCompany.getId(),
 				existingCompany.getCompanyName(),
-				existingCompany.getCompanyDocument(),
-				existingCompany.getFullName(),
-				existingCompany.getEmail()
+				existingCompany.getCompanyDocument()
 			);
 		}
 
 		return new ClientCompanyLookupResponse(
-			"CAN_LINK_EXISTING",
-			"Esse CNPJ já está cadastrado e pode ser vinculado como empresa cliente.",
+			"UNAVAILABLE",
+			"Esse CNPJ já está cadastrado para uma empresa cliente deste domínio.",
 			existingCompany.getId(),
 			existingCompany.getCompanyName(),
-			existingCompany.getCompanyDocument(),
-			existingCompany.getFullName(),
-			existingCompany.getEmail()
+			existingCompany.getCompanyDocument()
 		);
 	}
 
 	@Transactional
 	public ClientCompanyRegistrationResponse linkExisting(LinkExistingClientCompanyRequest request) {
-		User providerAdmin = loadProviderAdmin(request.createdByEmail());
-		User existingCompany = userRepository.findAdminCompanyOwnerByIdAndCompanyType(
-			request.companyOwnerId(),
-			CompanyType.REQUESTER
-		).orElseThrow(() -> new NotFoundException("Empresa cliente não encontrada."));
-
-		if (!tenantAccessService.belongsToCurrentTenant(existingCompany)) {
-			throw new NotFoundException("Empresa cliente não encontrada.");
-		}
-		if (existingCompany.getId().equals(providerAdmin.getId())) {
-			throw new IllegalArgumentException("Você não pode vincular a própria empresa como cliente.");
-		}
-
-		CompanyPartnership partnership = findExistingPartnership(providerAdmin, existingCompany);
-		if (partnership != null) {
-			if (partnership.getStatus() == CompanyPartnershipStatus.ACCEPTED) {
-				throw new IllegalArgumentException("Essa empresa já está vinculada como cliente.");
-			}
-			throw new IllegalArgumentException("Já existe uma solicitação pendente para essa empresa cliente.");
-		}
-
-		ensureAcceptedPartnership(providerAdmin, existingCompany);
-		return toResponse(existingCompany, providerAdmin);
+		loadProviderAdmin(request.createdByEmail());
+		throw new IllegalArgumentException(
+			"Esse fluxo não está mais disponível. Cadastre a empresa cliente diretamente por esta tela."
+		);
 	}
 
 	private User loadProviderAdmin(String email) {
@@ -225,17 +195,17 @@ public class ClientCompanyRegistrationService {
 		companyPartnershipRepository.save(partnership);
 	}
 
-	private ClientCompanyRegistrationResponse toResponse(User clientAdmin, User providerAdmin) {
+	private ClientCompanyRegistrationResponse toResponse(User clientCompanyOwner, User providerAdmin) {
 		String subdomain = tenantAccessService.findPrimaryCompanyForUser(providerAdmin)
 			.map(Company::getSubdomain)
 			.orElse(null);
 
 		return new ClientCompanyRegistrationResponse(
-			clientAdmin.getId(),
-			clientAdmin.getCompanyName(),
-			clientAdmin.getCompanyDocument(),
-			clientAdmin.getFullName(),
-			clientAdmin.getEmail(),
+			clientCompanyOwner.getId(),
+			clientCompanyOwner.getCompanyName(),
+			clientCompanyOwner.getCompanyDocument(),
+			clientCompanyOwner.getCompanyContactEmail(),
+			clientCompanyOwner.getCompanyContactPhone(),
 			subdomain
 		);
 	}
@@ -252,11 +222,15 @@ public class ClientCompanyRegistrationService {
 		return email.trim().toLowerCase(Locale.ROOT);
 	}
 
-	private String normalizeDocumentNumber(String value) {
-		if (value == null || value.isBlank()) {
-			throw new IllegalArgumentException("Informe o CPF do administrador.");
+	private String normalizeOptionalCompanyEmail(String email) {
+		if (email == null || email.isBlank()) {
+			return null;
 		}
-		return value.trim().replaceAll("\\D", "");
+		return email.trim().toLowerCase(Locale.ROOT);
+	}
+
+	private String generateInternalCompanyEmail(User providerAdmin, String companyDocument) {
+		return "client-company-" + companyDocument + "-" + providerAdmin.getId() + "@internal.chamaqui.local";
 	}
 
 	private String normalizeCompanyDocument(String value) {
@@ -275,6 +249,7 @@ public class ClientCompanyRegistrationService {
 		if (value == null || value.isBlank()) {
 			return null;
 		}
-		return value.trim();
+		String normalizedValue = value.trim();
+		return normalizedValue.isBlank() ? null : normalizedValue;
 	}
 }

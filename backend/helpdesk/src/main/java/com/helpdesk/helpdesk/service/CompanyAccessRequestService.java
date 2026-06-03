@@ -190,8 +190,9 @@ public class CompanyAccessRequestService {
 		User admin = loadAdminByEmail(request.email());
 		CompanyAccessRequest accessRequest = loadPendingRequestForAdminResponse(requestId, admin);
 		User requester = accessRequest.getRequesterUser();
+		User membershipCompanyOwner = resolveMembershipCompanyOwner(accessRequest, admin);
 
-		ensureCompanyMembership(requester, admin);
+		ensureCompanyMembership(requester, membershipCompanyOwner);
 		requester.setStatus(UserStatus.ACTIVE);
 		userRepository.save(requester);
 
@@ -331,9 +332,9 @@ public class CompanyAccessRequestService {
 			request.getRequesterName(),
 			request.getRequesterEmail(),
 			request.getRequesterDocumentNumber(),
-			requesterUser == null ? resolveRequestedRole(request.getTargetCompany()) : resolvePrimaryRole(requesterUser),
-			resolveCompanyName(request.getTargetCompany()),
-			request.getTargetCompany().getCompanyType() == null ? null : request.getTargetCompany().getCompanyType().name(),
+			requesterUser == null ? resolveRequestedRole(request) : resolveRequestedRole(request),
+			resolveRequestedCompanyName(request),
+			resolveRequestedCompanyType(request),
 			request.getStatus().name(),
 			request.getCreatedAt()
 		);
@@ -520,18 +521,56 @@ public class CompanyAccessRequestService {
 		return request.getExpiresAt() == null || !request.getExpiresAt().isBefore(OffsetDateTime.now());
 	}
 
-	private String resolvePrimaryRole(User user) {
-		if (hasRole(user, "EMPLOYEE")) {
-			return "employee";
-		}
-		if (hasRole(user, "ADMIN")) {
-			return "admin";
-		}
-		return "user";
-	}
-
 	private String resolveRequestedRole(User targetCompany) {
 		return targetCompany.getCompanyType() == CompanyType.RESPONDER ? "employee" : "user";
+	}
+
+	private String resolveRequestedRole(CompanyAccessRequest request) {
+		User requesterUser = request.getRequesterUser();
+		if (requesterUser != null
+			&& requesterUser.getCompanyOwner() != null
+			&& requesterUser.getCompanyOwner().getCompanyType() == CompanyType.REQUESTER
+			&& request.getTargetCompany().getCompanyType() == CompanyType.RESPONDER) {
+			return "user";
+		}
+
+		return resolveRequestedRole(request.getTargetCompany());
+	}
+
+	private String resolveRequestedCompanyName(CompanyAccessRequest request) {
+		User requesterUser = request.getRequesterUser();
+		if (requesterUser != null
+			&& requesterUser.getCompanyOwner() != null
+			&& requesterUser.getCompanyOwner().getCompanyType() == CompanyType.REQUESTER
+			&& request.getTargetCompany().getCompanyType() == CompanyType.RESPONDER) {
+			return resolveCompanyName(requesterUser.getCompanyOwner());
+		}
+
+		return resolveCompanyName(request.getTargetCompany());
+	}
+
+	private String resolveRequestedCompanyType(CompanyAccessRequest request) {
+		User requesterUser = request.getRequesterUser();
+		if (requesterUser != null
+			&& requesterUser.getCompanyOwner() != null
+			&& requesterUser.getCompanyOwner().getCompanyType() == CompanyType.REQUESTER
+			&& request.getTargetCompany().getCompanyType() == CompanyType.RESPONDER) {
+			return CompanyType.REQUESTER.name();
+		}
+
+		return request.getTargetCompany().getCompanyType() == null ? null : request.getTargetCompany().getCompanyType().name();
+	}
+
+	private User resolveMembershipCompanyOwner(CompanyAccessRequest request, User admin) {
+		User requester = request.getRequesterUser();
+		if (requester != null
+			&& requester.getCompanyOwner() != null
+			&& requester.getCompanyOwner().getCompanyType() == CompanyType.REQUESTER
+			&& admin.getCompanyType() == CompanyType.RESPONDER) {
+			return requester.getCompanyOwner();
+		}
+
+		return admin;
 	}
 
 	private String resolveCompanyName(User companyOwner) {

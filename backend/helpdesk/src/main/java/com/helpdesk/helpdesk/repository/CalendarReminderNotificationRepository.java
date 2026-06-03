@@ -36,6 +36,8 @@ public interface CalendarReminderNotificationRepository extends JpaRepository<Ca
 	})
 	Optional<CalendarReminderNotification> findDetailedById(UUID id);
 
+	Optional<CalendarReminderNotification> findByObligationIdAndRecipientId(UUID obligationId, UUID recipientId);
+
 	boolean existsByObligationIdAndRecipientId(UUID obligationId, UUID recipientId);
 
 	void deleteByObligationId(UUID obligationId);

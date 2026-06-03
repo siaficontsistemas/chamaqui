@@ -4,9 +4,11 @@ import java.time.YearMonth;
 import java.time.format.TextStyle;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
@@ -16,6 +18,7 @@ import com.helpdesk.helpdesk.common.NotFoundException;
 import com.helpdesk.helpdesk.domain.Ticket;
 import com.helpdesk.helpdesk.domain.TicketMessage;
 import com.helpdesk.helpdesk.domain.User;
+import com.helpdesk.helpdesk.dto.report.PersonalReportCompanyResponse;
 import com.helpdesk.helpdesk.dto.report.PersonalReportRowResponse;
 import com.helpdesk.helpdesk.repository.TicketMessageRepository;
 import com.helpdesk.helpdesk.repository.TicketRepository;
@@ -59,6 +62,18 @@ public class ReportService {
 				message -> YearMonth.from(message.getCreatedAt()),
 				Collectors.counting()
 			));
+		Map<YearMonth, Map<String, Set<java.util.UUID>>> repliedTicketIdsByCompanyAndMonth =
+			ticketMessageRepository.findByAuthorIdOrderByCreatedAtDesc(user.getId()).stream()
+				.filter(this::isReplyMessage)
+				.collect(Collectors.groupingBy(
+					message -> YearMonth.from(message.getCreatedAt()),
+					LinkedHashMap::new,
+					Collectors.groupingBy(
+						message -> resolveRequesterCompanyName(message.getTicket()),
+						LinkedHashMap::new,
+						Collectors.mapping(message -> message.getTicket().getId(), Collectors.toCollection(LinkedHashSet::new))
+					)
+				));
 
 		Map<YearMonth, PersonalReportCounters> countersByMonth = new LinkedHashMap<>();
 		createdTicketsByMonth.forEach((yearMonth, count) ->
@@ -66,6 +81,9 @@ public class ReportService {
 		);
 		repliedTicketsByMonth.forEach((yearMonth, count) ->
 			countersByMonth.computeIfAbsent(yearMonth, ignored -> new PersonalReportCounters()).repliedTickets = count
+		);
+		repliedTicketIdsByCompanyAndMonth.forEach((yearMonth, ticketIdsByCompany) ->
+			countersByMonth.computeIfAbsent(yearMonth, ignored -> new PersonalReportCounters()).repliedCompanies = ticketIdsByCompany
 		);
 
 		return countersByMonth.entrySet().stream()
@@ -76,7 +94,12 @@ public class ReportService {
 					String.valueOf(entry.getKey().getYear()),
 					entry.getKey().getMonth().getDisplayName(TextStyle.FULL, Locale.forLanguageTag("pt-BR")),
 					counters.createdTickets,
-					counters.repliedTickets
+					counters.repliedTickets,
+					counters.repliedCompanies.entrySet().stream()
+						.map(companyEntry -> new PersonalReportCompanyResponse(companyEntry.getKey(), companyEntry.getValue().size()))
+						.sorted(Comparator.comparingLong(PersonalReportCompanyResponse::repliedTickets).reversed()
+							.thenComparing(PersonalReportCompanyResponse::companyName, String.CASE_INSENSITIVE_ORDER))
+						.toList()
 				);
 			})
 			.toList();
@@ -89,8 +112,31 @@ public class ReportService {
 			&& !message.getCreatedAt().isEqual(ticket.getOpenedAt());
 	}
 
+	private String resolveRequesterCompanyName(Ticket ticket) {
+		if (ticket == null || ticket.getRequester() == null) {
+			return "Não informado";
+		}
+
+		User requester = ticket.getRequester();
+		User requesterCompany = requester.getCompanyOwner() != null ? requester.getCompanyOwner() : requester;
+		String companyName = requesterCompany.getCompanyName();
+
+		if ((companyName == null || companyName.isBlank())
+			&& requesterCompany.getCompanyDocument() != null
+			&& !requesterCompany.getCompanyDocument().isBlank()) {
+			companyName = requesterCompany.getFullName();
+		}
+
+		if (companyName == null || companyName.isBlank()) {
+			return "Não informado";
+		}
+
+		return companyName.trim();
+	}
+
 	private static final class PersonalReportCounters {
 		private long createdTickets;
 		private long repliedTickets;
+		private Map<String, Set<java.util.UUID>> repliedCompanies = new LinkedHashMap<>();
 	}
 }

@@ -54,6 +54,9 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 	Optional<User> findByPhoneNumber(String phoneNumber);
 
 	@EntityGraph(attributePaths = {"roles", "companyOwner"})
+	java.util.List<User> findAllByPhoneNumberOrderByCreatedAtAsc(String phoneNumber);
+
+	@EntityGraph(attributePaths = {"roles", "companyOwner"})
 	Optional<User> findByPasswordResetTokenHash(String passwordResetTokenHash);
 
 	@EntityGraph(attributePaths = {"roles", "companyOwner"})

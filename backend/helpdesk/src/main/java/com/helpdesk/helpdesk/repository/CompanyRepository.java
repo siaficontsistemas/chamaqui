@@ -24,6 +24,7 @@ public interface CompanyRepository extends JpaRepository<Company, UUID> {
 	@EntityGraph(attributePaths = {"ownerUser", "ownerUser.roles"})
 	List<Company> findAllByOrderByCompanyNameAsc();
 
+	@EntityGraph(attributePaths = {"ownerUser", "ownerUser.roles"})
 	List<Company> findAllByActiveTrueOrderByCompanyNameAsc();
 
 	boolean existsByCompanyDocument(String companyDocument);

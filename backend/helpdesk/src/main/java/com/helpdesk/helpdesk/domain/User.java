@@ -52,6 +52,12 @@ public class User {
 	@Column(name = "company_document", length = 20)
 	private String companyDocument;
 
+	@Column(name = "company_contact_email", length = 150)
+	private String companyContactEmail;
+
+	@Column(name = "company_contact_phone", length = 30)
+	private String companyContactPhone;
+
 	@Enumerated(EnumType.STRING)
 	@Column(name = "company_type", length = 20)
 	private CompanyType companyType;
@@ -182,6 +188,22 @@ public class User {
 
 	public void setCompanyType(CompanyType companyType) {
 		this.companyType = companyType;
+	}
+
+	public String getCompanyContactEmail() {
+		return companyContactEmail;
+	}
+
+	public void setCompanyContactEmail(String companyContactEmail) {
+		this.companyContactEmail = companyContactEmail;
+	}
+
+	public String getCompanyContactPhone() {
+		return companyContactPhone;
+	}
+
+	public void setCompanyContactPhone(String companyContactPhone) {
+		this.companyContactPhone = companyContactPhone;
 	}
 
 	public User getCompanyOwner() {

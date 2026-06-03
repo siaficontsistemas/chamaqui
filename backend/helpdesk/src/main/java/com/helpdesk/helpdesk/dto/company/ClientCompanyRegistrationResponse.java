@@ -6,8 +6,8 @@ public record ClientCompanyRegistrationResponse(
 	UUID companyOwnerId,
 	String companyName,
 	String companyDocument,
-	String adminName,
-	String adminEmail,
+	String companyEmail,
+	String companyPhoneNumber,
 	String subdomain
 ) {
 }
