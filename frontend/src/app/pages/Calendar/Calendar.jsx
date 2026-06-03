@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import {
   completeCalendarObligation,
   createCalendarObligation,
@@ -30,6 +31,7 @@ function Calendar({
   onRefreshDashboardData,
   userRole = 'user',
 }) {
+  const location = useLocation()
   const [obligations, setObligations] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -40,6 +42,11 @@ function Calendar({
   const [isConfirmingAction, setIsConfirmingAction] = useState(false)
   const [editingObligationId, setEditingObligationId] = useState('')
   const [formValues, setFormValues] = useState(EMPTY_FORM_VALUES)
+  const highlightedObligationRef = useRef(null)
+  const focusedObligationId = useMemo(
+    () => new URLSearchParams(location.search).get('obligationId') || '',
+    [location.search]
+  )
 
   const isAdmin = userRole === 'admin'
   const fullDateTimeFormatter = useMemo(
@@ -185,7 +192,8 @@ function Calendar({
   }, [obligations])
 
   const reminderList = useMemo(() => {
-    return obligations
+    return prioritizeObligations(
+      obligations
       .filter(
         (obligation) =>
           obligation.status !== 'COMPLETED' &&
@@ -193,14 +201,49 @@ function Calendar({
             obligation.status === 'OVERDUE' ||
             obligation.status === 'DUE_TODAY')
       )
-      .slice(0, 8)
-  }, [obligations])
+      ,
+      focusedObligationId,
+      8
+    )
+  }, [focusedObligationId, obligations])
 
   const upcomingList = useMemo(() => {
-    return obligations
-      .filter((obligation) => obligation.status === 'UPCOMING' || obligation.status === 'DUE_TODAY')
-      .slice(0, 6)
-  }, [obligations])
+    return prioritizeObligations(
+      obligations.filter(
+        (obligation) => obligation.status === 'UPCOMING' || obligation.status === 'DUE_TODAY'
+      ),
+      focusedObligationId,
+      6
+    )
+  }, [focusedObligationId, obligations])
+
+  useEffect(() => {
+    if (!focusedObligationId || obligations.length === 0) {
+      return
+    }
+
+    const focusedObligation = obligations.find((obligation) => obligation.id === focusedObligationId)
+    if (!focusedObligation?.dueAt) {
+      return
+    }
+
+    setSelectedMonth(formatMonthInput(new Date(focusedObligation.dueAt)))
+  }, [focusedObligationId, obligations])
+
+  useEffect(() => {
+    if (!focusedObligationId || !highlightedObligationRef.current) {
+      return
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      highlightedObligationRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      })
+    })
+
+    return () => window.cancelAnimationFrame(frameId)
+  }, [focusedObligationId, reminderList, upcomingList, selectedMonth])
 
   function closeConfirmation() {
     if (isConfirmingAction) {
@@ -585,7 +628,7 @@ function Calendar({
                         <div className="calendar-grid__items">
                           {visibleDayObligations.map((obligation) => (
                             <span
-                              className={`calendar-chip is-${obligation.status.toLowerCase()}`}
+                              className={`calendar-chip is-${obligation.status.toLowerCase()}${focusedObligationId === obligation.id ? ' is-highlighted' : ''}`}
                               key={obligation.id}
                               title={obligation.title}
                             >
@@ -617,7 +660,11 @@ function Calendar({
                   <div className="calendar-panel__list">
                     {reminderList.length > 0 ? (
                       reminderList.map((obligation) => (
-                        <article className="calendar-task-card" key={`reminder-${obligation.id}`}>
+                        <article
+                          className={`calendar-task-card${focusedObligationId === obligation.id ? ' is-highlighted' : ''}`}
+                          key={`reminder-${obligation.id}`}
+                          ref={focusedObligationId === obligation.id ? highlightedObligationRef : null}
+                        >
                           <div className="calendar-task-card__top">
                             <strong>{obligation.title}</strong>
                             <span className={`calendar-badge is-${obligation.status.toLowerCase()}`}>
@@ -683,7 +730,11 @@ function Calendar({
                   <div className="calendar-panel__list">
                     {upcomingList.length > 0 ? (
                       upcomingList.map((obligation) => (
-                        <article className="calendar-task-card" key={obligation.id}>
+                        <article
+                          className={`calendar-task-card${focusedObligationId === obligation.id ? ' is-highlighted' : ''}`}
+                          key={obligation.id}
+                          ref={focusedObligationId === obligation.id ? highlightedObligationRef : null}
+                        >
                           <div className="calendar-task-card__top">
                             <strong>{obligation.title}</strong>
                             <span className={`calendar-badge is-${obligation.status.toLowerCase()}`}>
@@ -768,6 +819,26 @@ function getStatusLabel(status) {
   }
 
   return 'Próximo'
+}
+
+function prioritizeObligations(obligations, focusedObligationId, limit) {
+  if (!Array.isArray(obligations) || obligations.length === 0) {
+    return []
+  }
+
+  if (!focusedObligationId) {
+    return obligations.slice(0, limit)
+  }
+
+  const focusedObligation = obligations.find((obligation) => obligation.id === focusedObligationId)
+  if (!focusedObligation) {
+    return obligations.slice(0, limit)
+  }
+
+  return [focusedObligation, ...obligations.filter((obligation) => obligation.id !== focusedObligationId)].slice(
+    0,
+    limit
+  )
 }
 
 function formatDayKey(date) {

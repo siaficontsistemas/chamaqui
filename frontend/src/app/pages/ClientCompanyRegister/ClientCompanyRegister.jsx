@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import ConfirmActionModal from '../../components/confirm-action-modal/ConfirmActionModal'
 import Header from '../../components/header/Header'
 import Sidebar from '../../components/sidebar/Sidebar'
 import { dashboardPages } from '../../dashboardData'
@@ -9,11 +8,8 @@ import './ClientCompanyRegister.css'
 const INITIAL_FORM_VALUES = {
   companyName: '',
   companyDocument: '',
-  fullName: '',
-  email: '',
-  phoneNumber: '',
-  documentNumber: '',
-  password: '',
+  companyEmail: '',
+  companyPhoneNumber: '',
 }
 
 function ClientCompanyRegister({
@@ -22,7 +18,6 @@ function ClientCompanyRegister({
   navigationGroups,
   onCreateClientCompany,
   onLookupClientCompany,
-  onLinkExistingClientCompany,
   onNavigatePage,
 }) {
   const [formValues, setFormValues] = useState(INITIAL_FORM_VALUES)
@@ -30,22 +25,13 @@ function ClientCompanyRegister({
   const [feedbackType, setFeedbackType] = useState('info')
   const [createdCompany, setCreatedCompany] = useState(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [existingCompanyToLink, setExistingCompanyToLink] = useState(null)
-  const [isLinkingExistingCompany, setIsLinkingExistingCompany] = useState(false)
 
   async function handleSubmit(event) {
     event.preventDefault()
 
-    if (
-      !formValues.companyName.trim() ||
-      !formValues.companyDocument.trim() ||
-      !formValues.fullName.trim() ||
-      !formValues.email.trim() ||
-      !formValues.documentNumber.trim() ||
-      !formValues.password.trim()
-    ) {
+    if (!formValues.companyName.trim() || !formValues.companyDocument.trim()) {
       setFeedbackType('error')
-      setFeedbackMessage('Preencha todos os campos obrigatórios para concluir o cadastro da empresa cliente.')
+      setFeedbackMessage('Preencha o nome e o CNPJ da empresa cliente para concluir o cadastro.')
       return
     }
 
@@ -70,60 +56,23 @@ function ClientCompanyRegister({
         return
       }
 
-      if (companyLookup?.status === 'CAN_LINK_EXISTING') {
-        setExistingCompanyToLink(companyLookup)
-        return
-      }
-
       const response = await onCreateClientCompany?.({
         companyName: formValues.companyName.trim(),
         companyDocument: formValues.companyDocument.trim(),
-        fullName: formValues.fullName.trim(),
-        email: formValues.email.trim().toLowerCase(),
-        phoneNumber: formValues.phoneNumber.trim(),
-        documentNumber: formValues.documentNumber.trim(),
-        password: formValues.password,
+        companyEmail: formValues.companyEmail.trim().toLowerCase(),
+        companyPhoneNumber: formValues.companyPhoneNumber.trim(),
       })
 
       setCreatedCompany(response)
       setFormValues(INITIAL_FORM_VALUES)
       setFeedbackType('success')
-      setFeedbackMessage('Empresa cliente cadastrada e vinculada com sucesso.')
+      setFeedbackMessage('Empresa cliente cadastrada com sucesso.')
     } catch (error) {
       setFeedbackType('error')
       setFeedbackMessage(error.message || 'Não foi possível cadastrar a empresa cliente.')
     } finally {
       setIsSubmitting(false)
     }
-  }
-
-  async function handleConfirmLinkExistingCompany() {
-    if (!existingCompanyToLink?.companyOwnerId) {
-      return
-    }
-
-    try {
-      setIsLinkingExistingCompany(true)
-      setFeedbackMessage('')
-      const response = await onLinkExistingClientCompany?.(existingCompanyToLink.companyOwnerId)
-      setCreatedCompany(response)
-      setFeedbackType('success')
-      setFeedbackMessage('Empresa cliente vinculada com sucesso.')
-      setFormValues(INITIAL_FORM_VALUES)
-      setExistingCompanyToLink(null)
-    } catch (error) {
-      setFeedbackType('error')
-      setFeedbackMessage(error.message || 'Não foi possível vincular a empresa cliente existente.')
-    } finally {
-      setIsLinkingExistingCompany(false)
-    }
-  }
-
-  function handleCancelLinkExistingCompany() {
-    if (isLinkingExistingCompany) {
-      return
-    }
-    setExistingCompanyToLink(null)
   }
 
   return (
@@ -157,12 +106,12 @@ function ClientCompanyRegister({
                   <article className="team-view__summary-card">
                     <span>Empresa provedora</span>
                     <strong>{currentUser?.companyName || 'Não informada'}</strong>
-                    <small>O novo cadastro será vinculado automaticamente à sua empresa atendente.</small>
+                    <small>A nova empresa cliente ficará gerenciada dentro da sua operação de atendimento.</small>
                   </article>
                   <article className="team-view__summary-card">
                     <span>Tipo criado</span>
                     <strong>Empresa cliente</strong>
-                    <small>O administrador da empresa cliente acessará pelo mesmo subdomínio da sua empresa.</small>
+                    <small>A empresa cliente não terá administrador fixo e funcionará apenas com funcionários.</small>
                   </article>
                 </div>
 
@@ -170,7 +119,7 @@ function ClientCompanyRegister({
                   <div className="team-invite__header">
                     <div>
                       <span className="home-panel__eyebrow">Novo cadastro</span>
-                      <h2>Dados da empresa cliente e do administrador</h2>
+                      <h2>Dados da empresa cliente</h2>
                     </div>
                   </div>
 
@@ -224,55 +173,17 @@ function ClientCompanyRegister({
 
                   <div className="ticket-form__grid">
                     <label className="ticket-field">
-                      <span>Nome do administrador</span>
-                      <div className="ticket-field__control">
-                        <input
-                          type="text"
-                          placeholder="Digite o nome completo"
-                          value={formValues.fullName}
-                          disabled={isSubmitting}
-                          onChange={(event) =>
-                            setFormValues((currentValues) => ({
-                              ...currentValues,
-                              fullName: event.target.value,
-                            }))
-                          }
-                        />
-                      </div>
-                    </label>
-
-                    <label className="ticket-field">
-                      <span>Email do administrador</span>
+                      <span>Email da empresa cliente</span>
                       <div className="ticket-field__control">
                         <input
                           type="email"
-                          placeholder="Digite o email do administrador"
-                          value={formValues.email}
+                          placeholder="Digite o email da empresa cliente"
+                          value={formValues.companyEmail}
                           disabled={isSubmitting}
                           onChange={(event) =>
                             setFormValues((currentValues) => ({
                               ...currentValues,
-                              email: event.target.value,
-                            }))
-                          }
-                        />
-                      </div>
-                    </label>
-                  </div>
-
-                  <div className="ticket-form__grid">
-                    <label className="ticket-field">
-                      <span>Telefone do administrador</span>
-                      <div className="ticket-field__control">
-                        <input
-                          type="text"
-                          placeholder="Digite o telefone do administrador"
-                          value={formValues.phoneNumber}
-                          disabled={isSubmitting}
-                          onChange={(event) =>
-                            setFormValues((currentValues) => ({
-                              ...currentValues,
-                              phoneNumber: event.target.value,
+                              companyEmail: event.target.value,
                             }))
                           }
                         />
@@ -280,46 +191,28 @@ function ClientCompanyRegister({
                     </label>
 
                     <label className="ticket-field">
-                      <span>CPF do administrador</span>
+                      <span>Telefone da empresa cliente</span>
                       <div className="ticket-field__control">
                         <input
                           type="text"
-                          placeholder="Digite o CPF do administrador"
-                          value={formValues.documentNumber}
+                          placeholder="Digite o telefone da empresa cliente"
+                          value={formValues.companyPhoneNumber}
                           disabled={isSubmitting}
                           onChange={(event) =>
                             setFormValues((currentValues) => ({
                               ...currentValues,
-                              documentNumber: event.target.value,
+                              companyPhoneNumber: event.target.value,
                             }))
                           }
                         />
                       </div>
                     </label>
                   </div>
-
-                  <label className="ticket-field">
-                    <span>Senha inicial do administrador</span>
-                    <div className="ticket-field__control">
-                      <input
-                        type="password"
-                        placeholder="Defina a senha inicial"
-                        value={formValues.password}
-                        disabled={isSubmitting}
-                        onChange={(event) =>
-                          setFormValues((currentValues) => ({
-                            ...currentValues,
-                            password: event.target.value,
-                          }))
-                        }
-                      />
-                    </div>
-                  </label>
 
                   <div className="team-invite__footer">
                     <span>
-                      O cadastro cria a empresa cliente dentro do seu subdomínio, ativa o administrador e
-                      mantém o vínculo com a sua operação de atendimento.
+                      O cadastro cria a empresa cliente dentro do seu subdomínio. Depois, os funcionários
+                      dessa empresa poderão se cadastrar e você fará a aprovação e a gestão deles.
                     </span>
                     <button className="team-invite__button" type="submit" disabled={isSubmitting}>
                       {isSubmitting ? 'Cadastrando...' : 'Cadastrar empresa cliente'}
@@ -343,14 +236,14 @@ function ClientCompanyRegister({
                         <small>{createdCompany.companyDocument}</small>
                       </article>
                       <article className="client-company-register__result-card">
-                        <span>Administrador</span>
-                        <strong>{createdCompany.adminName}</strong>
-                        <small>{createdCompany.adminEmail}</small>
+                        <span>Contato</span>
+                        <strong>{createdCompany.companyEmail || 'Email não informado'}</strong>
+                        <small>{createdCompany.companyPhoneNumber || 'Telefone não informado'}</small>
                       </article>
                       <article className="client-company-register__result-card">
                         <span>Subdomínio de acesso</span>
                         <strong>{createdCompany.subdomain || 'Mesmo subdomínio da provedora'}</strong>
-                        <small>A empresa cliente acessa pelo mesmo subdomínio da empresa provedora.</small>
+                        <small>Os funcionários da empresa cliente acessam pelo mesmo subdomínio da empresa provedora.</small>
                       </article>
                     </div>
                   </section>
@@ -361,20 +254,6 @@ function ClientCompanyRegister({
         </div>
       </main>
 
-      <ConfirmActionModal
-        isOpen={Boolean(existingCompanyToLink)}
-        title="CNPJ já cadastrado"
-        description={
-          existingCompanyToLink
-            ? `Esse CNPJ já está cadastrado. O nome do administrador é "${existingCompanyToLink.adminName}" e o nome da empresa é "${existingCompanyToLink.companyName}". Quer colocá-lo como cliente?`
-            : ''
-        }
-        cancelLabel="Não"
-        confirmLabel="Sim"
-        onCancel={handleCancelLinkExistingCompany}
-        onConfirm={handleConfirmLinkExistingCompany}
-        isProcessing={isLinkingExistingCompany}
-      />
     </>
   )
 }

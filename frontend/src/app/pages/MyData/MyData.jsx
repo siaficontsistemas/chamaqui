@@ -33,6 +33,8 @@ function MyData({
   ticketSummary,
   isTicketSummaryLoading,
   companyPartnerships = [],
+  teamMembers = [],
+  onRemoveMemberFromCompany,
 }) {
   const [deleteTarget, setDeleteTarget] = useState('')
   const [isDeletingAction, setIsDeletingAction] = useState(false)
@@ -73,6 +75,7 @@ function MyData({
   const [isSubmittingPartnership, setIsSubmittingPartnership] = useState(false)
   const [partnershipActionId, setPartnershipActionId] = useState('')
   const [unlinkTarget, setUnlinkTarget] = useState(null)
+  const [clientEmployeeTarget, setClientEmployeeTarget] = useState(null)
   const { companyLogoUrl, setBranding: setTenantBranding } = useTenantBranding()
   const activeContent = dashboardPages.myData
   const isAdmin = currentUser?.roles?.includes('admin')
@@ -95,6 +98,17 @@ function MyData({
   const acceptedPartnerships = companyPartnerships.filter(
     (partnership) => partnership.status === 'ACCEPTED'
   )
+  const acceptedPartnershipsWithEmployees = acceptedPartnerships.map((partnership) => {
+    const partnerCompanyId = partnership.outgoing
+      ? partnership.targetCompanyId
+      : partnership.requesterCompanyId
+
+    return {
+      ...partnership,
+      partnerCompanyId,
+      employees: teamMembers.filter((member) => member.companyOwnerId === partnerCompanyId),
+    }
+  })
   const profileFields = [
     {
       label: 'Nome',
@@ -371,6 +385,27 @@ function MyData({
     }
   }
 
+  async function handleRemoveClientEmployee(memberId, companyName) {
+    if (!memberId || !onRemoveMemberFromCompany) {
+      return
+    }
+
+    try {
+      setClientEmployeeTarget(null)
+      setPartnershipActionId(memberId)
+      setPartnershipFeedback('')
+      setPartnershipFeedbackType('info')
+      await onRemoveMemberFromCompany(memberId)
+      setPartnershipFeedback(`Funcionário removido da empresa ${companyName} com sucesso.`)
+      setPartnershipFeedbackType('success')
+    } catch (error) {
+      setPartnershipFeedback(error.message || 'Não foi possível remover o funcionário da empresa cliente.')
+      setPartnershipFeedbackType('error')
+    } finally {
+      setPartnershipActionId('')
+    }
+  }
+
   function getWhatsappStatusLabel() {
     if (isWhatsappLoading && !whatsappStatus) {
       return 'Carregando status...'
@@ -612,6 +647,22 @@ function MyData({
     setUnlinkTarget(null)
   }
 
+  function handleOpenClientEmployeeModal(member, companyName) {
+    setPartnershipFeedback('')
+    setPartnershipFeedbackType('info')
+    setClientEmployeeTarget({
+      member,
+      companyName,
+    })
+  }
+
+  function handleCloseClientEmployeeModal() {
+    if (partnershipActionId) {
+      return
+    }
+    setClientEmployeeTarget(null)
+  }
+
   const isDeleteModalOpen = Boolean(deleteTarget)
   const deleteModalTitle = deleteTarget === 'company' ? 'Excluir empresa' : 'Excluir conta'
   const deleteModalDescription =
@@ -632,6 +683,12 @@ function MyData({
     ? [
         `Você está prestes a remover a parceria com ${unlinkTarget.outgoing ? unlinkTarget.targetCompanyName : unlinkTarget.requesterCompanyName}.`,
         'Após confirmar, as duas empresas deixarão de abrir chamados entre si até que uma nova solicitação seja aceita.',
+      ]
+    : []
+  const clientEmployeeModalDescription = clientEmployeeTarget
+    ? [
+        `Você está prestes a remover ${clientEmployeeTarget.member.name} da empresa ${clientEmployeeTarget.companyName}.`,
+        'A pessoa perderá o acesso vinculado a essa empresa cliente e receberá a notificação da remoção.',
       ]
     : []
 
@@ -1119,8 +1176,8 @@ function MyData({
 
                     <div className="my-data__partnership-group">
                       <h3>Parcerias ativas</h3>
-                      {acceptedPartnerships.length > 0 ? (
-                        acceptedPartnerships.map((partnership) => {
+                      {acceptedPartnershipsWithEmployees.length > 0 ? (
+                        acceptedPartnershipsWithEmployees.map((partnership) => {
                           const partnerName = partnership.outgoing
                             ? partnership.targetCompanyName
                             : partnership.requesterCompanyName
@@ -1136,7 +1193,7 @@ function MyData({
                               </div>
                               <div className="my-data__partnership-actions my-data__partnership-actions--active">
                                 <div className="my-data__partnership-status-block">
-                                    <span className="my-data__partnership-status-badge">Vinculo ativo</span>
+                                  <span className="my-data__partnership-status-badge">Vinculo ativo</span>
                                   <span className="my-data__partnership-status my-data__partnership-status--accepted">
                                     Cliente e atendente vinculados
                                   </span>
@@ -1149,6 +1206,33 @@ function MyData({
                                 >
                                   {partnershipActionId === partnership.id ? 'Processando...' : 'Desvincular'}
                                 </button>
+                              </div>
+                              <div className="my-data__client-employees">
+                                <h4 className="my-data__client-employees-title">Funcionários da empresa cliente</h4>
+                                {partnership.employees.length > 0 ? (
+                                  <div className="my-data__client-employees-list">
+                                    {partnership.employees.map((member) => (
+                                      <div className="my-data__client-employees-item" key={member.id}>
+                                        <div className="my-data__client-employees-main">
+                                          <strong>{member.name}</strong>
+                                          <span>{member.email || 'Email não informado'}</span>
+                                        </div>
+                                        <button
+                                          className="my-data__partnership-button my-data__partnership-button--danger"
+                                          type="button"
+                                          onClick={() => handleOpenClientEmployeeModal(member, partnerName)}
+                                          disabled={partnershipActionId === member.id}
+                                        >
+                                          {partnershipActionId === member.id ? 'Excluindo...' : 'Excluir funcionário'}
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <p className="my-data__partnership-empty">
+                                    Nenhum funcionário cadastrado nessa empresa cliente até o momento.
+                                  </p>
+                                )}
                               </div>
                             </article>
                           )
@@ -1183,6 +1267,23 @@ function MyData({
           confirmVariant="danger"
           onCancel={handleCloseUnlinkModal}
           onConfirm={() => handleUnlinkPartnership(unlinkTarget?.id)}
+        />
+        <ConfirmActionModal
+          title="Excluir funcionário da empresa cliente"
+          description={clientEmployeeModalDescription}
+          isOpen={Boolean(clientEmployeeTarget)}
+          isProcessing={partnershipActionId === clientEmployeeTarget?.member?.id}
+          confirmLabel={
+            partnershipActionId === clientEmployeeTarget?.member?.id ? 'Excluindo...' : 'Excluir'
+          }
+          confirmVariant="danger"
+          onCancel={handleCloseClientEmployeeModal}
+          onConfirm={() =>
+            handleRemoveClientEmployee(
+              clientEmployeeTarget?.member?.id,
+              clientEmployeeTarget?.companyName
+            )
+          }
         />
       </div>
     </main>

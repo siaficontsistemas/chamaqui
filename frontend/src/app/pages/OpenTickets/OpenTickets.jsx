@@ -4,6 +4,11 @@ import ConfirmActionModal from '../../components/confirm-action-modal/ConfirmAct
 import Header from '../../components/header/Header'
 import Sidebar from '../../components/sidebar/Sidebar'
 import TicketListPagination from '../../components/TicketListPagination/TicketListPagination'
+import {
+  ALL_TICKET_COMPANIES_VALUE,
+  buildTicketRequesterCompanyOptions,
+  matchesTicketRequesterCompany,
+} from '../../utils/ticketCompanyFilter'
 import { truncateTicketTitle } from '../../utils/truncateTicketTitle'
 
 import { SearchIcon } from '../../dashboardIcons'
@@ -23,6 +28,7 @@ function OpenTickets({
 }) {
   const [tickets, setTickets] = useState([])
   const [searchValue, setSearchValue] = useState('')
+  const [selectedCompanyName, setSelectedCompanyName] = useState(ALL_TICKET_COMPANIES_VALUE)
   const [currentPage, setCurrentPage] = useState(1)
   const [isLoading, setIsLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
@@ -39,17 +45,19 @@ function OpenTickets({
       }),
     []
   )
+  const companyOptions = useMemo(() => buildTicketRequesterCompanyOptions(tickets), [tickets])
   const filteredTickets = useMemo(() => {
-    if (!normalizedSearchValue) {
-      return tickets
-    }
+    return tickets.filter((ticket) => {
+      const matchesCompany = matchesTicketRequesterCompany(ticket, selectedCompanyName)
+      const matchesSearch =
+        !normalizedSearchValue ||
+        [ticket.protocol, ticket.title, ticket.statusName, ticket.requesterCompanyName].some((value) =>
+          value?.toLowerCase().includes(normalizedSearchValue)
+        )
 
-    return tickets.filter((ticket) =>
-      [ticket.protocol, ticket.title, ticket.statusName].some((value) =>
-        value?.toLowerCase().includes(normalizedSearchValue)
-      )
-    )
-  }, [normalizedSearchValue, tickets])
+      return matchesCompany && matchesSearch
+    })
+  }, [normalizedSearchValue, selectedCompanyName, tickets])
   const totalPages = Math.max(1, Math.ceil(filteredTickets.length / ITEMS_PER_PAGE))
   const safeCurrentPage = Math.min(currentPage, totalPages)
   const paginatedTickets = useMemo(() => {
@@ -130,7 +138,7 @@ function OpenTickets({
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [normalizedSearchValue])
+  }, [normalizedSearchValue, selectedCompanyName])
 
   useEffect(() => {
     if (currentPage !== safeCurrentPage) {
@@ -236,16 +244,34 @@ function OpenTickets({
           <div className="home-content__card home-content__card--ticket-list">
             <div className="ticket-list">
               <div className="ticket-list__toolbar">
-                <label className="ticket-list__search" htmlFor="ticket-search-open">
-                  <SearchIcon />
-                  <input
-                    id="ticket-search-open"
-                    placeholder="Buscar chamados"
-                    type="text"
-                    value={searchValue}
-                    onChange={(event) => setSearchValue(event.target.value)}
-                  />
-                </label>
+                <div className="ticket-list__filters">
+                  <label className="ticket-list__search" htmlFor="ticket-search-open">
+                    <SearchIcon />
+                    <input
+                      id="ticket-search-open"
+                      placeholder="Buscar chamados"
+                      type="text"
+                      value={searchValue}
+                      onChange={(event) => setSearchValue(event.target.value)}
+                    />
+                  </label>
+
+                  <label className="ticket-list__company-filter" htmlFor="ticket-company-open">
+                    <span>Empresa cliente</span>
+                    <select
+                      id="ticket-company-open"
+                      value={selectedCompanyName}
+                      onChange={(event) => setSelectedCompanyName(event.target.value)}
+                    >
+                      <option value={ALL_TICKET_COMPANIES_VALUE}>Todas as empresas</option>
+                      {companyOptions.map((companyName) => (
+                        <option key={companyName} value={companyName}>
+                          {companyName}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
 
                 {!isLoading && !errorMessage ? (
                   <TicketListPagination

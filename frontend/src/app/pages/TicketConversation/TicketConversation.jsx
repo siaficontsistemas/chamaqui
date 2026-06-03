@@ -796,12 +796,10 @@ function TicketConversation({
                     <dt>Solicitante</dt>
                     <dd>{ticket.requesterName || 'Não informado'}</dd>
                   </div>
-                  {!isWhatsappTicket && ticket.requesterCompanyName ? (
-                    <div>
-                      <dt>Empresa do solicitante</dt>
-                      <dd>{ticket.requesterCompanyName}</dd>
-                    </div>
-                  ) : null}
+                  <div>
+                    <dt>Empresa do solicitante</dt>
+                    <dd>{ticket.requesterCompanyName || 'Não informado'}</dd>
+                  </div>
                   <div>
                     <dt>E-mail</dt>
                     <dd>{ticket.requesterEmail || 'Não informado'}</dd>

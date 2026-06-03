@@ -71,17 +71,13 @@ function Register({ onNavigateHome, onNavigateLogin }) {
     () => getParticipantCompanyType(selectedParticipation),
     [selectedParticipation]
   )
-  const selectedRoleLabel = selectedRole === 'admin' ? 'Administrador' : 'Usuário'
-  const selectedParticipationLabel =
-    selectedParticipation === 'responder'
-      ? 'Responder chamados'
-      : selectedParticipation === 'requester'
-        ? 'Criar chamados'
-        : ''
-  const tenantParticipationOptions = useMemo(
-    () => getTenantParticipationOptions(tenantBranding),
+  const tenantRegistrationOptions = useMemo(
+    () => getTenantRegistrationOptions(tenantBranding),
     [tenantBranding]
   )
+  const selectedRoleLabel = selectedRole === 'admin' ? 'Administrador' : 'Usuário'
+  const selectedParticipationLabel =
+    getSelectedParticipationLabel(selectedParticipation, tenantBranding, isTenantExperience)
   const isResponderTenant = String(tenantBranding?.companyType || '').toUpperCase() === 'RESPONDER'
   const requiresTenantApproval =
     isTenantExperience &&
@@ -147,14 +143,12 @@ function Register({ onNavigateHome, onNavigateLogin }) {
       return
     }
 
-    const tenantParticipation = getDefaultTenantParticipation(tenantBranding)
-    setSelectedRole('user')
-    setSelectedParticipation(tenantParticipation)
     setAvailableCompanies([])
+    setSelectedRole('')
+    setSelectedParticipation('')
     setFormValues((currentValues) => ({
       ...currentValues,
-      companyOwnerId:
-        tenantParticipation === 'responder' ? tenantBranding.ownerUserId || '' : '',
+      companyOwnerId: '',
     }))
   }, [inviteContext, tenantBranding])
 
@@ -216,6 +210,25 @@ function Register({ onNavigateHome, onNavigateLogin }) {
     }))
   }
 
+  function handleSelectTenantRegistration(participation) {
+    if (!isTenantExperience || inviteContext) {
+      return
+    }
+
+    setSelectedRole('user')
+    setSelectedParticipation(participation)
+    setErrorMessage('')
+    setSuccessMessage('')
+    setPendingApprovalRegistration(null)
+    setAvailableCompanies([])
+    setIsLoadingCompanies(false)
+    setFormValues((currentValues) => ({
+      ...currentValues,
+      companyOwnerId:
+        participation === 'responder' ? tenantBranding?.ownerUserId || '' : '',
+    }))
+  }
+
   function handleSelectParticipation(participation) {
     if (inviteContext) {
       return
@@ -246,7 +259,11 @@ function Register({ onNavigateHome, onNavigateLogin }) {
     }
 
     if (selectedRole === 'user' && !selectedParticipation) {
-      setErrorMessage('Escolha se esse usuário vai criar ou responder chamados.')
+      setErrorMessage(
+        isTenantExperience
+          ? 'Escolha primeiro para qual tipo de empresa esse cadastro será feito.'
+          : 'Escolha se esse usuário vai criar ou responder chamados.'
+      )
       return
     }
 
@@ -356,7 +373,7 @@ function Register({ onNavigateHome, onNavigateLogin }) {
               : INITIAL_FORM_VALUES.companyOwnerId,
         }))
         setSuccessMessage(
-          `Cadastro concluído. Sua solicitação foi enviada para a empresa ${effectiveSelectedCompanyName} e precisa ser aprovada por um administrador antes do acesso.`
+          `Cadastro concluído. Sua solicitação foi enviada e precisa ser aprovada por um administrador da empresa ${tenantBranding?.companyName || effectiveSelectedCompanyName} antes do acesso.`
         )
         return
       }
@@ -418,7 +435,7 @@ function Register({ onNavigateHome, onNavigateLogin }) {
                 : isTenantExperience
                   ? requiresTenantApproval
                     ? selectedParticipation === 'requester'
-                      ? `Seu cadastro será enviado para aprovação na empresa cliente selecionada dentro da provedora ${tenantBranding.companyName}.`
+                      ? `Seu cadastro será enviado para aprovação do administrador da empresa ${tenantBranding.companyName}.`
                       : `Seu cadastro será enviado para aprovação da empresa ${tenantBranding.companyName}.`
                     : `Seu cadastro será vinculado à empresa ${tenantBranding.companyName}.`
                 : selectedRole
@@ -437,7 +454,7 @@ function Register({ onNavigateHome, onNavigateLogin }) {
                     {selectedParticipationLabel ? <span>• {selectedParticipationLabel}</span> : null}
                   </div>
 
-                  {!inviteContext && !isTenantExperience ? (
+                  {!inviteContext ? (
                     <button
                       className="signup-form__change-role"
                       type="button"
@@ -456,7 +473,7 @@ function Register({ onNavigateHome, onNavigateLogin }) {
                         }))
                       }}
                     >
-                      Alterar tipo
+                      {isTenantExperience ? 'Alterar opção' : 'Alterar tipo'}
                     </button>
                   ) : null}
                 </div>
@@ -475,7 +492,7 @@ function Register({ onNavigateHome, onNavigateLogin }) {
                     {requiresTenantApproval ? (
                       <p className="signup-form__role-text">
                         {selectedParticipation === 'requester'
-                          ? `Você está se cadastrando no portal da empresa provedora ${tenantBranding.companyName}. Escolha abaixo a empresa cliente que deverá aprovar esse acesso para criar chamados.`
+                          ? `Você está se cadastrando para uma empresa cliente da ${tenantBranding.companyName}. Escolha abaixo a empresa cliente em que vai atuar. A aprovação será feita pelo administrador da empresa ${tenantBranding.companyName}.`
                           : `Você está se cadastrando para responder chamados na empresa ${tenantBranding.companyName}. Esse acesso ficará aguardando aprovação de um administrador.`}
                       </p>
                     ) : (
@@ -487,38 +504,34 @@ function Register({ onNavigateHome, onNavigateLogin }) {
                   </div>
                 ) : null}
 
-                {selectedRole === 'user' ? (
+                {selectedRole === 'user' && !isTenantExperience ? (
                   <div className="signup-form__flow-block">
                     <span className="signup-form__role-label">Como esse usuário vai participar?</span>
 
                     <div className="signup-form__role-options signup-form__role-options--two">
-                      {(!isTenantExperience || tenantParticipationOptions.includes('requester')) ? (
-                        <button
-                          className={`signup-form__role-card ${selectedParticipation === 'requester' ? 'is-active' : ''}`}
-                          type="button"
-                          onClick={() => handleSelectParticipation('requester')}
-                          disabled={Boolean(inviteContext)}
-                        >
-                          <span className="signup-form__role-title">Criar chamados</span>
-                          <span className="signup-form__role-text">
-                            Mostra somente as empresas que abrem chamados e tiram duvidas.
-                          </span>
-                        </button>
-                      ) : null}
+                      <button
+                        className={`signup-form__role-card ${selectedParticipation === 'requester' ? 'is-active' : ''}`}
+                        type="button"
+                        onClick={() => handleSelectParticipation('requester')}
+                        disabled={Boolean(inviteContext)}
+                      >
+                        <span className="signup-form__role-title">Criar chamados</span>
+                        <span className="signup-form__role-text">
+                          Mostra somente as empresas que abrem chamados e tiram duvidas.
+                        </span>
+                      </button>
 
-                      {(!isTenantExperience || tenantParticipationOptions.includes('responder')) ? (
-                        <button
-                          className={`signup-form__role-card ${selectedParticipation === 'responder' ? 'is-active' : ''}`}
-                          type="button"
-                          onClick={() => handleSelectParticipation('responder')}
-                          disabled={Boolean(inviteContext)}
-                        >
-                          <span className="signup-form__role-title">Responder chamados</span>
-                          <span className="signup-form__role-text">
-                            Mostra somente as empresas que atendem e respondem os chamados.
-                          </span>
-                        </button>
-                      ) : null}
+                      <button
+                        className={`signup-form__role-card ${selectedParticipation === 'responder' ? 'is-active' : ''}`}
+                        type="button"
+                        onClick={() => handleSelectParticipation('responder')}
+                        disabled={Boolean(inviteContext)}
+                      >
+                        <span className="signup-form__role-title">Responder chamados</span>
+                        <span className="signup-form__role-text">
+                          Mostra somente as empresas que atendem e respondem os chamados.
+                        </span>
+                      </button>
                     </div>
                   </div>
                 ) : null}
@@ -570,8 +583,9 @@ function Register({ onNavigateHome, onNavigateLogin }) {
                     <span className="signup-form__role-label">Cadastro enviado para aprovação</span>
                     <p className="signup-form__role-text">
                       O acesso para {pendingApprovalRegistration.participationLabel.toLowerCase()} foi solicitado
-                      para a empresa {pendingApprovalRegistration.companyName}. Assim que um administrador aprovar,
-                      essa pessoa poderá entrar com o email e a senha cadastrados.
+                      para a empresa {pendingApprovalRegistration.companyName}. Assim que um administrador da empresa{' '}
+                      {tenantBranding?.companyName || 'provedora'} aprovar, essa pessoa poderá entrar com o email e a
+                      senha cadastrados.
                     </p>
                     <button
                       className="signup-form__change-role"
@@ -672,7 +686,8 @@ function Register({ onNavigateHome, onNavigateLogin }) {
                     </label>
                     {isTenantExperience ? (
                       <p className="signup-form__role-text">
-                        Escolha qual empresa cliente deverá aprovar esse acesso para criar chamados.
+                        Escolha em qual empresa cliente essa pessoa vai atuar. A aprovação ficará com a empresa{' '}
+                        {tenantBranding.companyName}.
                       </p>
                     ) : (
                       <p className="signup-form__role-text">
@@ -729,35 +744,53 @@ function Register({ onNavigateHome, onNavigateLogin }) {
               </div>
             ) : (
               <div className="signup-form__role-step">
-                <span className="signup-form__role-label">Escolha o tipo de cadastro</span>
+                <span className="signup-form__role-label">
+                  {isTenantExperience ? 'Escolha como deseja se cadastrar' : 'Escolha o tipo de cadastro'}
+                </span>
 
-                <div className="signup-form__role-options signup-form__role-options--two">
-                  <button
-                    className="signup-form__role-card"
-                    type="button"
-                    onClick={() => handleSelectRole('user')}
-                    disabled={isTenantExperience}
-                  >
-                    <span className="signup-form__role-title">Usuário</span>
-                    <span className="signup-form__role-text">
-                      Cadastro para participantes que vao criar ou responder chamados dentro de
-                      uma empresa.
-                    </span>
-                  </button>
+                {isTenantExperience ? (
+                  <div className="signup-form__role-options signup-form__role-options--two">
+                    {tenantRegistrationOptions.map((option) => (
+                      <button
+                        key={option.participation}
+                        className="signup-form__role-card"
+                        type="button"
+                        onClick={() => handleSelectTenantRegistration(option.participation)}
+                      >
+                        <span className="signup-form__role-title">{option.title}</span>
+                        <span className="signup-form__role-text">{option.description}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="signup-form__role-options signup-form__role-options--two">
+                    <button
+                      className="signup-form__role-card"
+                      type="button"
+                      onClick={() => handleSelectRole('user')}
+                      disabled={isTenantExperience}
+                    >
+                      <span className="signup-form__role-title">Usuário</span>
+                      <span className="signup-form__role-text">
+                        Cadastro para participantes que vao criar ou responder chamados dentro de
+                        uma empresa.
+                      </span>
+                    </button>
 
-                  <button
-                    className="signup-form__role-card"
-                    type="button"
-                    onClick={() => handleSelectRole('admin')}
-                    disabled={isTenantExperience}
-                  >
-                    <span className="signup-form__role-title">Administrador</span>
-                    <span className="signup-form__role-text">
-                      Cadastro para quem vai gerenciar a empresa e definir se ela cria ou
-                      responde chamados.
-                    </span>
-                  </button>
-                </div>
+                    <button
+                      className="signup-form__role-card"
+                      type="button"
+                      onClick={() => handleSelectRole('admin')}
+                      disabled={isTenantExperience}
+                    >
+                      <span className="signup-form__role-title">Administrador</span>
+                      <span className="signup-form__role-text">
+                        Cadastro para quem vai gerenciar a empresa e definir se ela cria ou
+                        responde chamados.
+                      </span>
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </form>
@@ -801,9 +834,42 @@ function getTenantParticipationOptions(tenantBranding) {
   return []
 }
 
-function getDefaultTenantParticipation(tenantBranding) {
-  const options = getTenantParticipationOptions(tenantBranding)
-  return options[0] || ''
+function getTenantRegistrationOptions(tenantBranding) {
+  const companyName = tenantBranding?.companyName || 'empresa do domínio'
+
+  return getTenantParticipationOptions(tenantBranding).map((participation) => {
+    if (participation === 'requester') {
+      return {
+        participation,
+        title: `Cadastrar para uma empresa cliente da ${companyName}`,
+        description:
+          'Esse cadastro será vinculado à empresa cliente escolhida, com aprovação feita pela empresa provedora.',
+      }
+    }
+
+    return {
+      participation,
+      title: `Cadastrar como funcionário da empresa ${companyName}`,
+      description:
+        'Esse cadastro será feito para atuar diretamente na empresa respondedora deste subdomínio.',
+    }
+  })
+}
+
+function getSelectedParticipationLabel(participation, tenantBranding, isTenantExperience) {
+  if (participation === 'responder') {
+    return isTenantExperience
+      ? `Funcionário da empresa ${tenantBranding?.companyName || 'do domínio'}`
+      : 'Responder chamados'
+  }
+
+  if (participation === 'requester') {
+    return isTenantExperience
+      ? `Empresa cliente da ${tenantBranding?.companyName || 'provedora'}`
+      : 'Criar chamados'
+  }
+
+  return ''
 }
 
 function isValidEmailFormat(email) {

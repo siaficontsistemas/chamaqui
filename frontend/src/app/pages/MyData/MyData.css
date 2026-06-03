@@ -420,9 +420,9 @@
 }
 
 .my-data__partnership-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   gap: 1rem;
   padding: 1rem;
   border-radius: 1rem;
@@ -588,6 +588,53 @@
   color: #526274;
 }
 
+.my-data__client-employees {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-top: 0.25rem;
+  border-top: 1px solid rgba(19, 34, 53, 0.08);
+}
+
+.my-data__client-employees-title {
+  margin: 0;
+  color: #132235;
+  font-size: 0.95rem;
+}
+
+.my-data__client-employees-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.my-data__client-employees-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border-radius: 0.85rem;
+  background: rgba(232, 237, 243, 0.45);
+}
+
+.my-data__client-employees-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.my-data__client-employees-main strong {
+  color: #132235;
+}
+
+.my-data__client-employees-main span {
+  color: #526274;
+  word-break: break-word;
+}
+
 .my-data__delete-button:disabled,
 .my-data__whatsapp-button:disabled,
 .my-data__edit-button:disabled {
@@ -623,6 +670,11 @@
 
   .my-data__partnership-actions--active,
   .my-data__partnership-status-block {
+    align-items: stretch;
+  }
+
+  .my-data__client-employees-item {
+    flex-direction: column;
     align-items: stretch;
   }
 

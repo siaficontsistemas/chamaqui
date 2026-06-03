@@ -1189,6 +1189,9 @@ function Team({
                                       .join(', ')}
                                   </span>
                                 ) : null}
+                                {(member.sectors ?? []).length === 0 && member.companyName ? (
+                                  <span className="team-panel__empty">{member.companyName}</span>
+                                ) : null}
                                 {sectors.length === 0 ? (
                                   <span className="team-panel__empty">Nenhum setor definido</span>
                                 ) : null}

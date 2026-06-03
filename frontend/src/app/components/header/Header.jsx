@@ -19,6 +19,7 @@ function Header({
   onDeclineCompanyPartnership,
   onDeclineInvite,
   onDeclineTicketTransfer,
+  onOpenNotification,
   onSectionChange,
   notifications = [],
   roleLabel,
@@ -494,6 +495,21 @@ function Header({
     setIsUserMenuOpen(false)
   }
 
+  function isNotificationClickable(notification) {
+    return notification?.type === 'calendar-reminder' && Boolean(notification?.obligationId)
+  }
+
+  function handleNotificationClick(notification) {
+    if (!isNotificationClickable(notification) || !onOpenNotification) {
+      return
+    }
+
+    onOpenNotification(notification)
+    setIsNotificationMenuOpen(false)
+    setIsMobileNavigationOpen(false)
+    setIsUserMenuOpen(false)
+  }
+
   function handleOpenNotifications() {
     setIsNotificationMenuOpen((currentState) => !currentState)
     setIsUserMenuOpen(false)
@@ -692,7 +708,22 @@ function Header({
           <div className="home-notification-menu__list">
             {notificationCount > 0 ? (
               notifications.map((notification) => (
-                <article className="home-notification-card" key={notification.id}>
+                <article
+                  className={`home-notification-card${isNotificationClickable(notification) ? ' home-notification-card--clickable' : ''}`}
+                  key={notification.id}
+                  onClick={() => handleNotificationClick(notification)}
+                  onKeyDown={(event) => {
+                    if (!isNotificationClickable(notification)) {
+                      return
+                    }
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      handleNotificationClick(notification)
+                    }
+                  }}
+                  role={isNotificationClickable(notification) ? 'button' : undefined}
+                  tabIndex={isNotificationClickable(notification) ? 0 : undefined}
+                >
                   <div className="home-notification-card__top">
                     <span className={`home-notification-card__status home-notification-card__status--${notification.status.toLowerCase()}`}>
                       {getNotificationStatusLabel(notification)}
@@ -701,7 +732,10 @@ function Header({
                       <button
                         className="home-notification-card__icon-button"
                         type="button"
-                        onClick={() => requestDeleteConfirmation(notification)}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          requestDeleteConfirmation(notification)
+                        }}
                         disabled={processingNotificationAction.inviteId === notification.id}
                         aria-label="Excluir notificação"
                       >
