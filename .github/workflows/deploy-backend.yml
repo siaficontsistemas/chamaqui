@@ -1,13 +1,18 @@
-name: Deploy Production
+name: Deploy Backend
 
 on:
   push:
     branches:
       - main
+    paths:
+      - "backend/helpdesk/**"
+      - "baileys-service/**"
+      - "scripts/deploy/**"
+      - ".github/workflows/deploy-backend.yml"
   workflow_dispatch:
 
 concurrency:
-  group: production-deploy
+  group: deploy-backend
   cancel-in-progress: false
 
 permissions:
@@ -16,10 +21,6 @@ permissions:
 env:
   JAVA_VERSION: "21"
   NODE_VERSION: "22"
-  AWS_REGION: ${{ vars.AWS_REGION }}
-  FRONTEND_S3_BUCKET: ${{ vars.FRONTEND_S3_BUCKET }}
-  CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID || 'E3AVSEKD8ZJQTP' }}
-  VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL || 'https://api.chamaqui.app.br' }}
   EC2_SSH_HOST: ${{ vars.EC2_SSH_HOST || secrets.EC2_SSH_HOST }}
   EC2_SSH_USER: ${{ vars.EC2_SSH_USER || secrets.EC2_SSH_USER }}
   SSH_PORT: ${{ vars.EC2_SSH_PORT || '22' }}
@@ -32,7 +33,7 @@ env:
 
 jobs:
   deploy:
-    name: Build and Deploy
+    name: Build and Deploy Backend
     runs-on: ubuntu-latest
     environment: production
 
@@ -43,10 +44,6 @@ jobs:
       - name: Validate deploy configuration
         run: |
           required_vars=(
-            AWS_REGION
-            FRONTEND_S3_BUCKET
-            CLOUDFRONT_DISTRIBUTION_ID
-            VITE_API_BASE_URL
             EC2_SSH_HOST
             EC2_SSH_USER
             BACKEND_JAR_PATH
@@ -74,19 +71,11 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: |
-            frontend/package-lock.json
-            baileys-service/package-lock.json
+          cache-dependency-path: baileys-service/package-lock.json
 
       - name: Build backend
         working-directory: backend/helpdesk
         run: ./mvnw -B -DskipTests package
-
-      - name: Build frontend
-        working-directory: frontend
-        run: |
-          npm ci
-          npm run build
 
       - name: Prepare release bundle
         working-directory: .
@@ -105,7 +94,7 @@ jobs:
           cp baileys-service/package-lock.json release/baileys-service/package-lock.json
           cp -a baileys-service/src release/baileys-service/src
 
-          tar -czf chamaqui-release.tar.gz -C release .
+          tar -czf chamaqui-backend-release.tar.gz -C release .
 
       - name: Configure SSH
         run: |
@@ -117,28 +106,11 @@ jobs:
       - name: Upload release bundle
         run: |
           scp -P "${SSH_PORT}" \
-            ./chamaqui-release.tar.gz \
-            "${EC2_SSH_USER}@${EC2_SSH_HOST}:/tmp/chamaqui-release-${GITHUB_SHA}.tar.gz"
+            ./chamaqui-backend-release.tar.gz \
+            "${EC2_SSH_USER}@${EC2_SSH_HOST}:/tmp/chamaqui-backend-release-${GITHUB_SHA}.tar.gz"
 
       - name: Deploy on EC2
         run: |
           ssh -p "${SSH_PORT}" "${EC2_SSH_USER}@${EC2_SSH_HOST}" \
-            "DEPLOY_ROOT='${DEPLOY_ROOT}' BACKEND_JAR_PATH='${BACKEND_JAR_PATH}' BAILEYS_APP_DIR='${BAILEYS_APP_DIR}' PM2_BACKEND_APP_NAME='${PM2_BACKEND_APP_NAME}' PM2_BAILEYS_APP_NAME='${PM2_BAILEYS_APP_NAME}' RESTART_BAILEYS='${RESTART_BAILEYS}' bash -s -- '/tmp/chamaqui-release-${GITHUB_SHA}.tar.gz'" \
+            "DEPLOY_ROOT='${DEPLOY_ROOT}' BACKEND_JAR_PATH='${BACKEND_JAR_PATH}' BAILEYS_APP_DIR='${BAILEYS_APP_DIR}' PM2_BACKEND_APP_NAME='${PM2_BACKEND_APP_NAME}' PM2_BAILEYS_APP_NAME='${PM2_BAILEYS_APP_NAME}' RESTART_BAILEYS='${RESTART_BAILEYS}' bash -s -- '/tmp/chamaqui-backend-release-${GITHUB_SHA}.tar.gz'" \
             < ./scripts/deploy/ec2-deploy.sh
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Deploy frontend to S3
-        run: |
-          aws s3 sync frontend/dist "s3://${FRONTEND_S3_BUCKET}" --delete
-
-      - name: Invalidate CloudFront cache
-        run: |
-          aws cloudfront create-invalidation \
-            --distribution-id "${CLOUDFRONT_DISTRIBUTION_ID}" \
-            --paths '/*'

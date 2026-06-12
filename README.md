@@ -290,7 +290,7 @@ Os serviços centrais incluem:
 
 ## Deploy Automatizado
 
-O repositório inclui um workflow em [deploy-ec2.yml](file:///home/kauan_rubem/helpdesk/.github/workflows/deploy-ec2.yml) alinhado com a arquitetura real de produção:
+O repositório inclui dois workflows separados, alinhados com a arquitetura real de produção:
 
 - `frontend` publicado em `S3`
 - cache do frontend invalidado no `CloudFront`
@@ -298,16 +298,24 @@ O repositório inclui um workflow em [deploy-ec2.yml](file:///home/kauan_rubem/h
 - `baileys-service` em `PM2` na `EC2`
 - deploy feito por `GitHub Actions -> AWS + SSH -> EC2`
 
-### O que o workflow faz
+### Workflows
+
+- [deploy-backend.yml](file:///home/kauan_rubem/helpdesk/.github/workflows/deploy-backend.yml): faz deploy de `backend + baileys` na `EC2` via `PM2`
+- [deploy-frontend.yml](file:///home/kauan_rubem/helpdesk/.github/workflows/deploy-frontend.yml): faz deploy do `frontend` em `S3 + CloudFront`
+
+### O que o workflow de backend faz
 
 1. Faz build do `backend` com Maven.
-2. Faz build do `frontend` com Vite.
-3. Empacota somente o `jar` do backend e o código do `baileys-service`.
-4. Envia o bundle da aplicação para a EC2 por `scp`.
-5. Executa o script [ec2-deploy.sh](file:///home/kauan_rubem/helpdesk/scripts/deploy/ec2-deploy.sh) no servidor.
-6. Atualiza o `app.jar`, roda `npm ci --omit=dev` no `baileys-service` e reinicia os processos no `PM2`.
-7. Publica `frontend/dist` no bucket S3 configurado.
-8. Invalida o cache da distribuição CloudFront.
+2. Empacota o `jar` do backend e o código do `baileys-service`.
+3. Envia o bundle da aplicação para a EC2 por `scp`.
+4. Executa o script [ec2-deploy.sh](file:///home/kauan_rubem/helpdesk/scripts/deploy/ec2-deploy.sh) no servidor.
+5. Atualiza o `app.jar`, roda `npm ci --omit=dev` no `baileys-service` e reinicia os processos no `PM2`.
+
+### O que o workflow de frontend faz
+
+1. Faz build do `frontend` com Vite.
+2. Publica `frontend/dist` no bucket S3 configurado.
+3. Invalida o cache da distribuição CloudFront.
 
 ### Secrets obrigatórios no GitHub
 
@@ -338,7 +346,13 @@ Cadastre estes `Repository variables`:
 ### Fluxo de uso
 
 - faça `push` na branch `main`
-- ou execute manualmente em `Actions -> Deploy Production`
+- ou execute manualmente em `Actions -> Deploy Backend`
+- ou execute manualmente em `Actions -> Deploy Frontend`
+
+### Gatilhos automáticos
+
+- `Deploy Backend` roda quando há mudanças em `backend/helpdesk`, `baileys-service`, `scripts/deploy` ou no próprio workflow
+- `Deploy Frontend` roda quando há mudanças em `frontend` ou no próprio workflow
 
 ### Pré-requisitos na EC2
 
@@ -348,7 +362,7 @@ Cadastre estes `Repository variables`:
 
 ### Observação importante
 
-Esse workflow mantém o formato atual do deploy. Ele não migra sua infraestrutura para Docker, ECS ou systemd; apenas automatiza o processo atual, separando corretamente o frontend em `S3 + CloudFront` e o backend/WhatsApp em `EC2 + PM2`.
+Esses workflows mantêm o formato atual do deploy. Eles não migram sua infraestrutura para Docker, ECS ou systemd; apenas automatizam o processo atual, separando corretamente o frontend em `S3 + CloudFront` e o backend/WhatsApp em `EC2 + PM2`.
 
 Como arquivos `.env.*` não sobem para o repositório, a URL da API do frontend de produção deve ser fornecida pelo workflow via `VITE_API_BASE_URL`.
 
