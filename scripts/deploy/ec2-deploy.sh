@@ -13,11 +13,13 @@ RESTART_BAILEYS="${RESTART_BAILEYS:-true}"
 NGINX_RELOAD_CMD="${NGINX_RELOAD_CMD:-sudo systemctl reload nginx}"
 
 TIMESTAMP="$(date +%Y%m%d%H%M%S)"
-WORK_DIR="$(mktemp -d "${DEPLOY_ROOT%/}/release-${TIMESTAMP}-XXXX")"
 BACKUP_DIR="${DEPLOY_ROOT%/}/backups/${TIMESTAMP}"
 
+mkdir -p "${DEPLOY_ROOT}" "${BACKUP_DIR}" "$(dirname "${BACKEND_JAR_PATH}")" "${FRONTEND_WEB_ROOT}" "${BAILEYS_APP_DIR}"
+WORK_DIR="$(mktemp -d "${DEPLOY_ROOT%/}/release-${TIMESTAMP}-XXXX")"
+
 cleanup() {
-  rm -rf "${WORK_DIR}"
+  rm -rf "${WORK_DIR:-}"
 }
 
 sync_directory() {
@@ -36,8 +38,6 @@ sync_directory() {
 }
 
 trap cleanup EXIT
-
-mkdir -p "${DEPLOY_ROOT}" "${BACKUP_DIR}" "$(dirname "${BACKEND_JAR_PATH}")" "${FRONTEND_WEB_ROOT}" "${BAILEYS_APP_DIR}"
 
 tar -xzf "${RELEASE_BUNDLE_PATH}" -C "${WORK_DIR}"
 
