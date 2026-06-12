@@ -1,0 +1,111 @@
+name: Deploy EC2 PM2 Nginx
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  JAVA_VERSION: "21"
+  NODE_VERSION: "22"
+  SSH_PORT: ${{ vars.EC2_SSH_PORT || '22' }}
+  DEPLOY_ROOT: ${{ vars.DEPLOY_ROOT || '/home/ec2-user/deploy/chamaqui' }}
+  BACKEND_JAR_PATH: ${{ vars.BACKEND_JAR_PATH || '/home/ec2-user/app.jar' }}
+  FRONTEND_WEB_ROOT: ${{ vars.FRONTEND_WEB_ROOT || '/usr/share/nginx/html' }}
+  BAILEYS_APP_DIR: ${{ vars.BAILEYS_APP_DIR || '/home/ec2-user/baileys-service' }}
+  PM2_BACKEND_APP_NAME: ${{ vars.PM2_BACKEND_APP_NAME || 'chamaqui-backend' }}
+  PM2_BAILEYS_APP_NAME: ${{ vars.PM2_BAILEYS_APP_NAME || 'chamaqui-baileys' }}
+  RESTART_BAILEYS: ${{ vars.RESTART_BAILEYS || 'true' }}
+  NGINX_RELOAD_CMD: ${{ vars.NGINX_RELOAD_CMD || 'sudo systemctl reload nginx' }}
+
+jobs:
+  deploy:
+    name: Build and Deploy
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            baileys-service/package-lock.json
+
+      - name: Build backend
+        working-directory: backend/helpdesk
+        run: ./mvnw -B -DskipTests package
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Prepare release bundle
+        working-directory: .
+        run: |
+          rm -rf release
+          mkdir -p release/backend release/frontend release/baileys-service
+
+          BACKEND_JAR="$(find backend/helpdesk/target -maxdepth 1 -type f -name '*.jar' ! -name '*.jar.original' ! -name 'original-*.jar' | head -n 1)"
+          if [ -z "${BACKEND_JAR}" ]; then
+            echo "Nenhum jar do backend foi encontrado." >&2
+            exit 1
+          fi
+
+          cp "${BACKEND_JAR}" release/backend/app.jar
+          cp -a frontend/dist release/frontend/dist
+          cp baileys-service/package.json release/baileys-service/package.json
+          cp baileys-service/package-lock.json release/baileys-service/package-lock.json
+          cp -a baileys-service/src release/baileys-service/src
+
+          tar -czf chamaqui-release.tar.gz -C release .
+
+      - name: Configure SSH
+        env:
+          EC2_SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          EC2_SSH_HOST: ${{ secrets.EC2_SSH_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${EC2_SSH_PRIVATE_KEY}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -p "${SSH_PORT}" -H "${EC2_SSH_HOST}" >> ~/.ssh/known_hosts
+
+      - name: Upload release bundle
+        env:
+          EC2_SSH_HOST: ${{ secrets.EC2_SSH_HOST }}
+          EC2_SSH_USER: ${{ secrets.EC2_SSH_USER }}
+        run: |
+          scp -P "${SSH_PORT}" \
+            ./chamaqui-release.tar.gz \
+            "${EC2_SSH_USER}@${EC2_SSH_HOST}:/tmp/chamaqui-release-${GITHUB_SHA}.tar.gz"
+
+      - name: Deploy on EC2
+        env:
+          EC2_SSH_HOST: ${{ secrets.EC2_SSH_HOST }}
+          EC2_SSH_USER: ${{ secrets.EC2_SSH_USER }}
+        run: |
+          ssh -p "${SSH_PORT}" "${EC2_SSH_USER}@${EC2_SSH_HOST}" \
+            "DEPLOY_ROOT='${DEPLOY_ROOT}' BACKEND_JAR_PATH='${BACKEND_JAR_PATH}' FRONTEND_WEB_ROOT='${FRONTEND_WEB_ROOT}' BAILEYS_APP_DIR='${BAILEYS_APP_DIR}' PM2_BACKEND_APP_NAME='${PM2_BACKEND_APP_NAME}' PM2_BAILEYS_APP_NAME='${PM2_BAILEYS_APP_NAME}' RESTART_BAILEYS='${RESTART_BAILEYS}' NGINX_RELOAD_CMD='${NGINX_RELOAD_CMD}' bash -s -- '/tmp/chamaqui-release-${GITHUB_SHA}.tar.gz'" \
+            < ./scripts/deploy/ec2-deploy.sh

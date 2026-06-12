@@ -288,6 +288,62 @@ Os serviços centrais incluem:
 - Configurar servidor SMTP válido para notificações por e-mail.
 - Restringir exposição pública de portas quando necessário.
 
+## Deploy Automatizado na EC2
+
+O repositório agora inclui um workflow em [deploy-ec2.yml](file:///.github/workflows/deploy-ec2.yml) pensado para o ambiente real atual:
+
+- `backend` em `PM2` com `java -jar`
+- `baileys-service` em `PM2`
+- `frontend` servido pelo `nginx`
+- deploy feito por `GitHub Actions -> SSH -> EC2`
+
+### O que o workflow faz
+
+1. Faz build do `backend` com Maven.
+2. Faz build do `frontend` com Vite.
+3. Empacota o `jar`, o `dist` e o código do `baileys-service`.
+4. Envia o bundle para a EC2 por `scp`.
+5. Executa o script [ec2-deploy.sh](file:///home/kauan_rubem/helpdesk/scripts/deploy/ec2-deploy.sh) no servidor.
+6. Atualiza os arquivos, roda `npm ci --omit=dev` no `baileys-service`, reinicia os processos no `PM2` e recarrega o `nginx`.
+
+### Secrets obrigatórios no GitHub
+
+Cadastre estes `Secrets and variables -> Actions -> Secrets`:
+
+- `EC2_SSH_HOST`: host ou IP público da instância
+- `EC2_SSH_USER`: usuário SSH da instância, por exemplo `ec2-user`
+- `EC2_SSH_PRIVATE_KEY`: chave privada usada no acesso SSH
+
+### Variables opcionais no GitHub
+
+Cadastre estes `Repository variables` só se quiser sobrescrever os defaults:
+
+- `EC2_SSH_PORT`: porta SSH, default `22`
+- `DEPLOY_ROOT`: base temporária do deploy, default `/home/ec2-user/deploy/chamaqui`
+- `BACKEND_JAR_PATH`: caminho do `jar` usado pelo `PM2`, default `/home/ec2-user/app.jar`
+- `FRONTEND_WEB_ROOT`: pasta servida pelo `nginx`, default `/usr/share/nginx/html`
+- `BAILEYS_APP_DIR`: pasta do `baileys-service`, default `/home/ec2-user/baileys-service`
+- `PM2_BACKEND_APP_NAME`: nome do processo backend no `PM2`, default `chamaqui-backend`
+- `PM2_BAILEYS_APP_NAME`: nome do processo do WhatsApp no `PM2`, default `chamaqui-baileys`
+- `RESTART_BAILEYS`: `true` ou `false`, default `true`
+- `NGINX_RELOAD_CMD`: comando para recarregar o `nginx`, default `sudo systemctl reload nginx`
+
+### Fluxo de uso
+
+- faça `push` na branch `main`
+- ou execute manualmente em `Actions -> Deploy EC2 PM2 Nginx`
+
+### Pré-requisitos na EC2
+
+- `pm2` instalado e com os processos já existentes
+- `nginx` instalado e servindo o frontend
+- `npm` disponível para reinstalar dependências do `baileys-service`
+- permissão do usuário SSH para escrever nos caminhos configurados e recarregar o `nginx`
+
+### Observação importante
+
+Esse workflow foi feito para **não quebrar o formato atual do deploy**. Ele não muda sua arquitetura para Docker, ECS ou systemd; apenas automatiza o processo atual com mais segurança e repetibilidade.
+
 ## Comandos Úteis
 
 ### Build do frontend
