@@ -25,16 +25,34 @@ cleanup() {
 sync_directory() {
   local source_dir="$1"
   local target_dir="$2"
+  local use_sudo="false"
 
-  mkdir -p "${target_dir}"
+  if [ ! -w "${target_dir}" ]; then
+    use_sudo="true"
+  fi
+
+  if [ "${use_sudo}" = "true" ]; then
+    sudo mkdir -p "${target_dir}"
+  else
+    mkdir -p "${target_dir}"
+  fi
 
   if command -v rsync >/dev/null 2>&1; then
-    rsync -a --delete "${source_dir}/" "${target_dir}/"
+    if [ "${use_sudo}" = "true" ]; then
+      sudo rsync -a --delete "${source_dir}/" "${target_dir}/"
+    else
+      rsync -a --delete "${source_dir}/" "${target_dir}/"
+    fi
     return
   fi
 
-  find "${target_dir}" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
-  cp -a "${source_dir}/." "${target_dir}/"
+  if [ "${use_sudo}" = "true" ]; then
+    sudo find "${target_dir}" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+    sudo cp -a "${source_dir}/." "${target_dir}/"
+  else
+    find "${target_dir}" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+    cp -a "${source_dir}/." "${target_dir}/"
+  fi
 }
 
 trap cleanup EXIT
