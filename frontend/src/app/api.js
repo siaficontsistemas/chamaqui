@@ -352,6 +352,20 @@ export function getCalendarObligations(email) {
   return apiRequest(`/api/v1/calendar/obligations?email=${encodeURIComponent(email)}`)
 }
 
+export function getCalendarLinkedCompanies(email) {
+  return apiRequest(`/api/v1/calendar/companies?email=${encodeURIComponent(email)}`)
+}
+
+export function searchCalendarTickets(email, query = '', offset = 0, limit = 20) {
+  const searchParams = new URLSearchParams()
+  searchParams.set('email', email)
+  searchParams.set('query', query)
+  searchParams.set('offset', String(offset))
+  searchParams.set('limit', String(limit))
+
+  return apiRequest(`/api/v1/calendar/tickets/search?${searchParams.toString()}`)
+}
+
 export function createCalendarObligation(payload) {
   return apiRequest('/api/v1/calendar/obligations', {
     method: 'POST',
@@ -362,6 +376,20 @@ export function createCalendarObligation(payload) {
 export function updateCalendarObligation(obligationId, payload) {
   return apiRequest(`/api/v1/calendar/obligations/${obligationId}`, {
     method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function updateCalendarObligationLinkedTickets(obligationId, payload) {
+  return apiRequest(`/api/v1/calendar/obligations/${obligationId}/linked-tickets`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function moveCalendarObligationCompany(obligationId, payload) {
+  return apiRequest(`/api/v1/calendar/obligations/${obligationId}/linked-company`, {
+    method: 'PATCH',
     body: JSON.stringify(payload),
   })
 }
