@@ -288,61 +288,66 @@ Os serviços centrais incluem:
 - Configurar servidor SMTP válido para notificações por e-mail.
 - Restringir exposição pública de portas quando necessário.
 
-## Deploy Automatizado na EC2
+## Deploy Automatizado
 
-O repositório agora inclui um workflow em [deploy-ec2.yml](file:///.github/workflows/deploy-ec2.yml) pensado para o ambiente real atual:
+O repositório inclui um workflow em [deploy-ec2.yml](file:///home/kauan_rubem/helpdesk/.github/workflows/deploy-ec2.yml) alinhado com a arquitetura real de produção:
 
-- `backend` em `PM2` com `java -jar`
-- `baileys-service` em `PM2`
-- `frontend` servido pelo `nginx`
-- deploy feito por `GitHub Actions -> SSH -> EC2`
+- `frontend` publicado em `S3`
+- cache do frontend invalidado no `CloudFront`
+- `backend` em `PM2` na `EC2` com `java -jar`
+- `baileys-service` em `PM2` na `EC2`
+- deploy feito por `GitHub Actions -> AWS + SSH -> EC2`
 
 ### O que o workflow faz
 
 1. Faz build do `backend` com Maven.
 2. Faz build do `frontend` com Vite.
-3. Empacota o `jar`, o `dist` e o código do `baileys-service`.
-4. Envia o bundle para a EC2 por `scp`.
+3. Empacota somente o `jar` do backend e o código do `baileys-service`.
+4. Envia o bundle da aplicação para a EC2 por `scp`.
 5. Executa o script [ec2-deploy.sh](file:///home/kauan_rubem/helpdesk/scripts/deploy/ec2-deploy.sh) no servidor.
-6. Atualiza os arquivos, roda `npm ci --omit=dev` no `baileys-service`, reinicia os processos no `PM2` e recarrega o `nginx`.
+6. Atualiza o `app.jar`, roda `npm ci --omit=dev` no `baileys-service` e reinicia os processos no `PM2`.
+7. Publica `frontend/dist` no bucket S3 configurado.
+8. Invalida o cache da distribuição CloudFront.
 
 ### Secrets obrigatórios no GitHub
 
 Cadastre estes `Secrets and variables -> Actions -> Secrets`:
 
-- `EC2_SSH_HOST`: host ou IP público da instância
-- `EC2_SSH_USER`: usuário SSH da instância, por exemplo `ec2-user`
 - `EC2_SSH_PRIVATE_KEY`: chave privada usada no acesso SSH
+- `AWS_ACCESS_KEY_ID`: credencial AWS com permissão de publicar no S3 e invalidar CloudFront
+- `AWS_SECRET_ACCESS_KEY`: segredo da credencial AWS
 
-### Variables opcionais no GitHub
+### Variables recomendadas no GitHub
 
-Cadastre estes `Repository variables` só se quiser sobrescrever os defaults:
+Cadastre estes `Repository variables`:
 
+- `AWS_REGION`: região AWS do bucket S3 do frontend
+- `FRONTEND_S3_BUCKET`: nome do bucket onde o `frontend/dist` será publicado
+- `CLOUDFRONT_DISTRIBUTION_ID`: ID da distribuição CloudFront, por exemplo `E3AVSEKD8ZJQTP`
+- `EC2_SSH_HOST`: host ou IP público da instância, por exemplo `54.160.83.203`
+- `EC2_SSH_USER`: usuário SSH da instância, por exemplo `ec2-user`
 - `EC2_SSH_PORT`: porta SSH, default `22`
 - `DEPLOY_ROOT`: base temporária do deploy, default `/home/ec2-user/deploy/chamaqui`
 - `BACKEND_JAR_PATH`: caminho do `jar` usado pelo `PM2`, default `/home/ec2-user/app.jar`
-- `FRONTEND_WEB_ROOT`: pasta servida pelo `nginx`, default `/usr/share/nginx/html`
 - `BAILEYS_APP_DIR`: pasta do `baileys-service`, default `/home/ec2-user/baileys-service`
 - `PM2_BACKEND_APP_NAME`: nome do processo backend no `PM2`, default `chamaqui-backend`
 - `PM2_BAILEYS_APP_NAME`: nome do processo do WhatsApp no `PM2`, default `chamaqui-baileys`
 - `RESTART_BAILEYS`: `true` ou `false`, default `true`
-- `NGINX_RELOAD_CMD`: comando para recarregar o `nginx`, default `sudo systemctl reload nginx`
 
 ### Fluxo de uso
 
 - faça `push` na branch `main`
-- ou execute manualmente em `Actions -> Deploy EC2 PM2 Nginx`
+- ou execute manualmente em `Actions -> Deploy Production`
 
 ### Pré-requisitos na EC2
 
 - `pm2` instalado e com os processos já existentes
-- `nginx` instalado e servindo o frontend
 - `npm` disponível para reinstalar dependências do `baileys-service`
-- permissão do usuário SSH para escrever nos caminhos configurados e recarregar o `nginx`
+- permissão do usuário SSH para escrever nos caminhos configurados
 
 ### Observação importante
 
-Esse workflow foi feito para **não quebrar o formato atual do deploy**. Ele não muda sua arquitetura para Docker, ECS ou systemd; apenas automatiza o processo atual com mais segurança e repetibilidade.
+Esse workflow mantém o formato atual do deploy. Ele não migra sua infraestrutura para Docker, ECS ou systemd; apenas automatiza o processo atual, separando corretamente o frontend em `S3 + CloudFront` e o backend/WhatsApp em `EC2 + PM2`.
 
 ## Comandos Úteis
 
