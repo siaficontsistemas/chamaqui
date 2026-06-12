@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -71,6 +72,41 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
 	List<Ticket> findVisibleByEmailAndStatusCodesOrderByCreatedAtDesc(
 		@Param("email") String email,
 		@Param("statusCodes") List<String> statusCodes
+	);
+
+	@Query("""
+		select distinct ticket
+		from Ticket ticket
+		left join ticket.requester requester
+		left join requester.companyOwner requesterCompanyOwner
+		left join ticket.sector sector
+		left join sector.createdBy sectorOwner
+		left join ticket.assignedTo assignedTo
+		where ticket.deletedAt is null
+			and (
+				lower(requester.email) = lower(:email)
+				or lower(requesterCompanyOwner.email) = lower(:email)
+				or lower(sectorOwner.email) = lower(:email)
+				or lower(assignedTo.email) = lower(:email)
+			)
+			and (
+				:search = ''
+				or lower(ticket.protocol) like concat('%', lower(:search), '%')
+				or lower(ticket.title) like concat('%', lower(:search), '%')
+				or lower(coalesce(assignedTo.fullName, '')) like concat('%', lower(:search), '%')
+				or lower(coalesce(requester.fullName, '')) like concat('%', lower(:search), '%')
+			)
+		order by ticket.updatedAt desc, ticket.createdAt desc
+		""")
+	@EntityGraph(attributePaths = {
+		"requester",
+		"assignedTo",
+		"status"
+	})
+	List<Ticket> searchVisibleByEmail(
+		@Param("email") String email,
+		@Param("search") String search,
+		Pageable pageable
 	);
 
 	@Query("""

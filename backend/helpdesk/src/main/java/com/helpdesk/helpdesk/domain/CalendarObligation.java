@@ -7,14 +7,16 @@ import java.util.UUID;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.JoinTable;
-import jakarta.persistence.ManyToOne;
 import jakarta.persistence.ManyToMany;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
@@ -35,6 +37,10 @@ public class CalendarObligation {
 	@JoinColumn(name = "created_by", nullable = false)
 	private User createdBy;
 
+	@ManyToOne(fetch = FetchType.LAZY, optional = false)
+	@JoinColumn(name = "linked_company_owner_id", nullable = false)
+	private User linkedCompanyOwner;
+
 	@ManyToMany(fetch = FetchType.LAZY)
 	@JoinTable(
 		name = "calendar_obligation_recipients",
@@ -43,11 +49,23 @@ public class CalendarObligation {
 	)
 	private Set<User> recipients = new LinkedHashSet<>();
 
+	@ManyToMany(fetch = FetchType.LAZY)
+	@JoinTable(
+		name = "calendar_obligation_tickets",
+		joinColumns = @JoinColumn(name = "obligation_id"),
+		inverseJoinColumns = @JoinColumn(name = "ticket_id")
+	)
+	private Set<Ticket> linkedTickets = new LinkedHashSet<>();
+
 	@Column(nullable = false, length = 180)
 	private String title;
 
 	@Column(length = 2000)
 	private String description;
+
+	@Enumerated(EnumType.STRING)
+	@Column(name = "priority_code", nullable = false, length = 20)
+	private CalendarObligationPriority priority = CalendarObligationPriority.MEDIUM;
 
 	@Column(name = "due_at", nullable = false)
 	private OffsetDateTime dueAt;
@@ -106,6 +124,22 @@ public class CalendarObligation {
 		this.recipients = recipients == null ? new LinkedHashSet<>() : new LinkedHashSet<>(recipients);
 	}
 
+	public Set<Ticket> getLinkedTickets() {
+		return linkedTickets;
+	}
+
+	public void setLinkedTickets(Set<Ticket> linkedTickets) {
+		this.linkedTickets = linkedTickets == null ? new LinkedHashSet<>() : new LinkedHashSet<>(linkedTickets);
+	}
+
+	public User getLinkedCompanyOwner() {
+		return linkedCompanyOwner;
+	}
+
+	public void setLinkedCompanyOwner(User linkedCompanyOwner) {
+		this.linkedCompanyOwner = linkedCompanyOwner;
+	}
+
 	public String getTitle() {
 		return title;
 	}
@@ -120,6 +154,14 @@ public class CalendarObligation {
 
 	public void setDescription(String description) {
 		this.description = description;
+	}
+
+	public CalendarObligationPriority getPriority() {
+		return priority;
+	}
+
+	public void setPriority(CalendarObligationPriority priority) {
+		this.priority = priority == null ? CalendarObligationPriority.MEDIUM : priority;
 	}
 
 	public OffsetDateTime getDueAt() {

@@ -200,7 +200,7 @@ public class CalendarReminderWhatsappDispatchService {
 		String description = normalizeText(obligation.getDescription());
 		String companyName = resolveCompanyName(obligation.getCompanyOwner());
 		StringBuilder message = new StringBuilder()
-			.append("ChamaQui: lembrete de obrigacao\n")
+			.append("ChamAqui: lembrete de obrigacao\n")
 			.append("Empresa: ").append(companyName).append('\n')
 			.append("Obrigacao: ").append(normalizeText(obligation.getTitle())).append('\n')
 			.append("Status: ").append(statusLabel).append('\n')
@@ -210,7 +210,7 @@ public class CalendarReminderWhatsappDispatchService {
 			message.append('\n').append("Descricao: ").append(description);
 		}
 
-		message.append('\n').append("Acesse o ChamaQui para acompanhar os detalhes.");
+		message.append('\n').append("Acesse o ChamAqui para acompanhar os detalhes.");
 		return message.toString();
 	}
 

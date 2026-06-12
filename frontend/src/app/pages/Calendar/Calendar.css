@@ -65,6 +65,102 @@
   padding: 24px;
   display: grid;
   gap: 18px;
+  min-width: 0;
+}
+
+.calendar-form .ticket-form__grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  align-items: start;
+  min-width: 0;
+}
+
+.calendar-form .ticket-field {
+  min-width: 0;
+}
+
+.calendar-form .ticket-field--full {
+  grid-column: 1 / -1;
+}
+
+.calendar-form .ticket-field__control {
+  min-width: 0;
+}
+
+.calendar-recipient-field {
+  position: relative;
+}
+
+.calendar-recipient-picker {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: min(100%, 390px);
+  min-width: 390px;
+  max-width: 390px;
+  z-index: 12;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(36, 56, 74, 0.12);
+  box-shadow: 0 18px 36px rgba(28, 44, 62, 0.14);
+}
+
+.calendar-recipient-picker__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.calendar-recipient-picker__header strong {
+  color: #172633;
+  font-size: 0.92rem;
+}
+
+.calendar-recipient-picker__header span {
+  color: #61727f;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.calendar-recipient-picker__list {
+  display: grid;
+  gap: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.calendar-recipient-picker__item {
+  border: 0;
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 12px;
+  background: rgba(36, 56, 74, 0.05);
+  display: grid;
+  gap: 3px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.calendar-recipient-picker__item strong {
+  color: #172633;
+  font-size: 0.9rem;
+}
+
+.calendar-recipient-picker__item span,
+.calendar-recipient-picker__empty {
+  color: #61727f;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.calendar-recipient-picker__item:hover,
+.calendar-recipient-picker__item:focus-visible {
+  background: rgba(43, 131, 220, 0.1);
+  outline: none;
 }
 
 .calendar-form__header,
@@ -125,20 +221,367 @@
   color: #213545;
 }
 
+.calendar-linked-tickets {
+  display: grid;
+  gap: 10px;
+}
+
+.calendar-linked-tickets__toggle {
+  width: 100%;
+  border: 1px solid rgba(36, 56, 74, 0.12);
+  border-radius: 16px;
+  background: rgba(248, 250, 252, 0.96);
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.calendar-linked-tickets__toggle.is-open {
+  border-color: rgba(43, 131, 220, 0.26);
+  box-shadow: 0 8px 18px rgba(43, 131, 220, 0.08);
+}
+
+.calendar-linked-tickets__toggle-content {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.calendar-linked-tickets__toggle-content strong {
+  color: #172633;
+  font-size: 0.92rem;
+  overflow-wrap: anywhere;
+}
+
+.calendar-linked-tickets__toggle-content span,
+.calendar-linked-tickets__toggle > span {
+  color: #61727f;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.calendar-linked-tickets__selected,
+.calendar-linked-tickets__results,
+.calendar-linked-ticket-list__items {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.calendar-linked-tickets__chip,
+.calendar-linked-tickets__result,
+.calendar-linked-ticket-list__item {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(36, 56, 74, 0.1);
+  border-radius: 14px;
+  background: rgba(248, 250, 252, 0.92);
+  padding: 10px 12px;
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  color: #172633;
+  text-decoration: none;
+}
+
+.calendar-linked-tickets__chip {
+  cursor: pointer;
+}
+
+.calendar-linked-tickets__chip strong,
+.calendar-linked-tickets__result strong,
+.calendar-linked-ticket-list__item strong,
+.calendar-kanban__reminder-block strong {
+  color: #172633;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.calendar-linked-tickets__chip span,
+.calendar-linked-tickets__result span,
+.calendar-linked-ticket-list__item span,
+.calendar-linked-ticket-list__label,
+.calendar-linked-ticket-list__empty,
+.calendar-linked-tickets__empty,
+.calendar-linked-tickets__hint,
+.calendar-kanban__reminder-label {
+  color: #61727f;
+  font-size: 0.82rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.calendar-linked-tickets__chip strong:last-child {
+  color: #a63f33;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.calendar-linked-tickets__result,
+.calendar-linked-tickets__more {
+  cursor: pointer;
+}
+
+.calendar-linked-tickets__result:hover,
+.calendar-linked-tickets__result:focus-visible,
+.calendar-linked-ticket-list__item:hover,
+.calendar-linked-ticket-list__item:focus-visible,
+.calendar-linked-tickets__chip:hover,
+.calendar-linked-tickets__chip:focus-visible,
+.calendar-linked-tickets__toggle:hover,
+.calendar-linked-tickets__toggle:focus-visible {
+  border-color: rgba(43, 131, 220, 0.24);
+  box-shadow: 0 8px 18px rgba(43, 131, 220, 0.08);
+  outline: none;
+}
+
+.calendar-linked-tickets__more {
+  border: 0;
+  min-height: 40px;
+  border-radius: 12px;
+  background: rgba(36, 56, 74, 0.08);
+  color: #213545;
+  font: inherit;
+  font-weight: 700;
+}
+
+.calendar-linked-ticket-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.calendar-linked-ticket-list.is-compact {
+  gap: 6px;
+}
+
+.calendar-linked-ticket-list__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.calendar-linked-ticket-list__label {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.calendar-linked-tickets__results {
+  max-height: min(46vh, 360px);
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.calendar-kanban {
+  padding: 24px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.76);
+  border: 1px solid rgba(255, 255, 255, 0.86);
+  box-shadow: 0 18px 42px rgba(28, 44, 62, 0.08);
+  backdrop-filter: blur(18px);
+  display: grid;
+  gap: 18px;
+}
+
+.calendar-kanban__header h2 {
+  margin: 4px 0 0;
+  color: #172633;
+  font-size: 1.25rem;
+}
+
+.calendar-kanban__filters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.calendar-kanban__board {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(300px, 340px);
+  gap: 16px;
+  align-items: start;
+  overflow-x: auto;
+  padding-bottom: 6px;
+}
+
+.calendar-kanban__column {
+  min-width: 0;
+  min-height: 240px;
+  padding: 16px;
+  border-radius: 20px;
+  background: rgba(36, 56, 74, 0.05);
+  border: 1px solid rgba(36, 56, 74, 0.08);
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.calendar-kanban__column.is-drag-over {
+  border-color: rgba(43, 131, 220, 0.32);
+  box-shadow: inset 0 0 0 2px rgba(43, 131, 220, 0.14);
+}
+
+.calendar-kanban__column-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  color: #172633;
+}
+
+.calendar-kanban__column-header strong {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
+}
+
+.calendar-kanban__column-header span {
+  flex: 0 0 auto;
+  color: #61727f;
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.calendar-kanban__column-list {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  align-items: start;
+}
+
+.calendar-kanban__card {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 14px;
+  border: 1px solid rgba(36, 56, 74, 0.08);
+  border-radius: 16px;
+  background: #ffffff;
+  display: grid;
+  gap: 12px;
+  cursor: grab;
+}
+
+.calendar-kanban__card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.calendar-kanban__card-top strong {
+  min-width: 0;
+  flex: 1 1 auto;
+  color: #172633;
+  overflow-wrap: anywhere;
+}
+
+.calendar-kanban__card-meta {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: #61727f;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.calendar-kanban__card-meta span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.calendar-kanban__move-control {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.calendar-kanban__move-control span {
+  color: #61727f;
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.calendar-kanban__move-control select {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  border-radius: 12px;
+  border: 1px solid rgba(36, 56, 74, 0.12);
+  padding: 0 12px;
+  background: #fff;
+  color: #172633;
+  font: inherit;
+}
+
+.calendar-kanban__card-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.calendar-kanban__card-actions .calendar-task-card__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: nowrap;
+  align-items: stretch;
+}
+
+.calendar-kanban__card-actions .calendar-task-card__actions button {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0 10px;
+}
+
+.calendar-kanban__reminder-block {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(36, 56, 74, 0.05);
+  border: 1px solid rgba(36, 56, 74, 0.08);
+}
+
+.calendar-linked-tickets__hint {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+}
+
+.calendar-kanban__empty {
+  color: #61727f;
+  font-size: 0.9rem;
+  font-weight: 600;
+  align-self: start;
+}
+
 .calendar-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(360px, 1fr);
+  grid-template-columns: 430px minmax(0, 1fr);
   gap: 22px;
   align-items: start;
 }
 
 .calendar-board,
 .calendar-panel {
-  padding: 24px;
+  padding: 20px;
 }
 
 .calendar-board {
-  max-width: 860px;
+  width: 430px;
+  min-width: 430px;
+  max-width: 430px;
   justify-self: start;
 }
 
@@ -174,28 +617,28 @@
 .calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 18px;
+  gap: 4px;
+  margin-top: 12px;
 }
 
 .calendar-grid__weekday {
-  padding: 0 8px 4px;
+  padding: 0 4px 2px;
   color: #62727e;
-  font-size: 0.8rem;
+  font-size: 0.66rem;
   font-weight: 700;
   text-align: center;
   text-transform: uppercase;
 }
 
 .calendar-grid__day {
-  min-height: 104px;
-  padding: 10px;
-  border-radius: 16px;
+  min-height: 60px;
+  padding: 6px;
+  border-radius: 12px;
   background: #f8fafc;
   border: 1px solid rgba(36, 56, 74, 0.07);
   display: grid;
   align-content: start;
-  gap: 8px;
+  gap: 4px;
 }
 
 .calendar-grid__day.is-outside {
@@ -205,13 +648,13 @@
 .calendar-grid__date {
   color: #172633;
   font-weight: 700;
-  font-size: 0.92rem;
+  font-size: 0.75rem;
 }
 
 .calendar-grid__items,
 .calendar-panel__list {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .calendar-chip,
@@ -220,8 +663,8 @@
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  padding: 5px 9px;
-  font-size: 0.7rem;
+  padding: 3px 6px;
+  font-size: 0.55rem;
   font-weight: 700;
 }
 
@@ -263,7 +706,7 @@
 
 .calendar-grid__more {
   color: #667785;
-  font-size: 0.74rem;
+  font-size: 0.58rem;
   font-weight: 600;
 }
 
@@ -325,8 +768,34 @@
     grid-template-columns: 1fr;
   }
 
+  .calendar-layout {
+    gap: 18px;
+  }
+
+  .calendar-kanban__filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .calendar-board {
+    width: 100%;
+    min-width: 0;
     max-width: none;
+  }
+}
+
+@media (max-width: 1360px) {
+  .calendar-form .ticket-form__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .calendar-form__footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .calendar-form__buttons {
+    width: 100%;
+    justify-content: flex-end;
   }
 }
 
@@ -336,17 +805,98 @@
   }
 
   .calendar-grid {
-    gap: 8px;
+    gap: 6px;
   }
 
   .calendar-grid__day {
-    min-height: 96px;
-    padding: 10px;
+    min-height: 66px;
+    padding: 6px;
   }
 
   .calendar-form__footer,
-  .calendar-board__toolbar {
+  .calendar-board__toolbar,
+  .calendar-recipient-picker__header,
+  .calendar-panel__header,
+  .calendar-task-card__top,
+  .calendar-kanban__card-top,
+  .calendar-kanban__column-header {
     flex-direction: column;
+  }
+
+  .calendar-kanban {
+    padding: 18px;
+  }
+
+  .calendar-form {
+    padding: 18px;
+  }
+
+  .calendar-form .ticket-form__grid {
+    gap: 14px;
+  }
+
+  .calendar-form .ticket-field__control {
+    min-height: 56px;
+    padding: 0 14px;
+  }
+
+  .calendar-form textarea {
+    min-height: 88px;
+  }
+
+  .calendar-kanban__filters {
+    grid-template-columns: 1fr;
+  }
+
+  .calendar-recipient-field,
+  .calendar-recipient-picker {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .calendar-recipient-field {
+    display: grid;
+    gap: 8px;
+  }
+
+  .calendar-recipient-picker {
+    position: static;
+    margin-top: 0;
+    box-shadow: 0 12px 24px rgba(28, 44, 62, 0.1);
+  }
+
+  .calendar-board__actions {
+    width: 100%;
+  }
+
+  .calendar-board__actions button,
+  .calendar-board__actions input,
+  .calendar-task-card__actions button,
+  .calendar-form__buttons button,
+  .calendar-kanban__move-control select {
+    width: 100%;
+  }
+
+  .calendar-kanban__card-actions .calendar-task-card__actions {
+    flex-wrap: wrap;
+  }
+
+  .calendar-kanban__card-actions .calendar-task-card__actions button {
+    flex: 1 1 100%;
+    padding: 0 14px;
+  }
+
+  .calendar-kanban__board {
+    grid-auto-columns: minmax(260px, 82vw);
+  }
+
+  .calendar-kanban__column {
+    min-height: auto;
+  }
+
+  .calendar-linked-tickets__results {
+    max-height: 300px;
   }
 }
 
@@ -357,8 +907,13 @@
 
   .calendar-board,
   .calendar-panel,
-  .calendar-form {
-    padding: 18px;
+  .calendar-form,
+  .calendar-kanban {
+    padding: 16px;
+  }
+
+  .calendar-layout {
+    gap: 16px;
   }
 
   .calendar-grid {
@@ -367,5 +922,35 @@
 
   .calendar-grid__weekday {
     display: none;
+  }
+
+  .calendar-kanban__board {
+    grid-auto-columns: minmax(240px, calc(100vw - 72px));
+  }
+
+  .calendar-kanban__column,
+  .calendar-task-card {
+    padding: 14px;
+  }
+
+  .calendar-form .ticket-field__control {
+    min-height: 52px;
+    padding: 0 12px;
+    border-radius: 16px;
+  }
+
+  .calendar-linked-tickets__toggle {
+    padding: 10px 12px;
+    align-items: flex-start;
+  }
+
+  .calendar-linked-tickets__chip,
+  .calendar-linked-tickets__result,
+  .calendar-linked-ticket-list__item {
+    padding: 9px 10px;
+  }
+
+  .calendar-linked-tickets__results {
+    max-height: 260px;
   }
 }

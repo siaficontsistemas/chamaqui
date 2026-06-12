@@ -12,6 +12,9 @@ public record CreateCalendarObligationRequest(
 	@Size(max = 2000) String description,
 	@NotNull OffsetDateTime dueAt,
 	OffsetDateTime reminderAt,
+	String priority,
+	java.util.UUID linkedCompanyOwnerId,
+	List<java.util.UUID> linkedTicketIds,
 	@NotNull List<String> recipientDocumentNumbers,
 	@NotBlank String createdByEmail
 ) {
