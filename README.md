@@ -324,6 +324,7 @@ Cadastre estes `Repository variables`:
 - `AWS_REGION`: região AWS do bucket S3 do frontend
 - `FRONTEND_S3_BUCKET`: nome do bucket onde o `frontend/dist` será publicado
 - `CLOUDFRONT_DISTRIBUTION_ID`: ID da distribuição CloudFront, por exemplo `E3AVSEKD8ZJQTP`
+- `VITE_API_BASE_URL`: URL pública da API usada no build do frontend, por exemplo `https://api.chamaqui.app.br`
 - `EC2_SSH_HOST`: host ou IP público da instância, por exemplo `54.160.83.203`
 - `EC2_SSH_USER`: usuário SSH da instância, por exemplo `ec2-user`
 - `EC2_SSH_PORT`: porta SSH, default `22`
@@ -348,6 +349,8 @@ Cadastre estes `Repository variables`:
 ### Observação importante
 
 Esse workflow mantém o formato atual do deploy. Ele não migra sua infraestrutura para Docker, ECS ou systemd; apenas automatiza o processo atual, separando corretamente o frontend em `S3 + CloudFront` e o backend/WhatsApp em `EC2 + PM2`.
+
+Como arquivos `.env.*` não sobem para o repositório, a URL da API do frontend de produção deve ser fornecida pelo workflow via `VITE_API_BASE_URL`.
 
 ## Comandos Úteis
 
