@@ -94,6 +94,8 @@ function Team({
     currentUser?.companyName ||
     sectors.find((sector) => sector.companyName)?.companyName ||
     'Empresa não informada'
+  const normalizedResponderCompanyOwnerId = String(currentUser?.id || '')
+  const normalizedResponderCompanyName = String(currentUser?.companyName || '').trim().toLowerCase()
   const directionColumnTitle =
     companyUsesSectors ? 'Setores' : userRole === 'user' ? 'Empresas cliente' : 'Vinculo'
   const selectableTeamMembers = useMemo(
@@ -629,6 +631,25 @@ function Team({
     }))
   }
 
+  function isResponderCompanyMember(member) {
+    const normalizedMemberCompanyOwnerId = String(member?.companyOwnerId || '')
+    const normalizedMemberCompanyName = String(member?.companyName || '').trim().toLowerCase()
+
+    if (
+      normalizedResponderCompanyOwnerId &&
+      normalizedMemberCompanyOwnerId &&
+      normalizedResponderCompanyOwnerId === normalizedMemberCompanyOwnerId
+    ) {
+      return true
+    }
+
+    return Boolean(
+      normalizedResponderCompanyName &&
+      normalizedMemberCompanyName &&
+      normalizedResponderCompanyName === normalizedMemberCompanyName
+    )
+  }
+
   async function handleCompanyInviteSubmit(event) {
     event.preventDefault()
 
@@ -1161,6 +1182,7 @@ function Team({
                           <span>{member.role}</span>
                           <span className="team-panel__sectors">
                             {companyUsesSectors ? (
+                              isResponderCompanyMember(member) ? (
                               <>
                                 {sectors.map((sector) => {
                                   const isAssigned = (member.sectors ?? []).includes(sector.id)
@@ -1189,13 +1211,15 @@ function Team({
                                       .join(', ')}
                                   </span>
                                 ) : null}
-                                {(member.sectors ?? []).length === 0 && member.companyName ? (
-                                  <span className="team-panel__empty">{member.companyName}</span>
-                                ) : null}
                                 {sectors.length === 0 ? (
                                   <span className="team-panel__empty">Nenhum setor definido</span>
                                 ) : null}
                               </>
+                              ) : (
+                                <span className="team-panel__empty">
+                                  {member.companyName || 'Funcionário vinculado a empresa cliente'}
+                                </span>
+                              )
                             ) : (
                               <span className="team-panel__empty">
                                 {member.companyName || 'Acesso livre na empresa, sem setores'}
