@@ -771,12 +771,20 @@ public class TicketService {
 			throw new IllegalArgumentException("Não é possível transferir um chamado já fechado.");
 		}
 
+		if (hasRole(author, "admin")) {
+			if (ticket.getPendingTransferTo() != null
+				|| ticketTransferNotificationRepository.existsByTicketIdAndStatus(ticket.getId(), TicketTransferStatus.PENDING)) {
+				throw new IllegalArgumentException("Esse chamado já possui uma transferência pendente.");
+			}
+			return;
+		}
+
 		if (!hasRole(author, "employee")) {
-			throw new IllegalArgumentException("Apenas funcionários podem transferir chamados.");
+			throw new IllegalArgumentException("Apenas administradores e funcionários podem transferir chamados.");
 		}
 
 		if (ticket.getAssignedTo() == null || !ticket.getAssignedTo().getId().equals(author.getId())) {
-			throw new IllegalArgumentException("Somente o funcionário atualmente responsável pode transferir o chamado.");
+			throw new IllegalArgumentException("Somente o administrador ou o funcionário atualmente responsável pode transferir o chamado.");
 		}
 
 		if (ticket.getPendingTransferTo() != null
