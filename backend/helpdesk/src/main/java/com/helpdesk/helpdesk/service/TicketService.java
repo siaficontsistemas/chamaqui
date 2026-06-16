@@ -404,7 +404,7 @@ public class TicketService {
 		}
 
 		if (!author.getId().equals(ticket.getRequester().getId())) {
-			hideReplyNotifications(ticket.getId());
+			hideActiveTicketNotifications(ticket.getId());
 		}
 
 		ticketRepository.save(ticket);
@@ -566,13 +566,7 @@ public class TicketService {
 	}
 
 	private void hideRelatedTicketNotifications(UUID ticketId) {
-		List<TicketAssignmentNotification> assignmentNotifications = ticketAssignmentNotificationRepository.findByTicketId(ticketId);
-		for (TicketAssignmentNotification notification : assignmentNotifications) {
-			notification.setHidden(true);
-		}
-		if (!assignmentNotifications.isEmpty()) {
-			ticketAssignmentNotificationRepository.saveAll(assignmentNotifications);
-		}
+		hideAssignmentNotifications(ticketId);
 
 		List<TicketTransferNotification> transferNotifications = ticketTransferNotificationRepository.findByTicketId(ticketId);
 		for (TicketTransferNotification notification : transferNotifications) {
@@ -583,6 +577,21 @@ public class TicketService {
 		}
 
 		hideReplyNotifications(ticketId);
+	}
+
+	private void hideActiveTicketNotifications(UUID ticketId) {
+		hideAssignmentNotifications(ticketId);
+		hideReplyNotifications(ticketId);
+	}
+
+	private void hideAssignmentNotifications(UUID ticketId) {
+		List<TicketAssignmentNotification> assignmentNotifications = ticketAssignmentNotificationRepository.findByTicketId(ticketId);
+		for (TicketAssignmentNotification notification : assignmentNotifications) {
+			notification.setHidden(true);
+		}
+		if (!assignmentNotifications.isEmpty()) {
+			ticketAssignmentNotificationRepository.saveAll(assignmentNotifications);
+		}
 	}
 
 	private void hideReplyNotifications(UUID ticketId) {
