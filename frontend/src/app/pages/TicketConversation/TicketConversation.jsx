@@ -165,9 +165,10 @@ function TicketConversation({
       ticket?.assignedToEmail?.toLowerCase() === currentUser?.email?.toLowerCase())
 
   const canTransferTicket =
-    userRole === 'employee' &&
+    (userRole === 'admin' ||
+      (userRole === 'employee' &&
+        ticket?.assignedToEmail?.toLowerCase() === currentUser?.email?.toLowerCase())) &&
     !isTicketClosed &&
-    ticket?.assignedToEmail?.toLowerCase() === currentUser?.email?.toLowerCase() &&
     !ticket?.pendingTransferToName
 
   useEffect(() => {
