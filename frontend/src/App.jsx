@@ -354,19 +354,31 @@ function shouldAutoDeleteNotificationAfterView(notification) {
     return false
   }
 
-  if (notification.type === 'ticket-transfer') {
-    return notification.status === 'ACCEPTED' || notification.status === 'DECLINED'
+  if (notification.type === 'calendar-reminder') {
+    return false
+  }
+
+  if (notification.type === 'received') {
+    return false
+  }
+
+  if (notification.type === 'ticket-transfer' && notification.status === 'PENDING') {
+    return false
+  }
+
+  if (notification.type === 'company-access-request' && notification.status === 'PENDING') {
+    return false
+  }
+
+  if (notification.type === 'company-invite' && notification.status === 'PENDING') {
+    return false
   }
 
   if (notification.type === 'company-partnership') {
-    return notification.eventType === 'ACCEPTED'
+    return !(notification.eventType === 'REQUESTED' && notification.canRespond)
   }
 
-  if (notification.type === 'sent') {
-    return notification.status === 'ACCEPTED' || notification.status === 'CANCELED'
-  }
-
-  return false
+  return true
 }
 
 async function fetchDashboardBundle(email) {
