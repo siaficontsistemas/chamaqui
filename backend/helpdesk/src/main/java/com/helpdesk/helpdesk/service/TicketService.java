@@ -872,10 +872,11 @@ public class TicketService {
 			return;
 		}
 
-		TicketAssignmentNotification notification = new TicketAssignmentNotification();
-		notification.setTicket(ticket);
-		notification.setRecipient(ticket.getAssignedTo());
-		ticketAssignmentNotificationRepository.save(notification);
+		createAssignmentNotificationForRecipient(ticket, ticket.getAssignedTo());
+		User companyAdmin = resolveTicketCompanyAdmin(ticket);
+		if (companyAdmin != null && !companyAdmin.getId().equals(ticket.getAssignedTo().getId())) {
+			createAssignmentNotificationForRecipient(ticket, companyAdmin);
+		}
 	}
 
 	private void createReplyNotification(Ticket ticket, TicketMessage message, User author) {
@@ -895,11 +896,51 @@ public class TicketService {
 			return;
 		}
 
+		createReplyNotificationForRecipient(ticket, message, ticket.getAssignedTo());
+		User companyAdmin = resolveTicketCompanyAdmin(ticket);
+		if (companyAdmin != null && !companyAdmin.getId().equals(ticket.getAssignedTo().getId())) {
+			createReplyNotificationForRecipient(ticket, message, companyAdmin);
+		}
+	}
+
+	private void createAssignmentNotificationForRecipient(Ticket ticket, User recipient) {
+		if (ticket == null || recipient == null) {
+			return;
+		}
+
+		TicketAssignmentNotification notification = new TicketAssignmentNotification();
+		notification.setTicket(ticket);
+		notification.setRecipient(recipient);
+		ticketAssignmentNotificationRepository.save(notification);
+	}
+
+	private void createReplyNotificationForRecipient(Ticket ticket, TicketMessage message, User recipient) {
+		if (ticket == null || message == null || recipient == null) {
+			return;
+		}
+
 		TicketReplyNotification notification = new TicketReplyNotification();
 		notification.setTicket(ticket);
 		notification.setMessage(message);
-		notification.setRecipient(ticket.getAssignedTo());
+		notification.setRecipient(recipient);
 		ticketReplyNotificationRepository.save(notification);
+	}
+
+	private User resolveTicketCompanyAdmin(Ticket ticket) {
+		if (ticket == null || ticket.getSector() == null) {
+			return null;
+		}
+
+		User companyAdmin = ticket.getSector().getCreatedBy();
+		if (companyAdmin == null || companyAdmin.getStatus() == null) {
+			return null;
+		}
+
+		if (!companyAdmin.getStatus().name().equalsIgnoreCase("ACTIVE") || !hasRole(companyAdmin, "admin")) {
+			return null;
+		}
+
+		return companyAdmin;
 	}
 
 	private TicketMessage ensureInitialMessage(Ticket ticket) {

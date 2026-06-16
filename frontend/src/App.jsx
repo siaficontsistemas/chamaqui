@@ -690,9 +690,9 @@ function App() {
         ).getTime()
     )
   }, [appFeedbackNotifications, receivedInvites, sentInvites, ticketNotifications])
-  const employeeBrowserNotificationCount = useMemo(
+  const browserTicketNotificationCount = useMemo(
     () =>
-      currentUserRole === 'employee'
+      currentUserRole === 'employee' || currentUserRole === 'admin'
         ? ticketNotifications.filter(
             (notification) =>
               notification.type === 'ticket-assignment' || notification.type === 'ticket-reply'
@@ -770,14 +770,14 @@ function App() {
     }
 
     document.title =
-      employeeBrowserNotificationCount > 0
-        ? `(${employeeBrowserNotificationCount}) ${DEFAULT_DOCUMENT_TITLE}`
+      browserTicketNotificationCount > 0
+        ? `(${browserTicketNotificationCount}) ${DEFAULT_DOCUMENT_TITLE}`
         : DEFAULT_DOCUMENT_TITLE
 
     return () => {
       document.title = DEFAULT_DOCUMENT_TITLE
     }
-  }, [employeeBrowserNotificationCount])
+  }, [browserTicketNotificationCount])
 
   useEffect(() => {
     if (!authUser?.email) {
