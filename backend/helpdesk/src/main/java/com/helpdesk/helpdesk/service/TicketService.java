@@ -6,12 +6,10 @@ import java.time.Year;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Comparator;
-import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 import org.slf4j.Logger;
@@ -91,7 +89,6 @@ public class TicketService {
 	private final WhatsappConversationRepository whatsappConversationRepository;
 	private final TenantAccessService tenantAccessService;
 	private final ScopedUserLookupService scopedUserLookupService;
-	private final TicketNotificationRealtimeService ticketNotificationRealtimeService;
 
 	public TicketService(
 		TicketRepository ticketRepository,
@@ -112,8 +109,7 @@ public class TicketService {
 		WhatsappService whatsappService,
 		WhatsappConversationRepository whatsappConversationRepository,
 		TenantAccessService tenantAccessService,
-		ScopedUserLookupService scopedUserLookupService,
-		TicketNotificationRealtimeService ticketNotificationRealtimeService
+		ScopedUserLookupService scopedUserLookupService
 	) {
 		this.ticketRepository = ticketRepository;
 		this.userRepository = userRepository;
@@ -134,7 +130,6 @@ public class TicketService {
 		this.whatsappConversationRepository = whatsappConversationRepository;
 		this.tenantAccessService = tenantAccessService;
 		this.scopedUserLookupService = scopedUserLookupService;
-		this.ticketNotificationRealtimeService = ticketNotificationRealtimeService;
 	}
 
 	@Transactional(readOnly = true)
@@ -409,7 +404,7 @@ public class TicketService {
 		}
 
 		if (!author.getId().equals(ticket.getRequester().getId())) {
-			hideActiveTicketNotifications(ticket);
+			hideActiveTicketNotifications(ticket.getId());
 		}
 
 		ticketRepository.save(ticket);
@@ -494,7 +489,7 @@ public class TicketService {
 			managedTicket.setPendingTransferRequestedBy(null);
 			managedTicket.setPendingTransferRequestedAt(null);
 			ticketRepository.save(managedTicket);
-			hideRelatedTicketNotifications(managedTicket);
+			hideRelatedTicketNotifications(managedTicket.getId());
 			clearWhatsappConversationForTicket(managedTicket.getId());
 		}
 	}
@@ -576,11 +571,10 @@ public class TicketService {
 		ticketClosureNotificationRepository.save(notification);
 	}
 
-	private void hideRelatedTicketNotifications(Ticket ticket) {
-		Set<String> clearedRecipients = new LinkedHashSet<>();
-		clearedRecipients.addAll(hideAssignmentNotifications(ticket));
+	private void hideRelatedTicketNotifications(UUID ticketId) {
+		hideAssignmentNotifications(ticketId);
 
-		List<TicketTransferNotification> transferNotifications = ticketTransferNotificationRepository.findByTicketId(ticket.getId());
+		List<TicketTransferNotification> transferNotifications = ticketTransferNotificationRepository.findByTicketId(ticketId);
 		for (TicketTransferNotification notification : transferNotifications) {
 			notification.setHidden(true);
 		}
@@ -588,53 +582,32 @@ public class TicketService {
 			ticketTransferNotificationRepository.saveAll(transferNotifications);
 		}
 
-		clearedRecipients.addAll(hideReplyNotifications(ticket));
-		publishRealtimeNotificationCleared(ticket, clearedRecipients);
+		hideReplyNotifications(ticketId);
 	}
 
-	private void hideActiveTicketNotifications(Ticket ticket) {
-		Set<String> clearedRecipients = new LinkedHashSet<>();
-		clearedRecipients.addAll(hideAssignmentNotifications(ticket));
-		clearedRecipients.addAll(hideReplyNotifications(ticket));
-		publishRealtimeNotificationCleared(ticket, clearedRecipients);
+	private void hideActiveTicketNotifications(UUID ticketId) {
+		hideAssignmentNotifications(ticketId);
+		hideReplyNotifications(ticketId);
 	}
 
-	private Set<String> hideAssignmentNotifications(Ticket ticket) {
-		List<TicketAssignmentNotification> assignmentNotifications = ticketAssignmentNotificationRepository.findByTicketId(ticket.getId());
-		Set<String> clearedRecipients = new LinkedHashSet<>();
+	private void hideAssignmentNotifications(UUID ticketId) {
+		List<TicketAssignmentNotification> assignmentNotifications = ticketAssignmentNotificationRepository.findByTicketId(ticketId);
 		for (TicketAssignmentNotification notification : assignmentNotifications) {
-			if (!notification.isHidden() && notification.getRecipient() != null && notification.getRecipient().getEmail() != null) {
-				clearedRecipients.add(notification.getRecipient().getEmail());
-			}
 			notification.setHidden(true);
 		}
 		if (!assignmentNotifications.isEmpty()) {
 			ticketAssignmentNotificationRepository.saveAll(assignmentNotifications);
 		}
-		return clearedRecipients;
 	}
 
-	private Set<String> hideReplyNotifications(Ticket ticket) {
-		List<TicketReplyNotification> replyNotifications = ticketReplyNotificationRepository.findByTicketId(ticket.getId());
-		Set<String> clearedRecipients = new LinkedHashSet<>();
+	private void hideReplyNotifications(UUID ticketId) {
+		List<TicketReplyNotification> replyNotifications = ticketReplyNotificationRepository.findByTicketId(ticketId);
 		for (TicketReplyNotification notification : replyNotifications) {
-			if (!notification.isHidden() && notification.getRecipient() != null && notification.getRecipient().getEmail() != null) {
-				clearedRecipients.add(notification.getRecipient().getEmail());
-			}
 			notification.setHidden(true);
 		}
 		if (!replyNotifications.isEmpty()) {
 			ticketReplyNotificationRepository.saveAll(replyNotifications);
 		}
-		return clearedRecipients;
-	}
-
-	private void publishRealtimeNotificationCleared(Ticket ticket, Set<String> clearedRecipients) {
-		if (ticket == null || clearedRecipients == null || clearedRecipients.isEmpty()) {
-			return;
-		}
-
-		ticketNotificationRealtimeService.publishClearedAfterCommit(ticket, clearedRecipients);
 	}
 
 	private void clearWhatsappConversationForTicket(UUID ticketId) {
@@ -977,13 +950,6 @@ public class TicketService {
 		notification.setTicket(ticket);
 		notification.setRecipient(recipient);
 		ticketAssignmentNotificationRepository.save(notification);
-		ticketNotificationRealtimeService.publishCreatedAfterCommit(
-			ticket,
-			null,
-			recipient,
-			"ticket-assignment",
-			notification.getId()
-		);
 	}
 
 	private void createReplyNotificationForRecipient(Ticket ticket, TicketMessage message, User recipient) {
@@ -996,13 +962,6 @@ public class TicketService {
 		notification.setMessage(message);
 		notification.setRecipient(recipient);
 		ticketReplyNotificationRepository.save(notification);
-		ticketNotificationRealtimeService.publishCreatedAfterCommit(
-			ticket,
-			message,
-			recipient,
-			"ticket-reply",
-			notification.getId()
-		);
 	}
 
 	private User resolveTicketCompanyAdmin(Ticket ticket) {
