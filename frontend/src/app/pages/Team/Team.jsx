@@ -24,6 +24,7 @@ function Team({
   onDeclineTicketTransfer,
   onRemoveMemberFromCompany,
   onUpdateMemberSectors,
+  onViewNotifications,
   receivedInvites = [],
   sectors = [],
   sentInvites = [],
@@ -87,6 +88,16 @@ function Team({
           firstNotification.createdAt
       ).getTime()
   )
+
+  useEffect(() => {
+    if (userRole === 'admin') {
+      onViewNotifications?.(handledSentInvites)
+      return
+    }
+
+    onViewNotifications?.(employeeNotifications)
+  }, [employeeNotifications, handledSentInvites, onViewNotifications, userRole])
+
   const companyName =
     (!companyUsesSectors && userRole === 'user'
       ? visibleTeamMembers.map((member) => member.companyName).filter(Boolean).join(', ')

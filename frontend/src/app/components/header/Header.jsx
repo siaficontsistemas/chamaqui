@@ -20,6 +20,7 @@ function Header({
   onDeclineInvite,
   onDeclineTicketTransfer,
   onOpenNotification,
+  onNotificationsViewed,
   onSectionChange,
   notifications = [],
   roleLabel,
@@ -533,7 +534,15 @@ function Header({
   }
 
   function handleOpenNotifications() {
-    setIsNotificationMenuOpen((currentState) => !currentState)
+    setIsNotificationMenuOpen((currentState) => {
+      const nextState = !currentState
+
+      if (nextState) {
+        onNotificationsViewed?.(notifications)
+      }
+
+      return nextState
+    })
     setIsUserMenuOpen(false)
     setIsMobileNavigationOpen(false)
   }
@@ -554,6 +563,7 @@ function Header({
     setIsMobileNavigationOpen(false)
     setIsUserMenuOpen(false)
     setIsNotificationMenuOpen(true)
+    onNotificationsViewed?.(notifications)
   }
 
   const mobileNavigation =

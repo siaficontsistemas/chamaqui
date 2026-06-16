@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   acceptCompanyAccessRequestNotification,
@@ -349,6 +349,26 @@ function normalizeAppFeedbackNotification(notification) {
   }
 }
 
+function shouldAutoDeleteNotificationAfterView(notification) {
+  if (!notification || typeof notification !== 'object') {
+    return false
+  }
+
+  if (notification.type === 'ticket-transfer') {
+    return notification.status === 'ACCEPTED' || notification.status === 'DECLINED'
+  }
+
+  if (notification.type === 'company-partnership') {
+    return notification.eventType === 'ACCEPTED'
+  }
+
+  if (notification.type === 'sent') {
+    return notification.status === 'ACCEPTED' || notification.status === 'CANCELED'
+  }
+
+  return false
+}
+
 async function fetchDashboardBundle(email) {
   const nextProfile = await getProfile(email)
   const normalizedProfile = normalizeCurrentUser(nextProfile)
@@ -622,6 +642,7 @@ function App() {
   const [isTicketSummaryLoading, setIsTicketSummaryLoading] = useState(false)
   const [isTeamDataLoading, setIsTeamDataLoading] = useState(false)
   const [teamDataError, setTeamDataError] = useState('')
+  const autoViewedNotificationIdsRef = useRef(new Set())
 
   const currentRouteSection = useMemo(
     () => getSectionIdFromPathname(location.pathname) ?? 'tickets',
@@ -725,6 +746,7 @@ function App() {
     onDeclineInvite: handleDeclineInvite,
     onDeclineTicketTransfer: handleDeclineTicketTransfer,
     onOpenNotification: handleOpenNotification,
+    onNotificationsViewed: handleViewedNotifications,
     onNavigateLogin: handleNavigateLogin,
     onSectionChange: handleNavigatePage,
     roleLabel:
@@ -1328,6 +1350,11 @@ function App() {
       return
     }
 
+    await deleteNotificationResource(notificationOrId)
+    await refreshDashboardData(currentUserEmail)
+  }
+
+  async function deleteNotificationResource(notificationOrId) {
     if (typeof notificationOrId === 'object') {
       if (notificationOrId.type === 'app-feedback') {
         setAppFeedbackNotifications((currentNotifications) =>
@@ -1338,43 +1365,36 @@ function App() {
 
       if (notificationOrId.type === 'ticket-assignment') {
         await deleteTicketAssignmentNotification(notificationOrId.id, currentUserEmail)
-        await refreshDashboardData(currentUserEmail)
         return
       }
 
       if (notificationOrId.type === 'ticket-transfer') {
         await deleteTicketTransferNotification(notificationOrId.id, currentUserEmail)
-        await refreshDashboardData(currentUserEmail)
         return
       }
 
       if (notificationOrId.type === 'ticket-closure') {
         await deleteTicketClosureNotification(notificationOrId.id, currentUserEmail)
-        await refreshDashboardData(currentUserEmail)
         return
       }
 
       if (notificationOrId.type === 'ticket-reply') {
         await deleteTicketReplyNotification(notificationOrId.id, currentUserEmail)
-        await refreshDashboardData(currentUserEmail)
         return
       }
 
       if (notificationOrId.type === 'team-membership-removed') {
         await deleteTeamMembershipNotification(notificationOrId.id, currentUserEmail)
-        await refreshDashboardData(currentUserEmail)
         return
       }
 
       if (notificationOrId.type === 'calendar-reminder') {
         await deleteCalendarReminderNotification(notificationOrId.id, currentUserEmail)
-        await refreshDashboardData(currentUserEmail)
         return
       }
 
       if (notificationOrId.type === 'company-partnership') {
         await deleteCompanyPartnershipNotification(notificationOrId.id, currentUserEmail)
-        await refreshDashboardData(currentUserEmail)
         return
       }
     }
@@ -1383,7 +1403,41 @@ function App() {
       typeof notificationOrId === 'object' ? notificationOrId?.id : notificationOrId
 
     await deleteTeamNotification(inviteId, currentUserEmail)
-    await refreshDashboardData(currentUserEmail)
+  }
+
+  async function handleViewedNotifications(visibleNotifications) {
+    if (!currentUserEmail || !Array.isArray(visibleNotifications) || visibleNotifications.length === 0) {
+      return
+    }
+
+    const notificationsToDelete = visibleNotifications.filter(
+      (notification) =>
+        shouldAutoDeleteNotificationAfterView(notification) &&
+        !autoViewedNotificationIdsRef.current.has(notification.id)
+    )
+
+    if (notificationsToDelete.length === 0) {
+      return
+    }
+
+    notificationsToDelete.forEach((notification) => {
+      autoViewedNotificationIdsRef.current.add(notification.id)
+    })
+
+    const deleteResults = await Promise.allSettled(
+      notificationsToDelete.map((notification) => deleteNotificationResource(notification))
+    )
+    const deletedAtLeastOne = deleteResults.some((result) => result.status === 'fulfilled')
+
+    deleteResults.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        autoViewedNotificationIdsRef.current.delete(notificationsToDelete[index].id)
+      }
+    })
+
+    if (deletedAtLeastOne) {
+      await refreshDashboardData(currentUserEmail)
+    }
   }
 
   function handleOpenNotification(notification) {
@@ -1526,6 +1580,7 @@ function App() {
         onDeleteCompanyLogo={handleDeleteCompanyLogo}
         onSearchPartnershipCompanies={handleSearchPartnershipCompanies}
         onUpdateMemberSectors={handleUpdateMemberSectors}
+        onViewNotifications={handleViewedNotifications}
         availableTicketSectors={ticketTargetSectors}
         companyPartnerships={companyPartnerships}
         profileError={profileError}
