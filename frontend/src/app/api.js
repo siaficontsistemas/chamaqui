@@ -3,6 +3,23 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:420
   ''
 )
 
+export function resolveRealtimeNotificationsWebSocketUrl(email) {
+  if (!email) {
+    return ''
+  }
+
+  const apiUrl = new URL(API_BASE_URL)
+  apiUrl.protocol = apiUrl.protocol === 'https:' ? 'wss:' : 'ws:'
+  apiUrl.pathname = '/api/v1/realtime/ticket-notifications'
+  apiUrl.searchParams.set('email', email)
+
+  if (typeof window !== 'undefined' && window.location?.host) {
+    apiUrl.searchParams.set('tenantHost', window.location.host)
+  }
+
+  return apiUrl.toString()
+}
+
 export function resolveApiAssetUrl(assetUrl) {
   if (!assetUrl) {
     return ''

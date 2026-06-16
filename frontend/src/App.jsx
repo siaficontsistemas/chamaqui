@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   acceptCompanyAccessRequestNotification,
@@ -61,6 +61,7 @@ import {
   unlinkCompanyPartnership,
   updateTicketTitle as updateTicketTitleRequest,
   updateProfile as updateProfileRequest,
+  resolveRealtimeNotificationsWebSocketUrl,
   uploadCompanyLogo as uploadCompanyLogoRequest,
   updateTeamMemberSectors,
 } from './app/api'
@@ -109,7 +110,9 @@ const dashboardPageComponents = {
 
 const SESSION_STORAGE_KEY = 'helpdesk.session'
 const AUTO_REFRESH_INTERVAL_MS = 5000
+const REALTIME_RECONNECT_DELAY_MS = 3000
 const DEFAULT_DOCUMENT_TITLE = 'ChamAqui Helpdesk'
+const BROWSER_NOTIFICATION_STORAGE_PREFIX = 'helpdesk.browser-notification.'
 
 function normalizeSector(sector) {
   return {
@@ -379,6 +382,60 @@ function shouldAutoDeleteNotificationAfterView(notification) {
   }
 
   return true
+}
+
+function shouldShowBrowserNotificationInBackground() {
+  if (typeof document === 'undefined') {
+    return false
+  }
+
+  if (document.visibilityState === 'hidden') {
+    return true
+  }
+
+  return typeof document.hasFocus === 'function' ? !document.hasFocus() : false
+}
+
+function claimBrowserNotificationDelivery(eventId) {
+  if (!eventId || typeof window === 'undefined') {
+    return true
+  }
+
+  const storageKey = `${BROWSER_NOTIFICATION_STORAGE_PREFIX}${eventId}`
+
+  try {
+    if (window.localStorage.getItem(storageKey)) {
+      return false
+    }
+
+    window.localStorage.setItem(storageKey, String(Date.now()))
+    return true
+  } catch {
+    return true
+  }
+}
+
+function buildRealtimeBrowserNotificationContent(event) {
+  if (!event) {
+    return null
+  }
+
+  if (event.notificationType === 'ticket-assignment') {
+    return {
+      title: `Novo chamado ${event.ticketProtocol} em ${event.companyName}`,
+      body: `${event.requesterName} abriu "${event.ticketTitle}" para o setor ${event.sectorName}.`,
+    }
+  }
+
+  if (event.notificationType === 'ticket-reply') {
+    const messagePreview = event.messagePreview ? ` Mensagem: "${event.messagePreview}".` : ''
+    return {
+      title: `${event.requesterName} respondeu ${event.ticketProtocol}`,
+      body: `${event.requesterName} enviou uma nova mensagem no chamado "${event.ticketTitle}" do setor ${event.sectorName} da empresa ${event.companyName}.${messagePreview}`,
+    }
+  }
+
+  return null
 }
 
 async function fetchDashboardBundle(email) {
@@ -655,6 +712,10 @@ function App() {
   const [isTeamDataLoading, setIsTeamDataLoading] = useState(false)
   const [teamDataError, setTeamDataError] = useState('')
   const autoViewedNotificationIdsRef = useRef(new Set())
+  const realtimeSocketRef = useRef(null)
+  const realtimeReconnectTimeoutRef = useRef(null)
+  const seenRealtimeEventIdsRef = useRef(new Set())
+  const openBrowserNotificationsRef = useRef(new Map())
 
   const currentRouteSection = useMemo(
     () => getSectionIdFromPathname(location.pathname) ?? 'tickets',
@@ -770,7 +831,7 @@ function App() {
     ticketSummary,
   }
 
-  function applyDashboardBundle(bundle) {
+  const applyDashboardBundle = useCallback((bundle) => {
     setProfile(bundle.profile)
     setAuthUser(bundle.profile)
     setCurrentUserRole(getPrimaryRole(bundle.profile.roles))
@@ -782,7 +843,20 @@ function App() {
     setSentInvites(bundle.sentInvites)
     setCompanyPartnerships(bundle.companyPartnerships)
     setTicketNotifications(bundle.ticketNotifications)
-  }
+  }, [])
+
+  const refreshDashboardDataSilently = useCallback(
+    async (email) => {
+      if (!email) {
+        return null
+      }
+
+      const bundle = await fetchDashboardBundle(email)
+      applyDashboardBundle(bundle)
+      return bundle
+    },
+    [applyDashboardBundle]
+  )
 
   function pushAppFeedbackNotification(notification) {
     setAppFeedbackNotifications((currentNotifications) => [
@@ -877,7 +951,7 @@ function App() {
     return () => {
       isCancelled = true
     }
-  }, [authUser?.email])
+  }, [applyDashboardBundle, authUser?.email])
 
   useEffect(() => {
     if (!authUser?.email) {
@@ -888,13 +962,11 @@ function App() {
 
     async function refreshBundleSilently() {
       try {
-        const bundle = await fetchDashboardBundle(authUser.email)
-
         if (isCancelled) {
           return
         }
 
-        applyDashboardBundle(bundle)
+        await refreshDashboardDataSilently(authUser.email)
       } catch {
         // Mantem os dados atuais quando a atualizacao silenciosa falha.
       }
@@ -919,7 +991,134 @@ function App() {
       window.removeEventListener('focus', handleWindowFocus)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [authUser?.email])
+  }, [authUser?.email, refreshDashboardDataSilently])
+
+  useEffect(() => {
+    if (!authUser?.email || typeof window === 'undefined') {
+      return undefined
+    }
+
+    let isDisposed = false
+
+    function closeBrowserNotificationForTicket(ticketId) {
+      if (!ticketId) {
+        return
+      }
+
+      const currentNotification = openBrowserNotificationsRef.current.get(ticketId)
+      if (currentNotification) {
+        currentNotification.close()
+        openBrowserNotificationsRef.current.delete(ticketId)
+      }
+    }
+
+    function showBrowserNotification(event) {
+      if (
+        !event ||
+        event.action !== 'CREATED' ||
+        !event.ticketId ||
+        typeof Notification === 'undefined' ||
+        Notification.permission !== 'granted' ||
+        !shouldShowBrowserNotificationInBackground() ||
+        !claimBrowserNotificationDelivery(event.eventId)
+      ) {
+        return
+      }
+
+      const content = buildRealtimeBrowserNotificationContent(event)
+      if (!content) {
+        return
+      }
+
+      closeBrowserNotificationForTicket(event.ticketId)
+
+      const notification = new Notification(content.title, {
+        body: content.body,
+        tag: `ticket-notification:${event.ticketId}`,
+      })
+
+      notification.onclick = () => {
+        window.focus()
+        closeBrowserNotificationForTicket(event.ticketId)
+        navigate(getTicketPath(event.ticketId))
+      }
+      notification.onclose = () => {
+        if (openBrowserNotificationsRef.current.get(event.ticketId) === notification) {
+          openBrowserNotificationsRef.current.delete(event.ticketId)
+        }
+      }
+
+      openBrowserNotificationsRef.current.set(event.ticketId, notification)
+    }
+
+    async function handleRealtimeMessage(messageEvent) {
+      let event
+
+      try {
+        event = JSON.parse(messageEvent.data)
+      } catch {
+        return
+      }
+
+      if (!event?.eventId || seenRealtimeEventIdsRef.current.has(event.eventId)) {
+        return
+      }
+
+      seenRealtimeEventIdsRef.current.add(event.eventId)
+
+      if (event.action === 'CLEARED' && event.ticketId) {
+        closeBrowserNotificationForTicket(event.ticketId)
+      } else {
+        showBrowserNotification(event)
+      }
+
+      try {
+        await refreshDashboardDataSilently(authUser.email)
+      } catch {
+        // Mantem o polling como fallback quando o refresh imediato falha.
+      }
+    }
+
+    function clearReconnectTimer() {
+      if (realtimeReconnectTimeoutRef.current) {
+        window.clearTimeout(realtimeReconnectTimeoutRef.current)
+        realtimeReconnectTimeoutRef.current = null
+      }
+    }
+
+    function connect() {
+      clearReconnectTimer()
+
+      const socket = new WebSocket(resolveRealtimeNotificationsWebSocketUrl(authUser.email))
+      realtimeSocketRef.current = socket
+
+      socket.onmessage = handleRealtimeMessage
+      socket.onerror = () => {
+        socket.close()
+      }
+      socket.onclose = () => {
+        if (isDisposed) {
+          return
+        }
+
+        clearReconnectTimer()
+        realtimeReconnectTimeoutRef.current = window.setTimeout(connect, REALTIME_RECONNECT_DELAY_MS)
+      }
+    }
+
+    connect()
+
+    return () => {
+      isDisposed = true
+      clearReconnectTimer()
+      if (realtimeSocketRef.current) {
+        realtimeSocketRef.current.close()
+        realtimeSocketRef.current = null
+      }
+      openBrowserNotificationsRef.current.forEach((notification) => notification.close())
+      openBrowserNotificationsRef.current.clear()
+    }
+  }, [authUser?.email, navigate, refreshDashboardDataSilently])
 
   function handleAuthenticatedUser(user) {
     const normalizedUser = normalizeCurrentUser(user)
@@ -1358,6 +1557,11 @@ function App() {
       return
     }
 
+    if (typeof notificationOrId === 'object' && notificationOrId?.ticketId) {
+      openBrowserNotificationsRef.current.get(notificationOrId.ticketId)?.close()
+      openBrowserNotificationsRef.current.delete(notificationOrId.ticketId)
+    }
+
     await deleteNotificationResource(notificationOrId)
     await refreshDashboardData(currentUserEmail)
   }
@@ -1457,6 +1661,8 @@ function App() {
       (notification.type === 'ticket-assignment' || notification.type === 'ticket-reply') &&
       notification.ticketId
     ) {
+      openBrowserNotificationsRef.current.get(notification.ticketId)?.close()
+      openBrowserNotificationsRef.current.delete(notification.ticketId)
       navigate(getTicketPath(notification.ticketId))
       return
     }
