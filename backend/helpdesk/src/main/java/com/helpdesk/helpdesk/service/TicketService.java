@@ -424,6 +424,9 @@ public class TicketService {
 			.orElseThrow(() -> new NotFoundException("Chamado não encontrado."));
 		String normalizedMessage = normalizeMessage(message);
 		List<IncomingAttachment> incomingAttachments = normalizeIncomingAttachments(attachments);
+		// #region debug-point B:add-whatsapp-message-entry
+		try { java.net.http.HttpClient.newHttpClient().sendAsync(java.net.http.HttpRequest.newBuilder(java.net.URI.create("http://127.0.0.1:7777/event")).header("Content-Type", "application/json").POST(java.net.http.HttpRequest.BodyPublishers.ofString("{\"sessionId\":\"whatsapp-reply-notify\",\"runId\":\"pre\",\"hypothesisId\":\"B\",\"location\":\"TicketService:426\",\"msg\":\"[DEBUG] addWhatsappMessage entered\",\"data\":{\"ticketId\":\"" + ticketId + "\",\"requesterId\":\"" + ticket.getRequester().getId() + "\",\"assignedToId\":\"" + (ticket.getAssignedTo() == null ? "" : ticket.getAssignedTo().getId()) + "\",\"status\":\"" + ticket.getStatus().getCode() + "\",\"bodyBlank\":" + normalizedMessage.isBlank() + ",\"attachmentCount\":" + incomingAttachments.size() + "},\"ts\":" + System.currentTimeMillis() + "}")).build(), java.net.http.HttpResponse.BodyHandlers.discarding()); } catch (Exception ignored) {}
+		// #endregion
 
 		if (normalizedMessage.isBlank() && incomingAttachments.isEmpty()) {
 			throw new IllegalArgumentException("Envie uma mensagem de texto ou anexe um arquivo para continuar o atendimento.");
@@ -438,6 +441,9 @@ public class TicketService {
 		ticketMessage.setInternal(false);
 
 		TicketMessage savedMessage = ticketMessageRepository.save(ticketMessage);
+		// #region debug-point C:message-persisted
+		try { java.net.http.HttpClient.newHttpClient().sendAsync(java.net.http.HttpRequest.newBuilder(java.net.URI.create("http://127.0.0.1:7777/event")).header("Content-Type", "application/json").POST(java.net.http.HttpRequest.BodyPublishers.ofString("{\"sessionId\":\"whatsapp-reply-notify\",\"runId\":\"pre\",\"hypothesisId\":\"C\",\"location\":\"TicketService:440\",\"msg\":\"[DEBUG] whatsapp message persisted\",\"data\":{\"ticketId\":\"" + ticket.getId() + "\",\"messageId\":\"" + savedMessage.getId() + "\",\"authorId\":\"" + savedMessage.getAuthor().getId() + "\"},\"ts\":" + System.currentTimeMillis() + "}")).build(), java.net.http.HttpResponse.BodyHandlers.discarding()); } catch (Exception ignored) {}
+		// #endregion
 		List<TicketAttachmentResponse> savedAttachments = saveIncomingAttachments(
 			ticket,
 			savedMessage,
@@ -898,21 +904,36 @@ public class TicketService {
 
 	private void createReplyNotification(Ticket ticket, TicketMessage message, User author) {
 		if (ticket == null || message == null || author == null || ticket.getAssignedTo() == null) {
+			// #region debug-point D:reply-notify-skip-null
+			try { java.net.http.HttpClient.newHttpClient().sendAsync(java.net.http.HttpRequest.newBuilder(java.net.URI.create("http://127.0.0.1:7777/event")).header("Content-Type", "application/json").POST(java.net.http.HttpRequest.BodyPublishers.ofString("{\"sessionId\":\"whatsapp-reply-notify\",\"runId\":\"pre\",\"hypothesisId\":\"D\",\"location\":\"TicketService:900\",\"msg\":\"[DEBUG] reply notification skipped because required state is missing\",\"data\":{\"ticketNull\":" + (ticket == null) + ",\"messageNull\":" + (message == null) + ",\"authorNull\":" + (author == null) + ",\"assignedNull\":" + (ticket == null || ticket.getAssignedTo() == null) + "},\"ts\":" + System.currentTimeMillis() + "}")).build(), java.net.http.HttpResponse.BodyHandlers.discarding()); } catch (Exception ignored) {}
+			// #endregion
 			return;
 		}
 
 		if (!author.getId().equals(ticket.getRequester().getId())) {
+			// #region debug-point D:reply-notify-skip-author
+			try { java.net.http.HttpClient.newHttpClient().sendAsync(java.net.http.HttpRequest.newBuilder(java.net.URI.create("http://127.0.0.1:7777/event")).header("Content-Type", "application/json").POST(java.net.http.HttpRequest.BodyPublishers.ofString("{\"sessionId\":\"whatsapp-reply-notify\",\"runId\":\"pre\",\"hypothesisId\":\"D\",\"location\":\"TicketService:904\",\"msg\":\"[DEBUG] reply notification skipped because author is not requester\",\"data\":{\"ticketId\":\"" + ticket.getId() + "\",\"authorId\":\"" + author.getId() + "\",\"requesterId\":\"" + ticket.getRequester().getId() + "\"},\"ts\":" + System.currentTimeMillis() + "}")).build(), java.net.http.HttpResponse.BodyHandlers.discarding()); } catch (Exception ignored) {}
+			// #endregion
 			return;
 		}
 
 		if ("CLOSED".equalsIgnoreCase(ticket.getStatus().getCode())) {
+			// #region debug-point D:reply-notify-skip-closed
+			try { java.net.http.HttpClient.newHttpClient().sendAsync(java.net.http.HttpRequest.newBuilder(java.net.URI.create("http://127.0.0.1:7777/event")).header("Content-Type", "application/json").POST(java.net.http.HttpRequest.BodyPublishers.ofString("{\"sessionId\":\"whatsapp-reply-notify\",\"runId\":\"pre\",\"hypothesisId\":\"D\",\"location\":\"TicketService:908\",\"msg\":\"[DEBUG] reply notification skipped because ticket is closed\",\"data\":{\"ticketId\":\"" + ticket.getId() + "\",\"status\":\"" + ticket.getStatus().getCode() + "\"},\"ts\":" + System.currentTimeMillis() + "}")).build(), java.net.http.HttpResponse.BodyHandlers.discarding()); } catch (Exception ignored) {}
+			// #endregion
 			return;
 		}
 
 		if (ticket.getAssignedTo().getId().equals(author.getId())) {
+			// #region debug-point D:reply-notify-skip-assignee
+			try { java.net.http.HttpClient.newHttpClient().sendAsync(java.net.http.HttpRequest.newBuilder(java.net.URI.create("http://127.0.0.1:7777/event")).header("Content-Type", "application/json").POST(java.net.http.HttpRequest.BodyPublishers.ofString("{\"sessionId\":\"whatsapp-reply-notify\",\"runId\":\"pre\",\"hypothesisId\":\"D\",\"location\":\"TicketService:912\",\"msg\":\"[DEBUG] reply notification skipped because requester matches assignee\",\"data\":{\"ticketId\":\"" + ticket.getId() + "\",\"authorId\":\"" + author.getId() + "\",\"assignedToId\":\"" + ticket.getAssignedTo().getId() + "\"},\"ts\":" + System.currentTimeMillis() + "}")).build(), java.net.http.HttpResponse.BodyHandlers.discarding()); } catch (Exception ignored) {}
+			// #endregion
 			return;
 		}
 
+		// #region debug-point D:reply-notify-create
+		try { java.net.http.HttpClient.newHttpClient().sendAsync(java.net.http.HttpRequest.newBuilder(java.net.URI.create("http://127.0.0.1:7777/event")).header("Content-Type", "application/json").POST(java.net.http.HttpRequest.BodyPublishers.ofString("{\"sessionId\":\"whatsapp-reply-notify\",\"runId\":\"pre\",\"hypothesisId\":\"D\",\"location\":\"TicketService:916\",\"msg\":\"[DEBUG] reply notification will be created\",\"data\":{\"ticketId\":\"" + ticket.getId() + "\",\"messageId\":\"" + message.getId() + "\",\"recipientId\":\"" + ticket.getAssignedTo().getId() + "\"},\"ts\":" + System.currentTimeMillis() + "}")).build(), java.net.http.HttpResponse.BodyHandlers.discarding()); } catch (Exception ignored) {}
+		// #endregion
 		createReplyNotificationForRecipient(ticket, message, ticket.getAssignedTo());
 		User companyAdmin = resolveTicketCompanyAdmin(ticket);
 		if (companyAdmin != null && !companyAdmin.getId().equals(ticket.getAssignedTo().getId())) {

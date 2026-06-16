@@ -401,6 +401,10 @@ async function fetchDashboardBundle(email) {
     safeRequest(() => getCompanyInviteNotifications(email), []),
   ])
 
+  // #region debug-point F:dashboard-notification-bundle
+  fetch("http://127.0.0.1:7777/event",{method:"POST",body:JSON.stringify({sessionId:"whatsapp-reply-notify",runId:"pre",hypothesisId:"F",location:"App.jsx:403",msg:"[DEBUG] dashboard bundle notification counts fetched",data:{email,ticketAssignmentCount:Array.isArray(nextTicketNotifications)?nextTicketNotifications.length:-1,ticketTransferCount:Array.isArray(nextTicketTransferNotifications)?nextTicketTransferNotifications.length:-1,ticketClosureCount:Array.isArray(nextTicketClosureNotifications)?nextTicketClosureNotifications.length:-1,ticketReplyCount:Array.isArray(nextTicketReplyNotifications)?nextTicketReplyNotifications.length:-1},ts:Date.now()})}).catch(()=>{});
+  // #endregion
+
   return {
     profile: normalizedProfile,
     ticketSummary: nextSummary,

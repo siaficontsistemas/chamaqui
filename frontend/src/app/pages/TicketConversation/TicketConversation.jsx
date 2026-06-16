@@ -108,6 +108,9 @@ function TicketConversation({
 
     try {
       const response = await getTicketMessages(ticket.id, currentUser.email)
+      // #region debug-point E:ticket-messages-response
+      fetch("http://127.0.0.1:7777/event",{method:"POST",body:JSON.stringify({sessionId:"whatsapp-reply-notify",runId:"pre",hypothesisId:"E",location:"TicketConversation.jsx:110",msg:"[DEBUG] ticket messages refreshed in browser",data:{ticketId:ticket.id,email:currentUser.email,messageCount:Array.isArray(response)?response.length:-1,lastAuthorEmail:Array.isArray(response)&&response.length>0?response[response.length-1]?.authorEmail||"":""},ts:Date.now()})}).catch(()=>{});
+      // #endregion
       setMessages(Array.isArray(response) ? response : [])
     } catch (error) {
       setMessages([])
