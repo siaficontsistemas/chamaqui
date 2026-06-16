@@ -901,7 +901,7 @@ public class TicketService {
 			return;
 		}
 
-		if (!author.getId().equals(ticket.getRequester().getId())) {
+		if (!isClientReplyAuthor(ticket, author)) {
 			return;
 		}
 
@@ -918,6 +918,31 @@ public class TicketService {
 		if (companyAdmin != null && !companyAdmin.getId().equals(ticket.getAssignedTo().getId())) {
 			createReplyNotificationForRecipient(ticket, message, companyAdmin);
 		}
+	}
+
+	private boolean isClientReplyAuthor(Ticket ticket, User author) {
+		if (ticket == null || ticket.getRequester() == null || author == null) {
+			return false;
+		}
+
+		UUID requesterCompanyRootId = resolveUserCompanyRootId(ticket.getRequester());
+		UUID authorCompanyRootId = resolveUserCompanyRootId(author);
+		return requesterCompanyRootId != null && requesterCompanyRootId.equals(authorCompanyRootId);
+	}
+
+	private UUID resolveUserCompanyRootId(User user) {
+		if (user == null) {
+			return null;
+		}
+
+		User currentUser = user;
+		int depth = 0;
+		while (currentUser.getCompanyOwner() != null && currentUser.getCompanyOwner().getId() != null && depth < 10) {
+			currentUser = currentUser.getCompanyOwner();
+			depth += 1;
+		}
+
+		return currentUser.getId();
 	}
 
 	private void createAssignmentNotificationForRecipient(Ticket ticket, User recipient) {
