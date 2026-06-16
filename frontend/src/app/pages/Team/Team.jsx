@@ -449,6 +449,10 @@ function Team({
       return `${notification.senderName} quer transferir o chamado ${notification.ticketProtocol}`
     }
 
+    if (notification.type === 'ticket-reply') {
+      return `${notification.requesterName} respondeu ${notification.ticketProtocol}`
+    }
+
     if (notification.type === 'team-membership-removed') {
       if (notification.removalType === 'COMPANY_JOINED') {
         return 'Você entrou na empresa'
@@ -499,6 +503,12 @@ function Team({
       return `O chamado "${notification.ticketTitle}" foi transferido para você por ${notification.senderName}.`
     }
 
+    if (notification.type === 'ticket-reply') {
+      return notification.messagePreview
+        ? `${notification.requesterName} enviou uma nova mensagem: "${notification.messagePreview}".`
+        : `${notification.requesterName} enviou uma nova mensagem neste chamado.`
+    }
+
     if (notification.type === 'calendar-reminder') {
       return `A obrigação "${notification.obligationTitle}" vence em ${formatNotificationDate(notification.dueAt)}.`
     }
@@ -530,6 +540,10 @@ function Team({
 
     if (notification.type === 'ticket-assignment') {
       return 'Novo chamado'
+    }
+
+    if (notification.type === 'ticket-reply') {
+      return 'Nova resposta'
     }
 
     if (notification.type === 'calendar-reminder') {

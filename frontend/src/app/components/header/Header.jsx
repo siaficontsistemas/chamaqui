@@ -71,6 +71,10 @@ function Header({
       return `${notification.senderName} transferiu ${notification.ticketProtocol} em ${notification.companyName}`
     }
 
+    if (notification.type === 'ticket-reply') {
+      return `${notification.requesterName} respondeu ${notification.ticketProtocol}`
+    }
+
     if (notification.type === 'ticket-closure') {
       return `Chamado ${notification.ticketProtocol} foi fechado`
     }
@@ -145,6 +149,16 @@ function Header({
         ? ` Empresa solicitante: ${notification.requesterCompanyName}.`
         : ''
       return `O chamado "${notification.ticketTitle}" do setor ${notification.sectorName} da empresa ${notification.companyName} foi transferido para você por ${notification.senderName}.${requesterCompanyLabel}`
+    }
+
+    if (notification.type === 'ticket-reply') {
+      const requesterCompanyLabel = notification.requesterCompanyName
+        ? ` Empresa solicitante: ${notification.requesterCompanyName}.`
+        : ''
+      const previewLabel = notification.messagePreview
+        ? ` Mensagem: "${notification.messagePreview}".`
+        : ''
+      return `${notification.requesterName} enviou uma nova mensagem no chamado "${notification.ticketTitle}" do setor ${notification.sectorName} da empresa ${notification.companyName}.${requesterCompanyLabel}${previewLabel}`
     }
 
     if (notification.type === 'ticket-closure') {
@@ -243,6 +257,10 @@ function Header({
       if (notification.status === 'DECLINED') {
         return 'Recusado'
       }
+    }
+
+    if (notification.type === 'ticket-reply') {
+      return 'Nova resposta'
     }
 
     if (notification.type === 'ticket-closure') {
@@ -496,7 +514,11 @@ function Header({
   }
 
   function isNotificationClickable(notification) {
-    return notification?.type === 'calendar-reminder' && Boolean(notification?.obligationId)
+    return (
+      (notification?.type === 'calendar-reminder' && Boolean(notification?.obligationId)) ||
+      ((notification?.type === 'ticket-assignment' || notification?.type === 'ticket-reply') &&
+        Boolean(notification?.ticketId))
+    )
   }
 
   function handleNotificationClick(notification) {

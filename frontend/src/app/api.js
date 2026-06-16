@@ -573,6 +573,10 @@ export function getTicketClosureNotifications(email) {
   return apiRequest(`/api/v1/notifications/ticket-closures?email=${encodeURIComponent(email)}`)
 }
 
+export function getTicketReplyNotifications(email) {
+  return apiRequest(`/api/v1/notifications/ticket-replies?email=${encodeURIComponent(email)}`)
+}
+
 export function getTeamMembershipNotifications(email) {
   return apiRequest(`/api/v1/notifications/team-memberships?email=${encodeURIComponent(email)}`)
 }
@@ -647,6 +651,15 @@ export function deleteTicketTransferNotification(notificationId, email) {
 export function deleteTicketClosureNotification(notificationId, email) {
   return apiRequest(
     `/api/v1/notifications/ticket-closures/${notificationId}?email=${encodeURIComponent(email)}`,
+    {
+      method: 'DELETE',
+    }
+  )
+}
+
+export function deleteTicketReplyNotification(notificationId, email) {
+  return apiRequest(
+    `/api/v1/notifications/ticket-replies/${notificationId}?email=${encodeURIComponent(email)}`,
     {
       method: 'DELETE',
     }

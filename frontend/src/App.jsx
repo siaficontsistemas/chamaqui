@@ -24,6 +24,7 @@ import {
   deleteCalendarReminderNotification,
   deleteTeamMembershipNotification,
   deleteTicketTransferNotification,
+  deleteTicketReplyNotification,
   deleteTeamNotification,
   deleteCompanyLogo as deleteCompanyLogoRequest,
   deleteCompanyProfile,
@@ -40,6 +41,7 @@ import {
   getCompanyPartnershipNotifications,
   getTicketClosureNotifications,
   getTicketAssignmentNotifications,
+  getTicketReplyNotifications,
   getTeamMembershipNotifications,
   getTicketTransferNotifications,
   getReceivedTeamInvites,
@@ -107,6 +109,7 @@ const dashboardPageComponents = {
 
 const SESSION_STORAGE_KEY = 'helpdesk.session'
 const AUTO_REFRESH_INTERVAL_MS = 5000
+const DEFAULT_DOCUMENT_TITLE = 'ChamAqui Helpdesk'
 
 function normalizeSector(sector) {
   return {
@@ -240,6 +243,23 @@ function normalizeTicketClosureNotification(notification) {
   }
 }
 
+function normalizeTicketReplyNotification(notification) {
+  return {
+    id: notification.id,
+    ticketId: notification.ticketId,
+    ticketProtocol: notification.ticketProtocol,
+    ticketTitle: notification.ticketTitle,
+    requesterName: notification.requesterName,
+    sectorName: notification.sectorName,
+    companyName: notification.companyName || 'Empresa não informada',
+    requesterCompanyName: notification.requesterCompanyName || '',
+    messagePreview: notification.messagePreview || '',
+    status: notification.status,
+    createdAt: notification.createdAt,
+    type: 'ticket-reply',
+  }
+}
+
 function normalizeTeamMembershipNotification(notification) {
   return {
     id: notification.id,
@@ -354,6 +374,7 @@ async function fetchDashboardBundle(email) {
     nextTicketNotifications,
     nextTicketTransferNotifications,
     nextTicketClosureNotifications,
+    nextTicketReplyNotifications,
     nextTeamMembershipNotifications,
     nextCalendarReminderNotifications,
     nextCompanyPartnershipNotifications,
@@ -370,6 +391,7 @@ async function fetchDashboardBundle(email) {
     safeRequest(() => getTicketAssignmentNotifications(email), []),
     safeRequest(() => getTicketTransferNotifications(email), []),
     safeRequest(() => getTicketClosureNotifications(email), []),
+    safeRequest(() => getTicketReplyNotifications(email), []),
     safeRequest(() => getTeamMembershipNotifications(email), []),
     safeRequest(() => getCalendarReminderNotifications(email), []),
     safeRequest(() => getCompanyPartnershipNotifications(email), []),
@@ -401,6 +423,9 @@ async function fetchDashboardBundle(email) {
         : []),
       ...(Array.isArray(nextTicketClosureNotifications)
         ? nextTicketClosureNotifications.map(normalizeTicketClosureNotification)
+        : []),
+      ...(Array.isArray(nextTicketReplyNotifications)
+        ? nextTicketReplyNotifications.map(normalizeTicketReplyNotification)
         : []),
       ...(Array.isArray(nextTeamMembershipNotifications)
         ? nextTeamMembershipNotifications.map(normalizeTeamMembershipNotification)
@@ -665,6 +690,16 @@ function App() {
         ).getTime()
     )
   }, [appFeedbackNotifications, receivedInvites, sentInvites, ticketNotifications])
+  const employeeBrowserNotificationCount = useMemo(
+    () =>
+      currentUserRole === 'employee'
+        ? ticketNotifications.filter(
+            (notification) =>
+              notification.type === 'ticket-assignment' || notification.type === 'ticket-reply'
+          ).length
+        : 0,
+    [currentUserRole, ticketNotifications]
+  )
 
   const headerProps = {
     isTeamRole: canAccessTeamPage,
@@ -728,6 +763,21 @@ function App() {
 
     window.localStorage.removeItem(SESSION_STORAGE_KEY)
   }, [authUser])
+
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return undefined
+    }
+
+    document.title =
+      employeeBrowserNotificationCount > 0
+        ? `(${employeeBrowserNotificationCount}) ${DEFAULT_DOCUMENT_TITLE}`
+        : DEFAULT_DOCUMENT_TITLE
+
+    return () => {
+      document.title = DEFAULT_DOCUMENT_TITLE
+    }
+  }, [employeeBrowserNotificationCount])
 
   useEffect(() => {
     if (!authUser?.email) {
@@ -1298,6 +1348,12 @@ function App() {
         return
       }
 
+      if (notificationOrId.type === 'ticket-reply') {
+        await deleteTicketReplyNotification(notificationOrId.id, currentUserEmail)
+        await refreshDashboardData(currentUserEmail)
+        return
+      }
+
       if (notificationOrId.type === 'team-membership-removed') {
         await deleteTeamMembershipNotification(notificationOrId.id, currentUserEmail)
         await refreshDashboardData(currentUserEmail)
@@ -1326,6 +1382,14 @@ function App() {
 
   function handleOpenNotification(notification) {
     if (!notification) {
+      return
+    }
+
+    if (
+      (notification.type === 'ticket-assignment' || notification.type === 'ticket-reply') &&
+      notification.ticketId
+    ) {
+      navigate(getTicketPath(notification.ticketId))
       return
     }
 

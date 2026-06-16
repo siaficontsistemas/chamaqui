@@ -31,6 +31,7 @@ import com.helpdesk.helpdesk.domain.TicketChannel;
 import com.helpdesk.helpdesk.domain.TicketClosureNotification;
 import com.helpdesk.helpdesk.domain.TicketMessage;
 import com.helpdesk.helpdesk.domain.TicketPriority;
+import com.helpdesk.helpdesk.domain.TicketReplyNotification;
 import com.helpdesk.helpdesk.domain.TicketStatus;
 import com.helpdesk.helpdesk.domain.TicketTransferNotification;
 import com.helpdesk.helpdesk.domain.TicketTransferStatus;
@@ -55,6 +56,7 @@ import com.helpdesk.helpdesk.repository.TicketAttachmentRepository;
 import com.helpdesk.helpdesk.repository.TicketClosureNotificationRepository;
 import com.helpdesk.helpdesk.repository.TicketMessageRepository;
 import com.helpdesk.helpdesk.repository.TicketPriorityRepository;
+import com.helpdesk.helpdesk.repository.TicketReplyNotificationRepository;
 import com.helpdesk.helpdesk.repository.TicketRepository;
 import com.helpdesk.helpdesk.repository.TicketStatusRepository;
 import com.helpdesk.helpdesk.repository.TicketTransferNotificationRepository;
@@ -80,6 +82,7 @@ public class TicketService {
 	private final TicketAttachmentRepository ticketAttachmentRepository;
 	private final TicketTransferNotificationRepository ticketTransferNotificationRepository;
 	private final TicketClosureNotificationRepository ticketClosureNotificationRepository;
+	private final TicketReplyNotificationRepository ticketReplyNotificationRepository;
 	private final TicketAttachmentStorageService ticketAttachmentStorageService;
 	private final TicketClosureEmailService ticketClosureEmailService;
 	private final WhatsappService whatsappService;
@@ -100,6 +103,7 @@ public class TicketService {
 		TicketAttachmentRepository ticketAttachmentRepository,
 		TicketTransferNotificationRepository ticketTransferNotificationRepository,
 		TicketClosureNotificationRepository ticketClosureNotificationRepository,
+		TicketReplyNotificationRepository ticketReplyNotificationRepository,
 		TicketAttachmentStorageService ticketAttachmentStorageService,
 		TicketClosureEmailService ticketClosureEmailService,
 		WhatsappService whatsappService,
@@ -119,6 +123,7 @@ public class TicketService {
 		this.ticketAttachmentRepository = ticketAttachmentRepository;
 		this.ticketTransferNotificationRepository = ticketTransferNotificationRepository;
 		this.ticketClosureNotificationRepository = ticketClosureNotificationRepository;
+		this.ticketReplyNotificationRepository = ticketReplyNotificationRepository;
 		this.ticketAttachmentStorageService = ticketAttachmentStorageService;
 		this.ticketClosureEmailService = ticketClosureEmailService;
 		this.whatsappService = whatsappService;
@@ -399,6 +404,7 @@ public class TicketService {
 		}
 
 		ticketRepository.save(ticket);
+		createReplyNotification(ticket, savedMessage, author);
 
 		return toMessageResponse(savedMessage, attachments);
 	}
@@ -434,6 +440,7 @@ public class TicketService {
 			ticket.getRequester(),
 			incomingAttachments
 		);
+		createReplyNotification(ticket, savedMessage, ticket.getRequester());
 		return toMessageResponse(savedMessage, savedAttachments);
 	}
 
@@ -569,6 +576,14 @@ public class TicketService {
 		}
 		if (!transferNotifications.isEmpty()) {
 			ticketTransferNotificationRepository.saveAll(transferNotifications);
+		}
+
+		List<TicketReplyNotification> replyNotifications = ticketReplyNotificationRepository.findByTicketId(ticketId);
+		for (TicketReplyNotification notification : replyNotifications) {
+			notification.setHidden(true);
+		}
+		if (!replyNotifications.isEmpty()) {
+			ticketReplyNotificationRepository.saveAll(replyNotifications);
 		}
 	}
 
@@ -861,6 +876,30 @@ public class TicketService {
 		notification.setTicket(ticket);
 		notification.setRecipient(ticket.getAssignedTo());
 		ticketAssignmentNotificationRepository.save(notification);
+	}
+
+	private void createReplyNotification(Ticket ticket, TicketMessage message, User author) {
+		if (ticket == null || message == null || author == null || ticket.getAssignedTo() == null) {
+			return;
+		}
+
+		if (!author.getId().equals(ticket.getRequester().getId())) {
+			return;
+		}
+
+		if ("CLOSED".equalsIgnoreCase(ticket.getStatus().getCode())) {
+			return;
+		}
+
+		if (ticket.getAssignedTo().getId().equals(author.getId())) {
+			return;
+		}
+
+		TicketReplyNotification notification = new TicketReplyNotification();
+		notification.setTicket(ticket);
+		notification.setMessage(message);
+		notification.setRecipient(ticket.getAssignedTo());
+		ticketReplyNotificationRepository.save(notification);
 	}
 
 	private TicketMessage ensureInitialMessage(Ticket ticket) {

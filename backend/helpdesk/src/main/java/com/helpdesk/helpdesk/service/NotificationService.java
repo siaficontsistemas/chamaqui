@@ -16,6 +16,7 @@ import com.helpdesk.helpdesk.domain.CompanyPartnershipNotificationType;
 import com.helpdesk.helpdesk.domain.TeamMembershipNotification;
 import com.helpdesk.helpdesk.domain.TicketAssignmentNotification;
 import com.helpdesk.helpdesk.domain.TicketClosureNotification;
+import com.helpdesk.helpdesk.domain.TicketReplyNotification;
 import com.helpdesk.helpdesk.domain.TicketTransferNotification;
 import com.helpdesk.helpdesk.domain.TicketTransferStatus;
 import com.helpdesk.helpdesk.domain.User;
@@ -24,6 +25,7 @@ import com.helpdesk.helpdesk.dto.notification.CompanyPartnershipNotificationResp
 import com.helpdesk.helpdesk.dto.notification.TeamMembershipNotificationResponse;
 import com.helpdesk.helpdesk.dto.notification.TicketAssignmentNotificationResponse;
 import com.helpdesk.helpdesk.dto.notification.TicketClosureNotificationResponse;
+import com.helpdesk.helpdesk.dto.notification.TicketReplyNotificationResponse;
 import com.helpdesk.helpdesk.dto.notification.TicketTransferNotificationResponse;
 import com.helpdesk.helpdesk.dto.ticket.RespondTicketTransferRequest;
 import com.helpdesk.helpdesk.repository.CalendarObligationRepository;
@@ -32,6 +34,7 @@ import com.helpdesk.helpdesk.repository.CompanyPartnershipNotificationRepository
 import com.helpdesk.helpdesk.repository.TeamMembershipNotificationRepository;
 import com.helpdesk.helpdesk.repository.TicketAssignmentNotificationRepository;
 import com.helpdesk.helpdesk.repository.TicketClosureNotificationRepository;
+import com.helpdesk.helpdesk.repository.TicketReplyNotificationRepository;
 import com.helpdesk.helpdesk.repository.TicketRepository;
 import com.helpdesk.helpdesk.repository.TicketTransferNotificationRepository;
 
@@ -44,6 +47,7 @@ public class NotificationService {
 	private final CalendarReminderNotificationRepository calendarReminderNotificationRepository;
 	private final CompanyPartnershipNotificationRepository companyPartnershipNotificationRepository;
 	private final TicketClosureNotificationRepository ticketClosureNotificationRepository;
+	private final TicketReplyNotificationRepository ticketReplyNotificationRepository;
 	private final CalendarObligationRepository calendarObligationRepository;
 	private final TicketRepository ticketRepository;
 	private final TenantAccessService tenantAccessService;
@@ -57,6 +61,7 @@ public class NotificationService {
 		CalendarReminderNotificationRepository calendarReminderNotificationRepository,
 		CompanyPartnershipNotificationRepository companyPartnershipNotificationRepository,
 		TicketClosureNotificationRepository ticketClosureNotificationRepository,
+		TicketReplyNotificationRepository ticketReplyNotificationRepository,
 		CalendarObligationRepository calendarObligationRepository,
 		TicketRepository ticketRepository,
 		TenantAccessService tenantAccessService,
@@ -69,6 +74,7 @@ public class NotificationService {
 		this.calendarReminderNotificationRepository = calendarReminderNotificationRepository;
 		this.companyPartnershipNotificationRepository = companyPartnershipNotificationRepository;
 		this.ticketClosureNotificationRepository = ticketClosureNotificationRepository;
+		this.ticketReplyNotificationRepository = ticketReplyNotificationRepository;
 		this.calendarObligationRepository = calendarObligationRepository;
 		this.ticketRepository = ticketRepository;
 		this.tenantAccessService = tenantAccessService;
@@ -117,6 +123,16 @@ public class NotificationService {
 			.findVisibleByRecipientEmailOrderByCreatedAtDesc(normalizeEmail(viewer.getEmail()))
 			.stream()
 			.map(this::toTicketClosureResponse)
+			.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public List<TicketReplyNotificationResponse> listTicketReplies(String email) {
+		User viewer = loadUserByEmail(email);
+		return ticketReplyNotificationRepository
+			.findVisibleByRecipientEmailOrderByCreatedAtDesc(normalizeEmail(viewer.getEmail()))
+			.stream()
+			.map(this::toTicketReplyResponse)
 			.toList();
 	}
 
@@ -237,6 +253,20 @@ public class NotificationService {
 	}
 
 	@Transactional
+	public void deleteTicketReply(UUID notificationId, String email) {
+		TicketReplyNotification notification = ticketReplyNotificationRepository.findDetailedById(notificationId)
+			.orElseThrow(() -> new NotFoundException("Notificação de resposta não encontrada."));
+		String normalizedEmail = normalizeEmail(email);
+
+		if (!notification.getRecipient().getEmail().equalsIgnoreCase(normalizedEmail)) {
+			throw new IllegalArgumentException("Essa notificação não pertence ao usuário informado.");
+		}
+
+		notification.setHidden(true);
+		ticketReplyNotificationRepository.save(notification);
+	}
+
+	@Transactional
 	public void deleteTeamMembership(UUID notificationId, String email) {
 		TeamMembershipNotification notification = teamMembershipNotificationRepository.findDetailedById(notificationId)
 			.orElseThrow(() -> new NotFoundException("Notificação de remoção não encontrada."));
@@ -325,6 +355,31 @@ public class NotificationService {
 			notification.getTicket().getSector().getName(),
 			resolveTicketCompanyName(notification.getTicket()),
 			notification.getClosedBy().getFullName(),
+			notification.getCreatedAt()
+		);
+	}
+
+	private TicketReplyNotificationResponse toTicketReplyResponse(TicketReplyNotification notification) {
+		String companyName = resolveTicketCompanyName(notification.getTicket());
+		String requesterCompanyName = resolveRequesterCompanyName(notification.getTicket());
+		String messagePreview = notification.getMessage() == null || notification.getMessage().getMessage() == null
+			? ""
+			: notification.getMessage().getMessage().trim();
+		if (messagePreview.length() > 140) {
+			messagePreview = messagePreview.substring(0, 140).trim() + "...";
+		}
+
+		return new TicketReplyNotificationResponse(
+			notification.getId(),
+			notification.getTicket().getId(),
+			notification.getTicket().getProtocol(),
+			notification.getTicket().getTitle(),
+			notification.getTicket().getRequester().getFullName(),
+			notification.getTicket().getSector().getName(),
+			companyName,
+			requesterCompanyName,
+			messagePreview,
+			"NEW_REPLY",
 			notification.getCreatedAt()
 		);
 	}
