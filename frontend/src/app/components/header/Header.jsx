@@ -510,7 +510,7 @@ function Header({
   function handleSectionNavigation(sectionId) {
     onSectionChange(sectionId)
     setIsMobileNavigationOpen(false)
-    setIsNotificationMenuOpen(false)
+    closeNotificationMenu()
     setIsUserMenuOpen(false)
   }
 
@@ -528,34 +528,39 @@ function Header({
     }
 
     onOpenNotification(notification)
-    setIsNotificationMenuOpen(false)
+    closeNotificationMenu()
     setIsMobileNavigationOpen(false)
     setIsUserMenuOpen(false)
   }
 
+  function closeNotificationMenu() {
+    if (isNotificationMenuOpen) {
+      onNotificationsViewed?.(notifications)
+    }
+
+    setIsNotificationMenuOpen(false)
+  }
+
   function handleOpenNotifications() {
-    setIsNotificationMenuOpen((currentState) => {
-      const nextState = !currentState
+    if (isNotificationMenuOpen) {
+      closeNotificationMenu()
+    } else {
+      setIsNotificationMenuOpen(true)
+    }
 
-      if (nextState) {
-        onNotificationsViewed?.(notifications)
-      }
-
-      return nextState
-    })
     setIsUserMenuOpen(false)
     setIsMobileNavigationOpen(false)
   }
 
   function handleOpenUserMenu() {
     setIsUserMenuOpen((currentState) => !currentState)
-    setIsNotificationMenuOpen(false)
+    closeNotificationMenu()
     setIsMobileNavigationOpen(false)
   }
 
   function handleToggleMobileNavigation() {
     setIsMobileNavigationOpen((currentState) => !currentState)
-    setIsNotificationMenuOpen(false)
+    closeNotificationMenu()
     setIsUserMenuOpen(false)
   }
 
@@ -563,7 +568,6 @@ function Header({
     setIsMobileNavigationOpen(false)
     setIsUserMenuOpen(false)
     setIsNotificationMenuOpen(true)
-    onNotificationsViewed?.(notifications)
   }
 
   const mobileNavigation =

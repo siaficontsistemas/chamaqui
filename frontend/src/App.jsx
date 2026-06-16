@@ -1580,7 +1580,6 @@ function App() {
         onDeleteCompanyLogo={handleDeleteCompanyLogo}
         onSearchPartnershipCompanies={handleSearchPartnershipCompanies}
         onUpdateMemberSectors={handleUpdateMemberSectors}
-        onViewNotifications={handleViewedNotifications}
         availableTicketSectors={ticketTargetSectors}
         companyPartnerships={companyPartnerships}
         profileError={profileError}
