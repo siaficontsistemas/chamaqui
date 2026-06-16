@@ -29,5 +29,11 @@ public interface TicketReplyNotificationRepository extends JpaRepository<TicketR
 	Optional<TicketReplyNotification> findDetailedById(UUID id);
 
 	@EntityGraph(attributePaths = {"ticket", "ticket.requester", "ticket.sector", "message", "recipient"})
+	List<TicketReplyNotification> findByTicketIdAndRecipientId(UUID ticketId, UUID recipientId);
+
+	@EntityGraph(attributePaths = {"ticket", "ticket.requester", "ticket.sector", "message", "recipient"})
+	Optional<TicketReplyNotification> findByMessageIdAndRecipientId(UUID messageId, UUID recipientId);
+
+	@EntityGraph(attributePaths = {"ticket", "ticket.requester", "ticket.sector", "message", "recipient"})
 	List<TicketReplyNotification> findByTicketId(UUID ticketId);
 }
