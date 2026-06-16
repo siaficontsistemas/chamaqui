@@ -909,10 +909,7 @@ public class TicketService {
 			return;
 		}
 
-		if (
-			ticket.getAssignedTo().getId().equals(author.getId())
-				&& ticket.getChannel() != TicketChannel.WHATSAPP
-		) {
+		if (ticket.getAssignedTo().getId().equals(author.getId())) {
 			return;
 		}
 
