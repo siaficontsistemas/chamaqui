@@ -58,6 +58,7 @@ function TicketConversation({
   onBack,
   onCloseTicket,
   onLoadTransferCandidates,
+  onRefreshDashboardData,
   onRequestTicketTransfer,
   onUpdateTicketTitle,
   ticket,
@@ -410,6 +411,7 @@ function TicketConversation({
       setMessages((currentMessages) => [...currentMessages, savedMessage])
       setDraftMessage('')
       setAttachedFiles([])
+      await onRefreshDashboardData?.(currentUser.email)
       if (isWhatsappTicket) {
         await loadMessages(true)
       }

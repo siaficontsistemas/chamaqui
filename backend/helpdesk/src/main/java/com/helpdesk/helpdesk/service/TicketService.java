@@ -403,6 +403,10 @@ public class TicketService {
 			ticket.setStatus(inProgressStatus);
 		}
 
+		if (!author.getId().equals(ticket.getRequester().getId())) {
+			hideReplyNotifications(ticket.getId());
+		}
+
 		ticketRepository.save(ticket);
 		createReplyNotification(ticket, savedMessage, author);
 
@@ -578,6 +582,10 @@ public class TicketService {
 			ticketTransferNotificationRepository.saveAll(transferNotifications);
 		}
 
+		hideReplyNotifications(ticketId);
+	}
+
+	private void hideReplyNotifications(UUID ticketId) {
 		List<TicketReplyNotification> replyNotifications = ticketReplyNotificationRepository.findByTicketId(ticketId);
 		for (TicketReplyNotification notification : replyNotifications) {
 			notification.setHidden(true);

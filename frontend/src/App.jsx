@@ -483,6 +483,7 @@ function TicketConversationRoute({
   onCloseTicket,
   onLoadTransferCandidates,
   onNavigatePage,
+  onRefreshDashboardData,
   onRequestTicketTransfer,
   onUpdateTicketTitle,
   selectedTicket,
@@ -572,6 +573,7 @@ function TicketConversationRoute({
       onCloseTicket={onCloseTicket}
       onLoadTransferCandidates={onLoadTransferCandidates}
       onNavigatePage={onNavigatePage}
+      onRefreshDashboardData={onRefreshDashboardData}
       onRequestTicketTransfer={onRequestTicketTransfer}
       onUpdateTicketTitle={onUpdateTicketTitle}
       ticket={ticket}
@@ -1699,6 +1701,7 @@ function App() {
                   onCloseTicket={handleCloseTicket}
                   onLoadTransferCandidates={handleLoadTransferCandidates}
                   onNavigatePage={handleNavigatePage}
+                onRefreshDashboardData={refreshDashboardData}
                   onRequestTicketTransfer={handleRequestTicketTransfer}
                   onUpdateTicketTitle={handleUpdateTicketTitle}
                   selectedTicket={selectedTicket}
