@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import ConfirmActionModal from '../../components/confirm-action-modal/ConfirmActionModal'
 import Header from '../../components/header/Header'
 import Sidebar from '../../components/sidebar/Sidebar'
@@ -24,6 +24,7 @@ function Team({
   onDeclineTicketTransfer,
   onRemoveMemberFromCompany,
   onUpdateMemberSectors,
+  onViewNotifications,
   receivedInvites = [],
   sectors = [],
   sentInvites = [],
@@ -87,6 +88,15 @@ function Team({
           firstNotification.createdAt
       ).getTime()
   )
+
+  useEffect(() => {
+    if (userRole === 'admin') {
+      onViewNotifications?.(handledSentInvites)
+      return
+    }
+
+    onViewNotifications?.(employeeNotifications)
+  }, [employeeNotifications, handledSentInvites, onViewNotifications, userRole])
 
   const companyName =
     (!companyUsesSectors && userRole === 'user'
