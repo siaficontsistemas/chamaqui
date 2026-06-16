@@ -444,7 +444,7 @@ public class TicketService {
 			ticket.getRequester(),
 			incomingAttachments
 		);
-		createReplyNotification(ticket, savedMessage, ticket.getRequester());
+		createWhatsappReplyNotification(ticket, savedMessage);
 		return toMessageResponse(savedMessage, savedAttachments);
 	}
 
@@ -910,6 +910,22 @@ public class TicketService {
 		}
 
 		if (ticket.getAssignedTo().getId().equals(author.getId())) {
+			return;
+		}
+
+		createReplyNotificationForRecipient(ticket, message, ticket.getAssignedTo());
+		User companyAdmin = resolveTicketCompanyAdmin(ticket);
+		if (companyAdmin != null && !companyAdmin.getId().equals(ticket.getAssignedTo().getId())) {
+			createReplyNotificationForRecipient(ticket, message, companyAdmin);
+		}
+	}
+
+	private void createWhatsappReplyNotification(Ticket ticket, TicketMessage message) {
+		if (ticket == null || message == null || ticket.getAssignedTo() == null) {
+			return;
+		}
+
+		if ("CLOSED".equalsIgnoreCase(ticket.getStatus().getCode())) {
 			return;
 		}
 
