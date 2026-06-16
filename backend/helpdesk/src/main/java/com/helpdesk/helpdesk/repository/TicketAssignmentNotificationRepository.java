@@ -18,6 +18,8 @@ public interface TicketAssignmentNotificationRepository extends JpaRepository<Ti
 		from TicketAssignmentNotification notification
 		where lower(notification.recipient.email) = lower(:email)
 			and notification.hidden = false
+			and notification.ticket.deletedAt is null
+			and upper(notification.ticket.status.code) <> 'CLOSED'
 		order by notification.createdAt desc
 		""")
 	@EntityGraph(attributePaths = {"ticket", "ticket.requester", "ticket.sector", "recipient"})

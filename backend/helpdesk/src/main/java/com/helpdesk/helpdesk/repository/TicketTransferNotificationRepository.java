@@ -19,6 +19,8 @@ public interface TicketTransferNotificationRepository extends JpaRepository<Tick
 		from TicketTransferNotification notification
 		where lower(notification.recipient.email) = lower(:email)
 			and notification.hidden = false
+			and notification.ticket.deletedAt is null
+			and upper(notification.ticket.status.code) <> 'CLOSED'
 		order by notification.createdAt desc
 		""")
 	@EntityGraph(attributePaths = {"ticket", "ticket.requester", "ticket.sector", "sender", "recipient"})
