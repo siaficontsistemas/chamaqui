@@ -341,7 +341,7 @@ Cadastre estes `Repository variables`:
 - `BAILEYS_APP_DIR`: pasta do `baileys-service`, default `/home/ec2-user/baileys-service`
 - `PM2_BACKEND_APP_NAME`: nome do processo backend no `PM2`, default `chamaqui-backend`
 - `PM2_BAILEYS_APP_NAME`: nome do processo do WhatsApp no `PM2`, default `chamaqui-baileys`
-- `RESTART_BAILEYS`: `true` ou `false`, default `true`
+- `RESTART_BAILEYS`: `true` ou `false`, default `false`
 
 ### Fluxo de uso
 

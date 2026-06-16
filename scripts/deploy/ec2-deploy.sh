@@ -8,7 +8,7 @@ BACKEND_JAR_PATH="${BACKEND_JAR_PATH:-/home/ec2-user/app.jar}"
 BAILEYS_APP_DIR="${BAILEYS_APP_DIR:-/home/ec2-user/baileys-service}"
 PM2_BACKEND_APP_NAME="${PM2_BACKEND_APP_NAME:-chamaqui-backend}"
 PM2_BAILEYS_APP_NAME="${PM2_BAILEYS_APP_NAME:-chamaqui-baileys}"
-RESTART_BAILEYS="${RESTART_BAILEYS:-true}"
+RESTART_BAILEYS="${RESTART_BAILEYS:-false}"
 
 TIMESTAMP="$(date +%Y%m%d%H%M%S)"
 BACKUP_DIR="${DEPLOY_ROOT%/}/backups/${TIMESTAMP}"
