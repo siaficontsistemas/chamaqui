@@ -11,9 +11,8 @@ PM2_BAILEYS_APP_NAME="${PM2_BAILEYS_APP_NAME:-chamaqui-baileys}"
 RESTART_BAILEYS="${RESTART_BAILEYS:-false}"
 
 TIMESTAMP="$(date +%Y%m%d%H%M%S)"
-BACKUP_DIR="${DEPLOY_ROOT%/}/backups/${TIMESTAMP}"
 
-mkdir -p "${DEPLOY_ROOT}" "${BACKUP_DIR}" "$(dirname "${BACKEND_JAR_PATH}")" "${BAILEYS_APP_DIR}"
+mkdir -p "${DEPLOY_ROOT}" "$(dirname "${BACKEND_JAR_PATH}")" "${BAILEYS_APP_DIR}"
 WORK_DIR="$(mktemp -d "${DEPLOY_ROOT%/}/release-${TIMESTAMP}-XXXX")"
 
 cleanup() {
@@ -23,10 +22,6 @@ cleanup() {
 trap cleanup EXIT
 
 tar -xzf "${RELEASE_BUNDLE_PATH}" -C "${WORK_DIR}"
-
-if [ -f "${BACKEND_JAR_PATH}" ]; then
-  cp "${BACKEND_JAR_PATH}" "${BACKUP_DIR}/app.jar"
-fi
 
 install -m 0644 "${WORK_DIR}/backend/app.jar" "${BACKEND_JAR_PATH}"
 
