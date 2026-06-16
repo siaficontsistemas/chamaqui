@@ -887,10 +887,6 @@ function App() {
     let isCancelled = false
 
     async function refreshBundleSilently() {
-      if (document.visibilityState === 'hidden') {
-        return
-      }
-
       try {
         const bundle = await fetchDashboardBundle(authUser.email)
 
