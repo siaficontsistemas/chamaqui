@@ -14,10 +14,8 @@ import com.helpdesk.helpdesk.domain.CalendarReminderNotification;
 import com.helpdesk.helpdesk.domain.CompanyPartnershipNotification;
 import com.helpdesk.helpdesk.domain.CompanyPartnershipNotificationType;
 import com.helpdesk.helpdesk.domain.TeamMembershipNotification;
-import com.helpdesk.helpdesk.domain.Ticket;
 import com.helpdesk.helpdesk.domain.TicketAssignmentNotification;
 import com.helpdesk.helpdesk.domain.TicketClosureNotification;
-import com.helpdesk.helpdesk.domain.TicketMessage;
 import com.helpdesk.helpdesk.domain.TicketReplyNotification;
 import com.helpdesk.helpdesk.domain.TicketTransferNotification;
 import com.helpdesk.helpdesk.domain.TicketTransferStatus;
@@ -36,7 +34,6 @@ import com.helpdesk.helpdesk.repository.CompanyPartnershipNotificationRepository
 import com.helpdesk.helpdesk.repository.TeamMembershipNotificationRepository;
 import com.helpdesk.helpdesk.repository.TicketAssignmentNotificationRepository;
 import com.helpdesk.helpdesk.repository.TicketClosureNotificationRepository;
-import com.helpdesk.helpdesk.repository.TicketMessageRepository;
 import com.helpdesk.helpdesk.repository.TicketReplyNotificationRepository;
 import com.helpdesk.helpdesk.repository.TicketRepository;
 import com.helpdesk.helpdesk.repository.TicketTransferNotificationRepository;
@@ -51,7 +48,6 @@ public class NotificationService {
 	private final CompanyPartnershipNotificationRepository companyPartnershipNotificationRepository;
 	private final TicketClosureNotificationRepository ticketClosureNotificationRepository;
 	private final TicketReplyNotificationRepository ticketReplyNotificationRepository;
-	private final TicketMessageRepository ticketMessageRepository;
 	private final CalendarObligationRepository calendarObligationRepository;
 	private final TicketRepository ticketRepository;
 	private final TenantAccessService tenantAccessService;
@@ -66,7 +62,6 @@ public class NotificationService {
 		CompanyPartnershipNotificationRepository companyPartnershipNotificationRepository,
 		TicketClosureNotificationRepository ticketClosureNotificationRepository,
 		TicketReplyNotificationRepository ticketReplyNotificationRepository,
-		TicketMessageRepository ticketMessageRepository,
 		CalendarObligationRepository calendarObligationRepository,
 		TicketRepository ticketRepository,
 		TenantAccessService tenantAccessService,
@@ -80,7 +75,6 @@ public class NotificationService {
 		this.companyPartnershipNotificationRepository = companyPartnershipNotificationRepository;
 		this.ticketClosureNotificationRepository = ticketClosureNotificationRepository;
 		this.ticketReplyNotificationRepository = ticketReplyNotificationRepository;
-		this.ticketMessageRepository = ticketMessageRepository;
 		this.calendarObligationRepository = calendarObligationRepository;
 		this.ticketRepository = ticketRepository;
 		this.tenantAccessService = tenantAccessService;
@@ -132,76 +126,14 @@ public class NotificationService {
 			.toList();
 	}
 
-	@Transactional
+	@Transactional(readOnly = true)
 	public List<TicketReplyNotificationResponse> listTicketReplies(String email) {
 		User viewer = loadUserByEmail(email);
-		ensureMissingTicketReplyNotifications(viewer);
 		return ticketReplyNotificationRepository
 			.findVisibleByRecipientEmailOrderByCreatedAtDesc(normalizeEmail(viewer.getEmail()))
 			.stream()
 			.map(this::toTicketReplyResponse)
 			.toList();
-	}
-
-	private void ensureMissingTicketReplyNotifications(User viewer) {
-		for (Ticket ticket : ticketRepository.findVisibleByEmailOrderByCreatedAtDesc(normalizeEmail(viewer.getEmail()))) {
-			if (!shouldReceiveTicketReplyNotification(ticket, viewer)) {
-				continue;
-			}
-
-			TicketMessage latestMessage = ticketMessageRepository.findFirstByTicketIdOrderByCreatedAtDesc(ticket.getId())
-				.orElse(null);
-			if (latestMessage == null || latestMessage.getAuthor() == null || ticket.getRequester() == null) {
-				continue;
-			}
-
-			List<TicketReplyNotification> existingNotifications = ticketReplyNotificationRepository
-				.findByTicketIdAndRecipientId(ticket.getId(), viewer.getId());
-
-			// Keep only the newest customer reply visible for each recipient/ticket pair.
-			for (TicketReplyNotification notification : existingNotifications) {
-				if (!notification.getMessage().getId().equals(latestMessage.getId()) && !notification.isHidden()) {
-					notification.setHidden(true);
-					ticketReplyNotificationRepository.save(notification);
-				}
-			}
-
-			if (!latestMessage.getAuthor().getId().equals(ticket.getRequester().getId())) {
-				continue;
-			}
-
-			boolean alreadyTracked = ticketReplyNotificationRepository
-				.findByMessageIdAndRecipientId(latestMessage.getId(), viewer.getId())
-				.isPresent();
-			if (alreadyTracked) {
-				continue;
-			}
-
-			TicketReplyNotification notification = new TicketReplyNotification();
-			notification.setTicket(ticket);
-			notification.setMessage(latestMessage);
-			notification.setRecipient(viewer);
-			notification.setHidden(false);
-			ticketReplyNotificationRepository.save(notification);
-		}
-	}
-
-	private boolean shouldReceiveTicketReplyNotification(Ticket ticket, User viewer) {
-		if (ticket.getDeletedAt() != null || ticket.getStatus() == null) {
-			return false;
-		}
-
-		if ("CLOSED".equalsIgnoreCase(ticket.getStatus().getCode())) {
-			return false;
-		}
-
-		if (ticket.getAssignedTo() != null && ticket.getAssignedTo().getId().equals(viewer.getId())) {
-			return true;
-		}
-
-		return ticket.getSector() != null
-			&& ticket.getSector().getCreatedBy() != null
-			&& ticket.getSector().getCreatedBy().getId().equals(viewer.getId());
 	}
 
 	@Transactional(readOnly = true)
