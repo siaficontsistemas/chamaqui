@@ -1236,37 +1236,38 @@ function MyData({
                                   {partnershipActionId === partnership.id ? 'Processando...' : 'Desvincular'}
                                 </button>
                               </div>
-                              <div
-                                className="my-data__client-employees"
-                                id={`client-employees-${partnership.id}`}
-                                hidden={!isExpanded}
-                              >
-                                <h4 className="my-data__client-employees-title">Funcionários da empresa cliente</h4>
-                                {partnership.employees.length > 0 ? (
-                                  <div className="my-data__client-employees-list">
-                                    {partnership.employees.map((member) => (
-                                      <div className="my-data__client-employees-item" key={member.id}>
-                                        <div className="my-data__client-employees-main">
-                                          <strong>{member.name}</strong>
-                                          <span>{member.email || 'Email não informado'}</span>
+                              {isExpanded ? (
+                                <div
+                                  className="my-data__client-employees"
+                                  id={`client-employees-${partnership.id}`}
+                                >
+                                  <h4 className="my-data__client-employees-title">Funcionários da empresa cliente</h4>
+                                  {partnership.employees.length > 0 ? (
+                                    <div className="my-data__client-employees-list">
+                                      {partnership.employees.map((member) => (
+                                        <div className="my-data__client-employees-item" key={member.id}>
+                                          <div className="my-data__client-employees-main">
+                                            <strong>{member.name}</strong>
+                                            <span>{member.email || 'Email não informado'}</span>
+                                          </div>
+                                          <button
+                                            className="my-data__partnership-button my-data__partnership-button--danger"
+                                            type="button"
+                                            onClick={() => handleOpenClientEmployeeModal(member, partnerName)}
+                                            disabled={partnershipActionId === member.id}
+                                          >
+                                            {partnershipActionId === member.id ? 'Excluindo...' : 'Excluir funcionário'}
+                                          </button>
                                         </div>
-                                        <button
-                                          className="my-data__partnership-button my-data__partnership-button--danger"
-                                          type="button"
-                                          onClick={() => handleOpenClientEmployeeModal(member, partnerName)}
-                                          disabled={partnershipActionId === member.id}
-                                        >
-                                          {partnershipActionId === member.id ? 'Excluindo...' : 'Excluir funcionário'}
-                                        </button>
-                                      </div>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <p className="my-data__partnership-empty">
-                                    Nenhum funcionário cadastrado nessa empresa cliente até o momento.
-                                  </p>
-                                )}
-                              </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <p className="my-data__partnership-empty">
+                                      Nenhum funcionário cadastrado nessa empresa cliente até o momento.
+                                    </p>
+                                  )}
+                                </div>
+                              ) : null}
                             </article>
                           )
                         })
