@@ -159,6 +159,10 @@ Artefatos operacionais desta frente ficam em:
 
 - `docs/lgpd/data-processing-register.md`
 - `docs/lgpd/data-subject-rights-process.md`
+- `docs/lgpd/retention-and-disposal-policy.md`
+- `docs/lgpd/operators-and-integrations-register.md`
+- `docs/lgpd/incident-response-plan.md`
+- `docs/lgpd/internal-training-and-process.md`
 
 Documentos legais publicados no fluxo público da aplicação:
 
