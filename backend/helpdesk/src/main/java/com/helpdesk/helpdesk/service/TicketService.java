@@ -402,17 +402,19 @@ public class TicketService {
 			);
 		}
 
-		if (ticket.getFirstResponseAt() == null && !author.getId().equals(ticket.getRequester().getId())) {
+		boolean isRequesterSideAuthor = isRequesterSideAuthor(ticket, author);
+
+		if (ticket.getFirstResponseAt() == null && !isRequesterSideAuthor) {
 			ticket.setFirstResponseAt(savedMessage.getCreatedAt());
 		}
 
-		if (!author.getId().equals(ticket.getRequester().getId()) && !"CLOSED".equalsIgnoreCase(ticket.getStatus().getCode())) {
+		if (!isRequesterSideAuthor && !"CLOSED".equalsIgnoreCase(ticket.getStatus().getCode())) {
 			TicketStatus inProgressStatus = ticketStatusRepository.findByCode("IN_PROGRESS")
 				.orElseThrow(() -> new NotFoundException("Status em andamento não encontrado."));
 			ticket.setStatus(inProgressStatus);
 		}
 
-		if (!author.getId().equals(ticket.getRequester().getId())) {
+		if (!isRequesterSideAuthor) {
 			hideActiveTicketNotifications(ticket.getId());
 		}
 
@@ -763,7 +765,7 @@ public class TicketService {
 			return new DisplayStatus("OPEN", "Aberto");
 		}
 
-		boolean isRequesterLastAuthor = lastMessage.getAuthor().getId().equals(ticket.getRequester().getId());
+		boolean isRequesterLastAuthor = isRequesterSideAuthor(ticket, lastMessage.getAuthor());
 
 		if (isRequesterLastAuthor && ticketMessageRepository.countByTicketId(ticket.getId()) <= 1) {
 			return new DisplayStatus("OPEN", "Aberto");
@@ -921,7 +923,7 @@ public class TicketService {
 			return;
 		}
 
-		if (!author.getId().equals(ticket.getRequester().getId())) {
+		if (!isRequesterSideAuthor(ticket, author)) {
 			return;
 		}
 
@@ -1271,7 +1273,20 @@ public class TicketService {
 			&& ticket.getSector() != null
 			&& ticket.getSector().getCreatedBy() != null
 			&& !resolveWhatsappTicketRecipient(ticket).isBlank()
-			&& !author.getId().equals(ticket.getRequester().getId());
+			&& !isRequesterSideAuthor(ticket, author);
+	}
+
+	private boolean isRequesterSideAuthor(Ticket ticket, User author) {
+		if (ticket == null || author == null || ticket.getRequester() == null) {
+			return false;
+		}
+
+		if (author.getId().equals(ticket.getRequester().getId())) {
+			return true;
+		}
+
+		User requesterCompany = ticket.getRequester().getCompanyOwner();
+		return requesterCompany != null && author.getId().equals(requesterCompany.getId());
 	}
 
 	private boolean hasWhatsappRecipient(User requester) {
