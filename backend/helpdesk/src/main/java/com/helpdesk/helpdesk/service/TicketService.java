@@ -1273,7 +1273,7 @@ public class TicketService {
 			&& ticket.getSector() != null
 			&& ticket.getSector().getCreatedBy() != null
 			&& !resolveWhatsappTicketRecipient(ticket).isBlank()
-			&& !isRequesterSideAuthor(ticket, author);
+			&& isResponderSideAuthor(ticket, author);
 	}
 
 	private boolean isRequesterSideAuthor(Ticket ticket, User author) {
@@ -1287,6 +1287,20 @@ public class TicketService {
 
 		User requesterCompany = ticket.getRequester().getCompanyOwner();
 		return requesterCompany != null && author.getId().equals(requesterCompany.getId());
+	}
+
+	private boolean isResponderSideAuthor(Ticket ticket, User author) {
+		if (ticket == null || author == null || ticket.getSector() == null || ticket.getSector().getCreatedBy() == null) {
+			return false;
+		}
+
+		User responderCompany = ticket.getSector().getCreatedBy();
+		if (author.getId().equals(responderCompany.getId())) {
+			return true;
+		}
+
+		User authorCompany = author.getCompanyOwner();
+		return authorCompany != null && authorCompany.getId().equals(responderCompany.getId());
 	}
 
 	private boolean hasWhatsappRecipient(User requester) {
