@@ -14,6 +14,7 @@ import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -24,11 +25,16 @@ import com.helpdesk.helpdesk.tenant.TenantResolutionFilter;
 public class SecurityConfig {
 
 	@Bean
-	SecurityFilterChain securityFilterChain(HttpSecurity http, TenantResolutionFilter tenantResolutionFilter) throws Exception {
+	SecurityFilterChain securityFilterChain(
+		HttpSecurity http,
+		TenantResolutionFilter tenantResolutionFilter,
+		AppSessionAuthenticationFilter appSessionAuthenticationFilter
+	) throws Exception {
 		return http
 			.csrf(AbstractHttpConfigurer::disable)
 			.cors(Customizer.withDefaults())
 			.addFilterBefore(tenantResolutionFilter, AuthorizationFilter.class)
+			.addFilterAfter(appSessionAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
 			.authorizeHttpRequests(authorize -> authorize
 				.requestMatchers("/webhook").permitAll()
 				.requestMatchers(
@@ -62,6 +68,7 @@ public class SecurityConfig {
 		configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
 		configuration.setAllowedHeaders(List.of("*"));
 		configuration.setAllowCredentials(true);
+		configuration.setExposedHeaders(List.of("Set-Cookie"));
 
 		UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
 		source.registerCorsConfiguration("/**", configuration);

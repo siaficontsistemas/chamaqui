@@ -1,11 +1,5 @@
 package com.helpdesk.helpdesk.api.calendar;
 
-import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -13,17 +7,26 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import static org.mockito.ArgumentMatchers.any;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import static org.mockito.Mockito.when;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.MediaType;
-import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import com.helpdesk.helpdesk.dto.calendar.CalendarLinkedTicketResponse;
 import com.helpdesk.helpdesk.dto.calendar.CalendarObligationResponse;
 import com.helpdesk.helpdesk.dto.calendar.CalendarTicketSearchResponse;
+import com.helpdesk.helpdesk.service.AppSessionService;
 import com.helpdesk.helpdesk.service.CalendarService;
+
+import jakarta.servlet.http.HttpSession;
 
 @ExtendWith(MockitoExtension.class)
 class CalendarControllerTest {
@@ -33,11 +36,18 @@ class CalendarControllerTest {
 	@Mock
 	private CalendarService calendarService;
 
+	@Mock
+	private AppSessionService appSessionService;
+
+	@InjectMocks
+	private CalendarController calendarController;
+
+	@SuppressWarnings("unused")
 	@BeforeEach
 	void setUp() {
-		mockMvc = MockMvcBuilders.standaloneSetup(new CalendarController(calendarService))
-			.setMessageConverters(new MappingJackson2HttpMessageConverter())
-			.build();
+		when(appSessionService.requireCurrentEmail(any(HttpSession.class))).thenReturn("admin@empresa.com");
+
+		mockMvc = MockMvcBuilders.standaloneSetup(calendarController).build();
 	}
 
 	@Test
@@ -76,7 +86,7 @@ class CalendarControllerTest {
 			)
 		));
 
-		mockMvc.perform(get("/api/v1/calendar/obligations").param("email", "admin@empresa.com"))
+		mockMvc.perform(get("/api/v1/calendar/obligations"))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$[0].linkedTickets[0].protocol").value("CA-2026-0042"))
 			.andExpect(jsonPath("$[0].linkedTickets[0].statusCode").value("CLOSED"))
@@ -103,7 +113,6 @@ class CalendarControllerTest {
 
 		mockMvc.perform(
 			get("/api/v1/calendar/tickets/search")
-				.param("email", "admin@empresa.com")
 				.param("query", "siga")
 				.param("offset", "0")
 				.param("limit", "20")

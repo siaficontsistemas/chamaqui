@@ -18,8 +18,10 @@ import com.helpdesk.helpdesk.dto.company.CompanySearchResultResponse;
 import com.helpdesk.helpdesk.dto.company.CreateCompanyPartnershipRequest;
 import com.helpdesk.helpdesk.dto.company.RespondCompanyPartnershipRequest;
 import com.helpdesk.helpdesk.dto.ticket.TicketTargetSectorResponse;
+import com.helpdesk.helpdesk.service.AppSessionService;
 import com.helpdesk.helpdesk.service.CompanyPartnershipService;
 
+import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 
 @RestController
@@ -28,55 +30,73 @@ import jakarta.validation.Valid;
 public class CompanyPartnershipController {
 
 	private final CompanyPartnershipService companyPartnershipService;
+	private final AppSessionService appSessionService;
 
-	public CompanyPartnershipController(CompanyPartnershipService companyPartnershipService) {
+	public CompanyPartnershipController(
+		CompanyPartnershipService companyPartnershipService,
+		AppSessionService appSessionService
+	) {
 		this.companyPartnershipService = companyPartnershipService;
+		this.appSessionService = appSessionService;
 	}
 
 	@GetMapping("/search")
 	public List<CompanySearchResultResponse> searchCompanies(
-		@RequestParam("email") String email,
-		@RequestParam("query") String query
+		@RequestParam("query") String query,
+		HttpSession session
 	) {
-		return companyPartnershipService.searchCompanies(email, query);
+		return companyPartnershipService.searchCompanies(appSessionService.requireCurrentEmail(session), query);
 	}
 
 	@GetMapping("/mine")
-	public List<CompanyPartnershipResponse> listMine(@RequestParam("email") String email) {
-		return companyPartnershipService.listMine(email);
+	public List<CompanyPartnershipResponse> listMine(HttpSession session) {
+		return companyPartnershipService.listMine(appSessionService.requireCurrentEmail(session));
 	}
 
 	@GetMapping("/ticket-targets")
-	public List<TicketTargetSectorResponse> listTicketTargets(@RequestParam("email") String email) {
-		return companyPartnershipService.listTicketTargets(email);
+	public List<TicketTargetSectorResponse> listTicketTargets(HttpSession session) {
+		return companyPartnershipService.listTicketTargets(appSessionService.requireCurrentEmail(session));
 	}
 
 	@PostMapping
-	public CompanyPartnershipResponse create(@Valid @RequestBody CreateCompanyPartnershipRequest request) {
-		return companyPartnershipService.create(request);
+	public CompanyPartnershipResponse create(
+		@Valid @RequestBody CreateCompanyPartnershipRequest request,
+		HttpSession session
+	) {
+		return companyPartnershipService.create(
+			new CreateCompanyPartnershipRequest(appSessionService.requireCurrentEmail(session), request.targetCompanyId())
+		);
 	}
 
 	@PostMapping("/{partnershipId}/accept")
 	public CompanyPartnershipResponse accept(
 		@PathVariable UUID partnershipId,
-		@Valid @RequestBody RespondCompanyPartnershipRequest request
+		@Valid @RequestBody RespondCompanyPartnershipRequest request,
+		HttpSession session
 	) {
-		return companyPartnershipService.accept(partnershipId, request);
+		return companyPartnershipService.accept(
+			partnershipId,
+			new RespondCompanyPartnershipRequest(appSessionService.requireCurrentEmail(session))
+		);
 	}
 
 	@PostMapping("/{partnershipId}/decline")
 	public CompanyPartnershipResponse decline(
 		@PathVariable UUID partnershipId,
-		@Valid @RequestBody RespondCompanyPartnershipRequest request
+		@Valid @RequestBody RespondCompanyPartnershipRequest request,
+		HttpSession session
 	) {
-		return companyPartnershipService.decline(partnershipId, request);
+		return companyPartnershipService.decline(
+			partnershipId,
+			new RespondCompanyPartnershipRequest(appSessionService.requireCurrentEmail(session))
+		);
 	}
 
 	@DeleteMapping("/{partnershipId}")
 	public void unlink(
 		@PathVariable UUID partnershipId,
-		@RequestParam("email") String email
+		HttpSession session
 	) {
-		companyPartnershipService.unlink(partnershipId, email);
+		companyPartnershipService.unlink(partnershipId, appSessionService.requireCurrentEmail(session));
 	}
 }

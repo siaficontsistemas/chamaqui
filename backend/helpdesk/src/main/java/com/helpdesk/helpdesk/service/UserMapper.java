@@ -17,10 +17,7 @@ public class UserMapper {
 			user.getId(),
 			user.getFullName(),
 			user.getEmail(),
-			user.getPhoneNumber(),
-			user.getDocumentNumber(),
 			resolveCompanyName(user),
-			resolveCompanyDocument(user),
 			resolveCompanyType(user),
 			user.getStatus().name(),
 			roleCodes(user)

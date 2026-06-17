@@ -35,7 +35,9 @@ async function apiRequest(path, options = {}) {
 
   if (!response.ok) {
     const errorMessage = await extractErrorMessage(response)
-    throw new Error(errorMessage)
+    const error = new Error(errorMessage)
+    error.status = response.status
+    throw error
   }
 
   if (response.status === 204) {
@@ -128,6 +130,16 @@ export function loginUser(credentials) {
   })
 }
 
+export function getAuthMe() {
+  return apiRequest('/api/v1/auth/me')
+}
+
+export function logoutCurrentUser() {
+  return apiRequest('/api/v1/auth/logout', {
+    method: 'POST',
+  })
+}
+
 export function requestPasswordReset(payload) {
   return apiRequest('/api/v1/auth/forgot-password', {
     method: 'POST',
@@ -203,8 +215,8 @@ export function getAvailableCompanies(companyType) {
   return apiRequest(`/api/v1/reference/companies?type=${encodeURIComponent(companyType)}`)
 }
 
-export function getProfile(email) {
-  return apiRequest(`/api/v1/profile?email=${encodeURIComponent(email)}`)
+export function getProfile() {
+  return apiRequest('/api/v1/profile')
 }
 
 export function updateProfile(payload) {
@@ -221,41 +233,40 @@ export function changePassword(payload) {
   })
 }
 
-export function uploadCompanyLogo(email, file) {
+export function uploadCompanyLogo(_email, file) {
   const formData = new FormData()
   formData.append('file', file)
 
-  return apiRequest(`/api/v1/profile/company/logo?email=${encodeURIComponent(email)}`, {
+  return apiRequest('/api/v1/profile/company/logo', {
     method: 'PUT',
     body: formData,
   })
 }
 
-export function deleteCompanyLogo(email) {
-  return apiRequest(`/api/v1/profile/company/logo?email=${encodeURIComponent(email)}`, {
+export function deleteCompanyLogo() {
+  return apiRequest('/api/v1/profile/company/logo', {
     method: 'DELETE',
   })
 }
 
-export function deleteProfile(email) {
-  return apiRequest(`/api/v1/profile?email=${encodeURIComponent(email)}`, {
+export function deleteProfile() {
+  return apiRequest('/api/v1/profile', {
     method: 'DELETE',
   })
 }
 
-export function deleteCompanyProfile(email) {
-  return apiRequest(`/api/v1/profile/company?email=${encodeURIComponent(email)}`, {
+export function deleteCompanyProfile() {
+  return apiRequest('/api/v1/profile/company', {
     method: 'DELETE',
   })
 }
 
-export function getTicketSummary(email) {
-  return apiRequest(`/api/v1/tickets/summary?email=${encodeURIComponent(email)}`)
+export function getTicketSummary() {
+  return apiRequest('/api/v1/tickets/summary')
 }
 
-export function getTickets(email, status) {
+export function getTickets(_email, status) {
   const searchParams = new URLSearchParams()
-  searchParams.set('email', email)
 
   if (Array.isArray(status) && status.length > 0) {
     searchParams.set('status', status.join(','))
@@ -268,18 +279,16 @@ export function getTickets(email, status) {
   return apiRequest(`/api/v1/tickets${queryString ? `?${queryString}` : ''}`)
 }
 
-export function getTicketById(ticketId, email) {
-  return apiRequest(`/api/v1/tickets/${ticketId}?email=${encodeURIComponent(email)}`)
+export function getTicketById(ticketId) {
+  return apiRequest(`/api/v1/tickets/${ticketId}`)
 }
 
 export function createTicket(payload) {
   return createMultipartRequest('/api/v1/tickets', payload)
 }
 
-export function getTicketMessages(ticketId, email) {
-  return apiRequest(
-    `/api/v1/tickets/${ticketId}/messages?email=${encodeURIComponent(email)}`
-  )
+export function getTicketMessages(ticketId) {
+  return apiRequest(`/api/v1/tickets/${ticketId}/messages`)
 }
 
 export function addTicketMessage(ticketId, payload) {
@@ -313,8 +322,8 @@ function createMultipartRequest(path, payload) {
   })
 }
 
-export function getTicketAttachmentDownloadUrl(ticketId, attachmentId, email) {
-  return `${API_BASE_URL}/api/v1/tickets/${ticketId}/attachments/${attachmentId}?email=${encodeURIComponent(email)}`
+export function getTicketAttachmentDownloadUrl(ticketId, attachmentId) {
+  return `${API_BASE_URL}/api/v1/tickets/${ticketId}/attachments/${attachmentId}`
 }
 
 export function closeTicket(ticketId, payload) {
@@ -331,10 +340,8 @@ export function deleteTickets(payload) {
   })
 }
 
-export function getTicketTransferCandidates(ticketId, email) {
-  return apiRequest(
-    `/api/v1/tickets/${ticketId}/transfer-candidates?email=${encodeURIComponent(email)}`
-  )
+export function getTicketTransferCandidates(ticketId) {
+  return apiRequest(`/api/v1/tickets/${ticketId}/transfer-candidates`)
 }
 
 export function requestTicketTransfer(ticketId, payload) {
@@ -344,21 +351,20 @@ export function requestTicketTransfer(ticketId, payload) {
   })
 }
 
-export function getPersonalReport(email) {
-  return apiRequest(`/api/v1/reports/personal?email=${encodeURIComponent(email)}`)
+export function getPersonalReport() {
+  return apiRequest('/api/v1/reports/personal')
 }
 
-export function getCalendarObligations(email) {
-  return apiRequest(`/api/v1/calendar/obligations?email=${encodeURIComponent(email)}`)
+export function getCalendarObligations() {
+  return apiRequest('/api/v1/calendar/obligations')
 }
 
-export function getCalendarLinkedCompanies(email) {
-  return apiRequest(`/api/v1/calendar/companies?email=${encodeURIComponent(email)}`)
+export function getCalendarLinkedCompanies() {
+  return apiRequest('/api/v1/calendar/companies')
 }
 
-export function searchCalendarTickets(email, query = '', offset = 0, limit = 20) {
+export function searchCalendarTickets(_email, query = '', offset = 0, limit = 20) {
   const searchParams = new URLSearchParams()
-  searchParams.set('email', email)
   searchParams.set('query', query)
   searchParams.set('offset', String(offset))
   searchParams.set('limit', String(limit))
@@ -394,42 +400,30 @@ export function moveCalendarObligationCompany(obligationId, payload) {
   })
 }
 
-export function completeCalendarObligation(obligationId, email) {
-  return apiRequest(
-    `/api/v1/calendar/obligations/${obligationId}/complete?email=${encodeURIComponent(email)}`,
-    {
-      method: 'POST',
-    }
-  )
+export function completeCalendarObligation(obligationId) {
+  return apiRequest(`/api/v1/calendar/obligations/${obligationId}/complete`, {
+    method: 'POST',
+  })
 }
 
-export function deleteCalendarObligation(obligationId, email) {
-  return apiRequest(`/api/v1/calendar/obligations/${obligationId}?email=${encodeURIComponent(email)}`, {
+export function deleteCalendarObligation(obligationId) {
+  return apiRequest(`/api/v1/calendar/obligations/${obligationId}`, {
     method: 'DELETE',
   })
 }
 
-export function getSectors(email) {
-  const searchParams = new URLSearchParams()
-
-  if (email) {
-    searchParams.set('email', email)
-  }
-
-  const queryString = searchParams.toString()
-
-  return apiRequest(`/api/v1/sectors${queryString ? `?${queryString}` : ''}`)
+export function getSectors() {
+  return apiRequest('/api/v1/sectors')
 }
 
-export function searchCompanyPartnershipTargets(email, query) {
+export function searchCompanyPartnershipTargets(_email, query) {
   const searchParams = new URLSearchParams()
-  searchParams.set('email', email)
   searchParams.set('query', query)
   return apiRequest(`/api/v1/company-partnerships/search?${searchParams.toString()}`)
 }
 
-export function getMyCompanyPartnerships(email) {
-  return apiRequest(`/api/v1/company-partnerships/mine?email=${encodeURIComponent(email)}`)
+export function getMyCompanyPartnerships() {
+  return apiRequest('/api/v1/company-partnerships/mine')
 }
 
 export function createCompanyPartnership(payload) {
@@ -446,10 +440,9 @@ export function createClientCompany(payload) {
   })
 }
 
-export function lookupClientCompany(companyDocument, createdByEmail) {
+export function lookupClientCompany(companyDocument) {
   const searchParams = new URLSearchParams({
     companyDocument,
-    createdByEmail,
   })
   return apiRequest(`/api/v1/client-companies/lookup?${searchParams.toString()}`)
 }
@@ -475,14 +468,14 @@ export function declineCompanyPartnership(partnershipId, email) {
   })
 }
 
-export function unlinkCompanyPartnership(partnershipId, email) {
-  return apiRequest(`/api/v1/company-partnerships/${partnershipId}?email=${encodeURIComponent(email)}`, {
+export function unlinkCompanyPartnership(partnershipId) {
+  return apiRequest(`/api/v1/company-partnerships/${partnershipId}`, {
     method: 'DELETE',
   })
 }
 
-export function getCompanyPartnershipTicketTargets(email) {
-  return apiRequest(`/api/v1/company-partnerships/ticket-targets?email=${encodeURIComponent(email)}`)
+export function getCompanyPartnershipTicketTargets() {
+  return apiRequest('/api/v1/company-partnerships/ticket-targets')
 }
 
 export function createSector(payload) {
@@ -492,16 +485,8 @@ export function createSector(payload) {
   })
 }
 
-export function getTeamMembers(email) {
-  const searchParams = new URLSearchParams()
-
-  if (email) {
-    searchParams.set('email', email)
-  }
-
-  const queryString = searchParams.toString()
-
-  return apiRequest(`/api/v1/team/members${queryString ? `?${queryString}` : ''}`)
+export function getTeamMembers() {
+  return apiRequest('/api/v1/team/members')
 }
 
 export function createTeamInvite(payload) {
@@ -518,18 +503,18 @@ export function createCompanyInvite(payload) {
   })
 }
 
-export function deleteTeamSector(sectorId, email) {
-  return apiRequest(`/api/v1/team/sectors/${sectorId}?email=${encodeURIComponent(email)}`, {
+export function deleteTeamSector(sectorId) {
+  return apiRequest(`/api/v1/team/sectors/${sectorId}`, {
     method: 'DELETE',
   })
 }
 
-export function getReceivedTeamInvites(email) {
-  return apiRequest(`/api/v1/team/invites/received?email=${encodeURIComponent(email)}`)
+export function getReceivedTeamInvites() {
+  return apiRequest('/api/v1/team/invites/received')
 }
 
-export function getSentTeamInvites(email) {
-  return apiRequest(`/api/v1/team/invites/sent?email=${encodeURIComponent(email)}`)
+export function getSentTeamInvites() {
+  return apiRequest('/api/v1/team/invites/sent')
 }
 
 export function acceptTeamInvite(inviteId, email) {
@@ -546,55 +531,52 @@ export function declineTeamInvite(inviteId, email) {
   })
 }
 
-export function deleteTeamNotification(inviteId, email) {
-  return apiRequest(`/api/v1/team/invites/${inviteId}/notification?email=${encodeURIComponent(email)}`, {
+export function deleteTeamNotification(inviteId) {
+  return apiRequest(`/api/v1/team/invites/${inviteId}/notification`, {
     method: 'DELETE',
   })
 }
 
-export function getTicketAssignmentNotifications(email) {
-  return apiRequest(`/api/v1/notifications/ticket-assignments?email=${encodeURIComponent(email)}`)
+export function getTicketAssignmentNotifications() {
+  return apiRequest('/api/v1/notifications/ticket-assignments')
 }
 
-export function deleteTicketAssignmentNotification(notificationId, email) {
-  return apiRequest(
-    `/api/v1/notifications/ticket-assignments/${notificationId}?email=${encodeURIComponent(email)}`,
-    {
-      method: 'DELETE',
-    }
-  )
+export function deleteTicketAssignmentNotification(notificationId) {
+  return apiRequest(`/api/v1/notifications/ticket-assignments/${notificationId}`, {
+    method: 'DELETE',
+  })
 }
 
-export function getTicketTransferNotifications(email) {
-  return apiRequest(`/api/v1/notifications/ticket-transfers?email=${encodeURIComponent(email)}`)
+export function getTicketTransferNotifications() {
+  return apiRequest('/api/v1/notifications/ticket-transfers')
 }
 
-export function getTicketClosureNotifications(email) {
-  return apiRequest(`/api/v1/notifications/ticket-closures?email=${encodeURIComponent(email)}`)
+export function getTicketClosureNotifications() {
+  return apiRequest('/api/v1/notifications/ticket-closures')
 }
 
-export function getTicketReplyNotifications(email) {
-  return apiRequest(`/api/v1/notifications/ticket-replies?email=${encodeURIComponent(email)}`)
+export function getTicketReplyNotifications() {
+  return apiRequest('/api/v1/notifications/ticket-replies')
 }
 
-export function getTeamMembershipNotifications(email) {
-  return apiRequest(`/api/v1/notifications/team-memberships?email=${encodeURIComponent(email)}`)
+export function getTeamMembershipNotifications() {
+  return apiRequest('/api/v1/notifications/team-memberships')
 }
 
-export function getCalendarReminderNotifications(email) {
-  return apiRequest(`/api/v1/notifications/calendar-reminders?email=${encodeURIComponent(email)}`)
+export function getCalendarReminderNotifications() {
+  return apiRequest('/api/v1/notifications/calendar-reminders')
 }
 
-export function getCompanyPartnershipNotifications(email) {
-  return apiRequest(`/api/v1/notifications/company-partnerships?email=${encodeURIComponent(email)}`)
+export function getCompanyPartnershipNotifications() {
+  return apiRequest('/api/v1/notifications/company-partnerships')
 }
 
-export function getCompanyAccessRequestNotifications(email) {
-  return apiRequest(`/api/v1/notifications/company-access-requests?email=${encodeURIComponent(email)}`)
+export function getCompanyAccessRequestNotifications() {
+  return apiRequest('/api/v1/notifications/company-access-requests')
 }
 
-export function getCompanyInviteNotifications(email) {
-  return apiRequest(`/api/v1/notifications/company-invites?email=${encodeURIComponent(email)}`)
+export function getCompanyInviteNotifications() {
+  return apiRequest('/api/v1/notifications/company-invites')
 }
 
 export function acceptTicketTransferNotification(notificationId, email) {
@@ -639,58 +621,40 @@ export function declineCompanyInviteNotification(requestId, email) {
   })
 }
 
-export function deleteTicketTransferNotification(notificationId, email) {
-  return apiRequest(
-    `/api/v1/notifications/ticket-transfers/${notificationId}?email=${encodeURIComponent(email)}`,
-    {
-      method: 'DELETE',
-    }
-  )
+export function deleteTicketTransferNotification(notificationId) {
+  return apiRequest(`/api/v1/notifications/ticket-transfers/${notificationId}`, {
+    method: 'DELETE',
+  })
 }
 
-export function deleteTicketClosureNotification(notificationId, email) {
-  return apiRequest(
-    `/api/v1/notifications/ticket-closures/${notificationId}?email=${encodeURIComponent(email)}`,
-    {
-      method: 'DELETE',
-    }
-  )
+export function deleteTicketClosureNotification(notificationId) {
+  return apiRequest(`/api/v1/notifications/ticket-closures/${notificationId}`, {
+    method: 'DELETE',
+  })
 }
 
-export function deleteTicketReplyNotification(notificationId, email) {
-  return apiRequest(
-    `/api/v1/notifications/ticket-replies/${notificationId}?email=${encodeURIComponent(email)}`,
-    {
-      method: 'DELETE',
-    }
-  )
+export function deleteTicketReplyNotification(notificationId) {
+  return apiRequest(`/api/v1/notifications/ticket-replies/${notificationId}`, {
+    method: 'DELETE',
+  })
 }
 
-export function deleteTeamMembershipNotification(notificationId, email) {
-  return apiRequest(
-    `/api/v1/notifications/team-memberships/${notificationId}?email=${encodeURIComponent(email)}`,
-    {
-      method: 'DELETE',
-    }
-  )
+export function deleteTeamMembershipNotification(notificationId) {
+  return apiRequest(`/api/v1/notifications/team-memberships/${notificationId}`, {
+    method: 'DELETE',
+  })
 }
 
-export function deleteCalendarReminderNotification(notificationId, email) {
-  return apiRequest(
-    `/api/v1/notifications/calendar-reminders/${notificationId}?email=${encodeURIComponent(email)}`,
-    {
-      method: 'DELETE',
-    }
-  )
+export function deleteCalendarReminderNotification(notificationId) {
+  return apiRequest(`/api/v1/notifications/calendar-reminders/${notificationId}`, {
+    method: 'DELETE',
+  })
 }
 
-export function deleteCompanyPartnershipNotification(notificationId, email) {
-  return apiRequest(
-    `/api/v1/notifications/company-partnerships/${notificationId}?email=${encodeURIComponent(email)}`,
-    {
-      method: 'DELETE',
-    }
-  )
+export function deleteCompanyPartnershipNotification(notificationId) {
+  return apiRequest(`/api/v1/notifications/company-partnerships/${notificationId}`, {
+    method: 'DELETE',
+  })
 }
 
 export function updateTeamMemberSectors(userId, payload) {
@@ -700,8 +664,8 @@ export function updateTeamMemberSectors(userId, payload) {
   })
 }
 
-export function removeTeamMemberFromCompany(userId, email) {
-  return apiRequest(`/api/v1/team/members/${userId}?email=${encodeURIComponent(email)}`, {
+export function removeTeamMemberFromCompany(userId) {
+  return apiRequest(`/api/v1/team/members/${userId}`, {
     method: 'DELETE',
   })
 }
@@ -713,10 +677,10 @@ export function startWhatsappSession(payload) {
   })
 }
 
-export function getWhatsappSessionStatus(adminEmail) {
-  return apiRequest(`/api/v1/whatsapp/session/status?adminEmail=${encodeURIComponent(adminEmail)}`)
+export function getWhatsappSessionStatus() {
+  return apiRequest('/api/v1/whatsapp/session/status')
 }
 
-export function getWhatsappQrCodeViewUrl(adminEmail) {
-  return `${API_BASE_URL}/api/v1/whatsapp/session/qrcode/view?adminEmail=${encodeURIComponent(adminEmail)}`
+export function getWhatsappQrCodeViewUrl() {
+  return `${API_BASE_URL}/api/v1/whatsapp/session/qrcode/view`
 }

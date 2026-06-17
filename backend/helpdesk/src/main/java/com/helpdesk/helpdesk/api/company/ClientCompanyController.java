@@ -13,8 +13,10 @@ import com.helpdesk.helpdesk.dto.company.ClientCompanyRegistrationResponse;
 import com.helpdesk.helpdesk.dto.company.ClientCompanyLookupResponse;
 import com.helpdesk.helpdesk.dto.company.CreateClientCompanyRequest;
 import com.helpdesk.helpdesk.dto.company.LinkExistingClientCompanyRequest;
+import com.helpdesk.helpdesk.service.AppSessionService;
 import com.helpdesk.helpdesk.service.ClientCompanyRegistrationService;
 
+import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 
 @RestController
@@ -22,27 +24,48 @@ import jakarta.validation.Valid;
 public class ClientCompanyController {
 
 	private final ClientCompanyRegistrationService clientCompanyRegistrationService;
+	private final AppSessionService appSessionService;
 
-	public ClientCompanyController(ClientCompanyRegistrationService clientCompanyRegistrationService) {
+	public ClientCompanyController(
+		ClientCompanyRegistrationService clientCompanyRegistrationService,
+		AppSessionService appSessionService
+	) {
 		this.clientCompanyRegistrationService = clientCompanyRegistrationService;
+		this.appSessionService = appSessionService;
 	}
 
 	@PostMapping
 	@ResponseStatus(HttpStatus.CREATED)
-	public ClientCompanyRegistrationResponse create(@Valid @RequestBody CreateClientCompanyRequest request) {
-		return clientCompanyRegistrationService.register(request);
+	public ClientCompanyRegistrationResponse create(
+		@Valid @RequestBody CreateClientCompanyRequest request,
+		HttpSession session
+	) {
+		return clientCompanyRegistrationService.register(
+			new CreateClientCompanyRequest(
+				request.companyName(),
+				request.companyDocument(),
+				request.companyEmail(),
+				request.companyPhoneNumber(),
+				appSessionService.requireCurrentEmail(session)
+			)
+		);
 	}
 
 	@GetMapping("/lookup")
 	public ClientCompanyLookupResponse lookup(
 		@RequestParam String companyDocument,
-		@RequestParam String createdByEmail
+		HttpSession session
 	) {
-		return clientCompanyRegistrationService.lookup(companyDocument, createdByEmail);
+		return clientCompanyRegistrationService.lookup(companyDocument, appSessionService.requireCurrentEmail(session));
 	}
 
 	@PostMapping("/link-existing")
-	public ClientCompanyRegistrationResponse linkExisting(@Valid @RequestBody LinkExistingClientCompanyRequest request) {
-		return clientCompanyRegistrationService.linkExisting(request);
+	public ClientCompanyRegistrationResponse linkExisting(
+		@Valid @RequestBody LinkExistingClientCompanyRequest request,
+		HttpSession session
+	) {
+		return clientCompanyRegistrationService.linkExisting(
+			new LinkExistingClientCompanyRequest(request.companyOwnerId(), appSessionService.requireCurrentEmail(session))
+		);
 	}
 }

@@ -33,6 +33,7 @@ import {
   declineTicketTransferNotification,
   declineTeamInvite,
   getCompanyPartnershipTicketTargets,
+  getAuthMe,
   getProfile,
   getMyCompanyPartnerships,
   getCalendarReminderNotifications,
@@ -57,6 +58,7 @@ import {
   removeTeamMemberFromCompany,
   resetPasswordWithToken,
   requestTicketTransfer,
+  logoutCurrentUser,
   searchCompanyPartnershipTargets,
   unlinkCompanyPartnership,
   updateTicketTitle as updateTicketTitleRequest,
@@ -107,7 +109,6 @@ const dashboardPageComponents = {
   team: Team,
 }
 
-const SESSION_STORAGE_KEY = 'helpdesk.session'
 const AUTO_REFRESH_INTERVAL_MS = 5000
 const DEFAULT_DOCUMENT_TITLE = 'ChamAqui Helpdesk'
 
@@ -381,8 +382,8 @@ function shouldAutoDeleteNotificationAfterView(notification) {
   return true
 }
 
-async function fetchDashboardBundle(email) {
-  const nextProfile = await getProfile(email)
+async function fetchDashboardBundle() {
+  const nextProfile = await getProfile()
   const normalizedProfile = normalizeCurrentUser(nextProfile)
   const currentRole = getPrimaryRole(normalizedProfile.roles)
   const canManageCompanyRequests = currentRole === 'admin'
@@ -413,29 +414,25 @@ async function fetchDashboardBundle(email) {
     nextCompanyAccessRequestNotifications,
     nextCompanyInviteNotifications,
   ] = await Promise.all([
-    safeRequest(() => getTicketSummary(email), null),
-    safeRequest(() => getSectors(email), []),
-    safeRequest(() => getCompanyPartnershipTicketTargets(email), []),
-    safeRequest(() => getTeamMembers(email), []),
-    safeRequest(() => getReceivedTeamInvites(email), []),
-    safeRequest(() => getSentTeamInvites(email), []),
-    canManageCompanyRequests ? safeRequest(() => getMyCompanyPartnerships(email), []) : Promise.resolve([]),
-    safeRequest(() => getTicketAssignmentNotifications(email), []),
-    safeRequest(() => getTicketTransferNotifications(email), []),
-    safeRequest(() => getTicketClosureNotifications(email), []),
-    safeRequest(() => getTicketReplyNotifications(email), []),
-    safeRequest(() => getTeamMembershipNotifications(email), []),
-    safeRequest(() => getCalendarReminderNotifications(email), []),
-    safeRequest(() => getCompanyPartnershipNotifications(email), []),
+    safeRequest(() => getTicketSummary(), null),
+    safeRequest(() => getSectors(), []),
+    safeRequest(() => getCompanyPartnershipTicketTargets(), []),
+    safeRequest(() => getTeamMembers(), []),
+    safeRequest(() => getReceivedTeamInvites(), []),
+    safeRequest(() => getSentTeamInvites(), []),
+    canManageCompanyRequests ? safeRequest(() => getMyCompanyPartnerships(), []) : Promise.resolve([]),
+    safeRequest(() => getTicketAssignmentNotifications(), []),
+    safeRequest(() => getTicketTransferNotifications(), []),
+    safeRequest(() => getTicketClosureNotifications(), []),
+    safeRequest(() => getTicketReplyNotifications(), []),
+    safeRequest(() => getTeamMembershipNotifications(), []),
+    safeRequest(() => getCalendarReminderNotifications(), []),
+    safeRequest(() => getCompanyPartnershipNotifications(), []),
     canManageCompanyRequests
-      ? safeRequest(() => getCompanyAccessRequestNotifications(email), [])
+      ? safeRequest(() => getCompanyAccessRequestNotifications(), [])
       : Promise.resolve([]),
-    safeRequest(() => getCompanyInviteNotifications(email), []),
+    safeRequest(() => getCompanyInviteNotifications(), []),
   ])
-
-  // #region debug-point F:dashboard-notification-bundle
-  fetch("http://127.0.0.1:7777/event",{method:"POST",body:JSON.stringify({sessionId:"whatsapp-reply-notify",runId:"pre",hypothesisId:"F",location:"App.jsx:403",msg:"[DEBUG] dashboard bundle notification counts fetched",data:{email,ticketAssignmentCount:Array.isArray(nextTicketNotifications)?nextTicketNotifications.length:-1,ticketTransferCount:Array.isArray(nextTicketTransferNotifications)?nextTicketTransferNotifications.length:-1,ticketClosureCount:Array.isArray(nextTicketClosureNotifications)?nextTicketClosureNotifications.length:-1,ticketReplyCount:Array.isArray(nextTicketReplyNotifications)?nextTicketReplyNotifications.length:-1},ts:Date.now()})}).catch(()=>{});
-  // #endregion
 
   return {
     profile: normalizedProfile,
@@ -496,20 +493,6 @@ function getPrimaryRole(roles = []) {
   }
 
   return 'user'
-}
-
-function loadStoredSession() {
-  try {
-    const rawSession = window.localStorage.getItem(SESSION_STORAGE_KEY)
-
-    if (!rawSession) {
-      return null
-    }
-
-    return normalizeCurrentUser(JSON.parse(rawSession))
-  } catch {
-    return null
-  }
 }
 
 function TicketConversationRoute({
@@ -637,8 +620,9 @@ function App() {
   const navigate = useNavigate()
   const location = useLocation()
   const [selectedTicket, setSelectedTicket] = useState(null)
-  const [authUser, setAuthUser] = useState(loadStoredSession)
-  const [currentUserRole, setCurrentUserRole] = useState(() => getPrimaryRole(loadStoredSession()?.roles))
+  const [authUser, setAuthUser] = useState(null)
+  const [isSessionBootstrapping, setIsSessionBootstrapping] = useState(true)
+  const [currentUserRole, setCurrentUserRole] = useState('user')
   const [createdSectors, setCreatedSectors] = useState([])
   const [ticketTargetSectors, setTicketTargetSectors] = useState([])
   const [teamMembers, setTeamMembers] = useState([])
@@ -647,7 +631,7 @@ function App() {
   const [companyPartnerships, setCompanyPartnerships] = useState([])
   const [ticketNotifications, setTicketNotifications] = useState([])
   const [appFeedbackNotifications, setAppFeedbackNotifications] = useState([])
-  const [profile, setProfile] = useState(() => loadStoredSession())
+  const [profile, setProfile] = useState(null)
   const [isProfileLoading, setIsProfileLoading] = useState(false)
   const [profileError, setProfileError] = useState('')
   const [ticketSummary, setTicketSummary] = useState(null)
@@ -796,13 +780,36 @@ function App() {
   }
 
   useEffect(() => {
-    if (authUser) {
-      window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(authUser))
-      return
+    let isCancelled = false
+
+    async function bootstrapSession() {
+      try {
+        const currentSessionUser = await getAuthMe()
+        if (isCancelled) {
+          return
+        }
+        const normalizedUser = normalizeCurrentUser(currentSessionUser)
+        setAuthUser(normalizedUser)
+        setCurrentUserRole(getPrimaryRole(normalizedUser?.roles))
+      } catch {
+        if (!isCancelled) {
+          setAuthUser(null)
+          setProfile(null)
+          setCurrentUserRole('user')
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsSessionBootstrapping(false)
+        }
+      }
     }
 
-    window.localStorage.removeItem(SESSION_STORAGE_KEY)
-  }, [authUser])
+    bootstrapSession()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     if (typeof document === 'undefined') {
@@ -849,7 +856,7 @@ function App() {
       setTeamDataError('')
 
       try {
-        const bundle = await fetchDashboardBundle(authUser.email)
+        const bundle = await fetchDashboardBundle()
 
         if (isCancelled) {
           return
@@ -858,6 +865,11 @@ function App() {
         applyDashboardBundle(bundle)
       } catch (error) {
         if (isCancelled) {
+          return
+        }
+
+        if (error?.status === 401) {
+          handleNavigateLogin()
           return
         }
 
@@ -887,19 +899,18 @@ function App() {
     let isCancelled = false
 
     async function refreshBundleSilently() {
-      if (document.visibilityState === 'hidden') {
-        return
-      }
-
       try {
-        const bundle = await fetchDashboardBundle(authUser.email)
+        const bundle = await fetchDashboardBundle()
 
         if (isCancelled) {
           return
         }
 
         applyDashboardBundle(bundle)
-      } catch {
+      } catch (error) {
+        if (error?.status === 401) {
+          handleNavigateLogin()
+        }
         // Mantem os dados atuais quando a atualizacao silenciosa falha.
       }
     }
@@ -927,6 +938,7 @@ function App() {
 
   function handleAuthenticatedUser(user) {
     const normalizedUser = normalizeCurrentUser(user)
+    setIsSessionBootstrapping(false)
     setAuthUser(normalizedUser)
     setProfile(normalizedUser)
     setProfileError('')
@@ -936,6 +948,7 @@ function App() {
   }
 
   function handleNavigateLogin() {
+    void logoutCurrentUser().catch(() => {})
     setAuthUser(null)
     setProfile(null)
     setProfileError('')
@@ -971,8 +984,8 @@ function App() {
     })
   }
 
-  async function refreshDashboardData(email = currentUserEmail) {
-    if (!email) {
+  async function refreshDashboardData() {
+    if (!currentUserEmail) {
       return
     }
 
@@ -980,7 +993,7 @@ function App() {
     setTeamDataError('')
 
     try {
-      const bundle = await fetchDashboardBundle(email)
+      const bundle = await fetchDashboardBundle()
       applyDashboardBundle(bundle)
     } catch (error) {
       setTeamDataError(error.message)
@@ -1605,6 +1618,10 @@ function App() {
         userRole={effectiveUserRole}
       />
     )
+  }
+
+  if (isSessionBootstrapping) {
+    return <div className="app-shell" />
   }
 
   return (

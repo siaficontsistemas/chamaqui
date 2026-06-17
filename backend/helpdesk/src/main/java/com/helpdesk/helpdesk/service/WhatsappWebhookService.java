@@ -293,9 +293,6 @@ public class WhatsappWebhookService {
 				return;
 			}
 			if (!normalizedBody.isBlank() || !incomingAttachments.isEmpty()) {
-				// #region debug-point A:webhook-active-ticket
-				try { java.net.http.HttpClient.newHttpClient().sendAsync(java.net.http.HttpRequest.newBuilder(java.net.URI.create("http://127.0.0.1:7777/event")).header("Content-Type", "application/json").POST(java.net.http.HttpRequest.BodyPublishers.ofString("{\"sessionId\":\"whatsapp-reply-notify\",\"runId\":\"pre\",\"hypothesisId\":\"A\",\"location\":\"WhatsappWebhookService:295\",\"msg\":\"[DEBUG] incoming whatsapp message routed to active ticket\",\"data\":{\"ticketId\":\"" + conversation.getActiveTicket().getId() + "\",\"bodyBlank\":" + normalizedBody.isBlank() + ",\"attachmentCount\":" + incomingAttachments.size() + "},\"ts\":" + System.currentTimeMillis() + "}")).build(), java.net.http.HttpResponse.BodyHandlers.discarding()); } catch (Exception ignored) {}
-				// #endregion
 				ticketService.addWhatsappMessage(conversation.getActiveTicket().getId(), normalizedBody, incomingAttachments);
 			}
 			return;

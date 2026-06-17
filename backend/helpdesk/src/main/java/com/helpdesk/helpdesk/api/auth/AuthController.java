@@ -16,9 +16,11 @@ import com.helpdesk.helpdesk.dto.auth.RegisterInviteResponse;
 import com.helpdesk.helpdesk.dto.auth.RegisterRequest;
 import com.helpdesk.helpdesk.dto.auth.ResetPasswordRequest;
 import com.helpdesk.helpdesk.dto.common.OperationMessageResponse;
+import com.helpdesk.helpdesk.service.AppSessionService;
 import com.helpdesk.helpdesk.service.AuthService;
 import com.helpdesk.helpdesk.service.PasswordRecoveryService;
 
+import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 
 @RestController
@@ -26,22 +28,39 @@ import jakarta.validation.Valid;
 public class AuthController {
 
 	private final AuthService authService;
+	private final AppSessionService appSessionService;
 	private final PasswordRecoveryService passwordRecoveryService;
 
-	public AuthController(AuthService authService, PasswordRecoveryService passwordRecoveryService) {
+	public AuthController(
+		AuthService authService,
+		AppSessionService appSessionService,
+		PasswordRecoveryService passwordRecoveryService
+	) {
 		this.authService = authService;
+		this.appSessionService = appSessionService;
 		this.passwordRecoveryService = passwordRecoveryService;
 	}
 
 	@PostMapping("/register")
 	@ResponseStatus(HttpStatus.CREATED)
-	public AuthResponse register(@Valid @RequestBody RegisterRequest request) {
-		return authService.register(request);
+	public AuthResponse register(@Valid @RequestBody RegisterRequest request, HttpSession session) {
+		return authService.register(request, session);
 	}
 
 	@PostMapping("/login")
-	public AuthResponse login(@Valid @RequestBody LoginRequest request) {
-		return authService.login(request);
+	public AuthResponse login(@Valid @RequestBody LoginRequest request, HttpSession session) {
+		return authService.login(request, session);
+	}
+
+	@GetMapping("/me")
+	public AuthResponse me(HttpSession session) {
+		return appSessionService.me(session);
+	}
+
+	@PostMapping("/logout")
+	public OperationMessageResponse logout(HttpSession session) {
+		appSessionService.logout(session);
+		return new OperationMessageResponse("Sessão encerrada com sucesso.");
 	}
 
 	@GetMapping("/register-invite")

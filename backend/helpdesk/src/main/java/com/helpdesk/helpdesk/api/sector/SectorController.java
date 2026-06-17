@@ -13,8 +13,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.helpdesk.helpdesk.dto.sector.CreateSectorRequest;
 import com.helpdesk.helpdesk.dto.sector.SectorResponse;
+import com.helpdesk.helpdesk.service.AppSessionService;
 import com.helpdesk.helpdesk.service.SectorService;
 
+import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 
 @RestController
@@ -22,19 +24,27 @@ import jakarta.validation.Valid;
 public class SectorController {
 
 	private final SectorService sectorService;
+	private final AppSessionService appSessionService;
 
-	public SectorController(SectorService sectorService) {
+	public SectorController(SectorService sectorService, AppSessionService appSessionService) {
 		this.sectorService = sectorService;
+		this.appSessionService = appSessionService;
 	}
 
 	@GetMapping
-	public List<SectorResponse> list(@RequestParam(required = false) String email) {
-		return sectorService.listVisible(email);
+	public List<SectorResponse> list(HttpSession session) {
+		return sectorService.listVisible(appSessionService.requireCurrentEmail(session));
 	}
 
 	@PostMapping
 	@ResponseStatus(HttpStatus.CREATED)
-	public SectorResponse create(@Valid @RequestBody CreateSectorRequest request) {
-		return sectorService.create(request);
+	public SectorResponse create(@Valid @RequestBody CreateSectorRequest request, HttpSession session) {
+		return sectorService.create(
+			new CreateSectorRequest(
+				request.name(),
+				request.description(),
+				appSessionService.requireCurrentEmail(session)
+			)
+		);
 	}
 }

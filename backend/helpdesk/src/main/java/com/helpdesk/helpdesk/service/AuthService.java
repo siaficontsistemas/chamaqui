@@ -22,6 +22,8 @@ import com.helpdesk.helpdesk.repository.RoleRepository;
 import com.helpdesk.helpdesk.repository.UserRepository;
 import com.helpdesk.helpdesk.util.BrazilianDocumentValidator;
 
+import jakarta.servlet.http.HttpSession;
+
 @Service
 public class AuthService {
 
@@ -36,6 +38,7 @@ public class AuthService {
 	private final TenantAccessService tenantAccessService;
 	private final ScopedUserLookupService scopedUserLookupService;
 	private final CompanyPartnershipRepository companyPartnershipRepository;
+	private final AppSessionService appSessionService;
 
 	public AuthService(
 		UserRepository userRepository,
@@ -48,7 +51,8 @@ public class AuthService {
 		CompanyProvisioningService companyProvisioningService,
 		TenantAccessService tenantAccessService,
 		ScopedUserLookupService scopedUserLookupService,
-		CompanyPartnershipRepository companyPartnershipRepository
+		CompanyPartnershipRepository companyPartnershipRepository,
+		AppSessionService appSessionService
 	) {
 		this.userRepository = userRepository;
 		this.roleRepository = roleRepository;
@@ -61,10 +65,11 @@ public class AuthService {
 		this.tenantAccessService = tenantAccessService;
 		this.scopedUserLookupService = scopedUserLookupService;
 		this.companyPartnershipRepository = companyPartnershipRepository;
+		this.appSessionService = appSessionService;
 	}
 
 	@Transactional
-	public AuthResponse register(RegisterRequest request) {
+	public AuthResponse register(RegisterRequest request, HttpSession session) {
 		boolean isAdminRegistration = "admin".equalsIgnoreCase(request.role());
 		CompanyType companyType = CompanyType.fromValue(request.companyType());
 		String normalizedEmail = request.email().trim().toLowerCase(Locale.ROOT);
@@ -205,6 +210,9 @@ public class AuthService {
 			}
 		}
 
+		if (savedUser.getStatus() == UserStatus.ACTIVE) {
+			return appSessionService.login(savedUser, session);
+		}
 		return userMapper.toAuthResponse(savedUser);
 	}
 
@@ -214,7 +222,7 @@ public class AuthService {
 	}
 
 	@Transactional
-	public AuthResponse login(LoginRequest request) {
+	public AuthResponse login(LoginRequest request, HttpSession session) {
 		User user = scopedUserLookupService.resolveLoginCandidate(request.email().trim())
 			.orElseThrow(() -> new NotFoundException("Usuário não encontrado."));
 
@@ -236,8 +244,7 @@ public class AuthService {
 			throw new IllegalArgumentException("O usuário não está ativo para acessar o sistema.");
 		}
 
-		user.setLastLoginAt(java.time.OffsetDateTime.now());
-		return userMapper.toAuthResponse(user);
+		return appSessionService.login(user, session);
 	}
 
 	private String blankToNull(String value) {

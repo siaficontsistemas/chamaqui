@@ -5,18 +5,19 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-import com.helpdesk.helpdesk.dto.company.CompanyLogoResponse;
 import com.helpdesk.helpdesk.dto.common.OperationMessageResponse;
+import com.helpdesk.helpdesk.dto.company.CompanyLogoResponse;
 import com.helpdesk.helpdesk.dto.profile.ChangePasswordRequest;
 import com.helpdesk.helpdesk.dto.profile.ProfileResponse;
 import com.helpdesk.helpdesk.dto.profile.UpdateProfileRequest;
+import com.helpdesk.helpdesk.service.AppSessionService;
 import com.helpdesk.helpdesk.service.ProfileService;
 
+import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 
 @RestController
@@ -24,46 +25,66 @@ import jakarta.validation.Valid;
 public class ProfileController {
 
 	private final ProfileService profileService;
+	private final AppSessionService appSessionService;
 
-	public ProfileController(ProfileService profileService) {
+	public ProfileController(ProfileService profileService, AppSessionService appSessionService) {
 		this.profileService = profileService;
+		this.appSessionService = appSessionService;
 	}
 
 	@GetMapping
-	public ProfileResponse getProfile(@RequestParam String email) {
-		return profileService.getByEmail(email);
+	public ProfileResponse getProfile(HttpSession session) {
+		return profileService.getByEmail(appSessionService.requireCurrentEmail(session));
 	}
 
 	@PutMapping
-	public ProfileResponse updateProfile(@Valid @RequestBody UpdateProfileRequest request) {
-		return profileService.update(request);
+	public ProfileResponse updateProfile(@Valid @RequestBody UpdateProfileRequest request, HttpSession session) {
+		return profileService.update(
+			new UpdateProfileRequest(
+				appSessionService.requireCurrentEmail(session),
+				request.fullName(),
+				request.email(),
+				request.phoneNumber(),
+				request.companyName(),
+				request.companyDocument()
+			)
+		);
 	}
 
 	@PutMapping("/password")
-	public OperationMessageResponse changePassword(@Valid @RequestBody ChangePasswordRequest request) {
-		return profileService.changePassword(request);
+	public OperationMessageResponse changePassword(
+		@Valid @RequestBody ChangePasswordRequest request,
+		HttpSession session
+	) {
+		return profileService.changePassword(
+			new ChangePasswordRequest(
+				appSessionService.requireCurrentEmail(session),
+				request.newPassword(),
+				request.confirmPassword()
+			)
+		);
 	}
 
 	@PutMapping("/company/logo")
 	public CompanyLogoResponse updateCompanyLogo(
-		@RequestParam String email,
-		@RequestPart("file") MultipartFile file
+		@RequestPart("file") MultipartFile file,
+		HttpSession session
 	) {
-		return profileService.updateCompanyLogo(email, file);
+		return profileService.updateCompanyLogo(appSessionService.requireCurrentEmail(session), file);
 	}
 
 	@DeleteMapping("/company/logo")
-	public CompanyLogoResponse deleteCompanyLogo(@RequestParam String email) {
-		return profileService.deleteCompanyLogo(email);
+	public CompanyLogoResponse deleteCompanyLogo(HttpSession session) {
+		return profileService.deleteCompanyLogo(appSessionService.requireCurrentEmail(session));
 	}
 
 	@DeleteMapping
-	public void deleteProfile(@RequestParam String email) {
-		profileService.deleteByEmail(email);
+	public void deleteProfile(HttpSession session) {
+		profileService.deleteByEmail(appSessionService.requireCurrentEmail(session));
 	}
 
 	@DeleteMapping("/company")
-	public void deleteCompany(@RequestParam String email) {
-		profileService.deleteCompanyByEmail(email);
+	public void deleteCompany(HttpSession session) {
+		profileService.deleteCompanyByEmail(appSessionService.requireCurrentEmail(session));
 	}
 }

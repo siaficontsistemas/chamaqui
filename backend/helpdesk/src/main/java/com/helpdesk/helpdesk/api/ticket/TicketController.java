@@ -32,8 +32,10 @@ import com.helpdesk.helpdesk.dto.ticket.TicketResponse;
 import com.helpdesk.helpdesk.dto.ticket.TicketSummaryResponse;
 import com.helpdesk.helpdesk.dto.ticket.TicketTransferCandidateResponse;
 import com.helpdesk.helpdesk.dto.ticket.UpdateTicketTitleRequest;
+import com.helpdesk.helpdesk.service.AppSessionService;
 import com.helpdesk.helpdesk.service.TicketService;
 
+import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 
 @RestController
@@ -41,59 +43,63 @@ import jakarta.validation.Valid;
 public class TicketController {
 
 	private final TicketService ticketService;
+	private final AppSessionService appSessionService;
 
-	public TicketController(TicketService ticketService) {
+	public TicketController(TicketService ticketService, AppSessionService appSessionService) {
 		this.ticketService = ticketService;
+		this.appSessionService = appSessionService;
 	}
 
 	@GetMapping
 	public List<TicketResponse> list(
-		@RequestParam String email,
-		@RequestParam(required = false) String status
+		@RequestParam(required = false) String status,
+		HttpSession session
 	) {
-		return ticketService.list(email, status);
+		return ticketService.list(appSessionService.requireCurrentEmail(session), status);
 	}
 
 	@GetMapping("/summary")
-	public TicketSummaryResponse summary(@RequestParam String email) {
-		return ticketService.summary(email);
+	public TicketSummaryResponse summary(HttpSession session) {
+		return ticketService.summary(appSessionService.requireCurrentEmail(session));
 	}
 
 	@GetMapping("/{ticketId}")
-	public TicketResponse get(@PathVariable UUID ticketId, @RequestParam String email) {
-		return ticketService.get(ticketId, email);
+	public TicketResponse get(@PathVariable UUID ticketId, HttpSession session) {
+		return ticketService.get(ticketId, appSessionService.requireCurrentEmail(session));
 	}
 
 	@GetMapping("/{ticketId}/messages")
 	public List<TicketMessageResponse> listMessages(
 		@PathVariable UUID ticketId,
-		@RequestParam String email
+		HttpSession session
 	) {
-		return ticketService.listMessages(ticketId, email);
+		return ticketService.listMessages(ticketId, appSessionService.requireCurrentEmail(session));
 	}
 
 	@PostMapping
 	@ResponseStatus(HttpStatus.CREATED)
-	public TicketResponse create(@Valid @RequestBody CreateTicketRequest request) {
-		return ticketService.create(request, List.of());
+	public TicketResponse create(@Valid @RequestBody CreateTicketRequest request, HttpSession session) {
+		return ticketService.create(withRequesterEmail(request, session), List.of());
 	}
 
 	@PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
 	@ResponseStatus(HttpStatus.CREATED)
 	public TicketResponse createWithAttachments(
 		@Valid @RequestPart("payload") CreateTicketRequest request,
-		@RequestPart(name = "files", required = false) List<MultipartFile> files
+		@RequestPart(name = "files", required = false) List<MultipartFile> files,
+		HttpSession session
 	) {
-		return ticketService.create(request, files);
+		return ticketService.create(withRequesterEmail(request, session), files);
 	}
 
 	@PostMapping("/{ticketId}/messages")
 	@ResponseStatus(HttpStatus.CREATED)
 	public TicketMessageResponse addMessage(
 		@PathVariable UUID ticketId,
-		@Valid @RequestBody CreateTicketMessageRequest request
+		@Valid @RequestBody CreateTicketMessageRequest request,
+		HttpSession session
 	) {
-		return ticketService.addMessage(ticketId, request, List.of());
+		return ticketService.addMessage(ticketId, withAuthorEmail(request, session), List.of());
 	}
 
 	@PostMapping(path = "/{ticketId}/messages", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -101,29 +107,31 @@ public class TicketController {
 	public TicketMessageResponse addMessageWithAttachments(
 		@PathVariable UUID ticketId,
 		@Valid @RequestPart("payload") CreateTicketMessageRequest request,
-		@RequestPart(name = "files", required = false) List<MultipartFile> files
+		@RequestPart(name = "files", required = false) List<MultipartFile> files,
+		HttpSession session
 	) {
-		return ticketService.addMessage(ticketId, request, files);
+		return ticketService.addMessage(ticketId, withAuthorEmail(request, session), files);
 	}
 
 	@PutMapping("/{ticketId}/title")
 	public TicketResponse updateTitle(
 		@PathVariable UUID ticketId,
-		@Valid @RequestBody UpdateTicketTitleRequest request
+		@Valid @RequestBody UpdateTicketTitleRequest request,
+		HttpSession session
 	) {
-		return ticketService.updateTitle(ticketId, request);
+		return ticketService.updateTitle(ticketId, withAuthorEmail(request, session));
 	}
 
 	@GetMapping("/{ticketId}/attachments/{attachmentId}")
 	public ResponseEntity<Resource> downloadAttachment(
 		@PathVariable UUID ticketId,
 		@PathVariable UUID attachmentId,
-		@RequestParam String email
+		HttpSession session
 	) {
 		TicketService.AttachmentDownload attachment = ticketService.downloadAttachment(
 			ticketId,
 			attachmentId,
-			email
+			appSessionService.requireCurrentEmail(session)
 		);
 
 		return ResponseEntity.ok()
@@ -142,30 +150,67 @@ public class TicketController {
 	@PostMapping("/{ticketId}/close")
 	public TicketResponse closeTicket(
 		@PathVariable UUID ticketId,
-		@Valid @RequestBody CloseTicketRequest request
+		@Valid @RequestBody CloseTicketRequest request,
+		HttpSession session
 	) {
-		return ticketService.closeTicket(ticketId, request);
+		return ticketService.closeTicket(ticketId, withAuthorEmail(session));
 	}
 
 	@PostMapping("/delete")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
-	public void deleteTickets(@Valid @RequestBody DeleteTicketsRequest request) {
-		ticketService.deleteTickets(request);
+	public void deleteTickets(@Valid @RequestBody DeleteTicketsRequest request, HttpSession session) {
+		ticketService.deleteTickets(withAuthorEmail(request, session));
 	}
 
 	@GetMapping("/{ticketId}/transfer-candidates")
 	public List<TicketTransferCandidateResponse> listTransferCandidates(
 		@PathVariable UUID ticketId,
-		@RequestParam String email
+		HttpSession session
 	) {
-		return ticketService.listTransferCandidates(ticketId, email);
+		return ticketService.listTransferCandidates(ticketId, appSessionService.requireCurrentEmail(session));
 	}
 
 	@PostMapping("/{ticketId}/transfer")
 	public TicketResponse requestTransfer(
 		@PathVariable UUID ticketId,
-		@Valid @RequestBody RequestTicketTransferRequest request
+		@Valid @RequestBody RequestTicketTransferRequest request,
+		HttpSession session
 	) {
-		return ticketService.requestTransfer(ticketId, request);
+		return ticketService.requestTransfer(ticketId, withAuthorEmail(request, session));
+	}
+
+	private CreateTicketRequest withRequesterEmail(CreateTicketRequest request, HttpSession session) {
+		return new CreateTicketRequest(
+			request.description(),
+			request.companyOwnerId(),
+			request.sectorId(),
+			request.assignedToUserId(),
+			request.priorityCode(),
+			appSessionService.requireCurrentEmail(session),
+			request.copyEmail()
+		);
+	}
+
+	private CreateTicketMessageRequest withAuthorEmail(CreateTicketMessageRequest request, HttpSession session) {
+		return new CreateTicketMessageRequest(appSessionService.requireCurrentEmail(session), request.message());
+	}
+
+	private UpdateTicketTitleRequest withAuthorEmail(UpdateTicketTitleRequest request, HttpSession session) {
+		return new UpdateTicketTitleRequest(request.title(), appSessionService.requireCurrentEmail(session));
+	}
+
+	private CloseTicketRequest withAuthorEmail(HttpSession session) {
+		return new CloseTicketRequest(appSessionService.requireCurrentEmail(session));
+	}
+
+	private DeleteTicketsRequest withAuthorEmail(DeleteTicketsRequest request, HttpSession session) {
+		return new DeleteTicketsRequest(request.ticketIds(), appSessionService.requireCurrentEmail(session));
+	}
+
+	private RequestTicketTransferRequest withAuthorEmail(
+		RequestTicketTransferRequest request,
+		HttpSession session
+	) {
+		return new RequestTicketTransferRequest(appSessionService.requireCurrentEmail(session), request.recipientUserId());
 	}
 }
