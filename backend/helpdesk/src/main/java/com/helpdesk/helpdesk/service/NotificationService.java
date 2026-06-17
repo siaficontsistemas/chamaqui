@@ -545,12 +545,39 @@ public class NotificationService {
 			return false;
 		}
 
+		if (isResponderSideAuthor(ticket, author)) {
+			return false;
+		}
+
 		if (ticket.getRequester().getId().equals(author.getId())) {
 			return true;
 		}
 
 		User requesterCompany = ticket.getRequester().getCompanyOwner();
-		return requesterCompany != null && requesterCompany.getId().equals(author.getId());
+		if (requesterCompany == null) {
+			return false;
+		}
+
+		if (requesterCompany.getId().equals(author.getId())) {
+			return true;
+		}
+
+		User authorCompany = author.getCompanyOwner();
+		return authorCompany != null && requesterCompany.getId().equals(authorCompany.getId());
+	}
+
+	private boolean isResponderSideAuthor(Ticket ticket, User author) {
+		if (ticket == null || author == null || ticket.getSector() == null || ticket.getSector().getCreatedBy() == null) {
+			return false;
+		}
+
+		User responderCompany = ticket.getSector().getCreatedBy();
+		if (responderCompany.getId().equals(author.getId())) {
+			return true;
+		}
+
+		User authorCompany = author.getCompanyOwner();
+		return authorCompany != null && responderCompany.getId().equals(authorCompany.getId());
 	}
 
 	private void ensureTicketReplyNotification(Ticket ticket, TicketMessage message, User recipient) {

@@ -9,9 +9,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -21,6 +23,7 @@ import com.helpdesk.helpdesk.domain.Sector;
 import com.helpdesk.helpdesk.domain.Ticket;
 import com.helpdesk.helpdesk.domain.TicketChannel;
 import com.helpdesk.helpdesk.domain.TicketMessage;
+import com.helpdesk.helpdesk.domain.TicketReplyNotification;
 import com.helpdesk.helpdesk.domain.TicketStatus;
 import com.helpdesk.helpdesk.domain.User;
 import com.helpdesk.helpdesk.dto.ticket.CreateTicketMessageRequest;
@@ -175,6 +178,78 @@ class TicketServiceTest {
 		assertEquals("Funcionario", response.authorName());
 		assertEquals("Funcionário", response.authorRole());
 		assertEquals("IN_PROGRESS", ticket.getStatus().getCode());
+	}
+
+	@Test
+	void shouldHideReplyNotificationWhenResponderAdminRepliesEvenIfRequesterBelongsToSameCompany() {
+		User responderAdmin = user("admin@empresa.com", "Empresa Admin", "ADMIN", null);
+		User requesterEmployee = user("cliente@empresa.com", "Cliente", "EMPLOYEE", responderAdmin);
+
+		Sector sector = new Sector();
+		sector.setName("Financeiro");
+		sector.setSlug("financeiro");
+		sector.setCreatedBy(responderAdmin);
+
+		TicketStatus openStatus = ticketStatus("OPEN");
+		TicketStatus inProgressStatus = ticketStatus("IN_PROGRESS");
+
+		Ticket ticket = new Ticket();
+		UUID ticketId = UUID.randomUUID();
+		setField(ticket, "id", ticketId);
+		ticket.setProtocol("CA-2026-0008");
+		ticket.setTitle("Chamado interno");
+		ticket.setDescription("Mensagem inicial");
+		ticket.setRequester(requesterEmployee);
+		ticket.setSector(sector);
+		ticket.setStatus(openStatus);
+		ticket.setChannel(TicketChannel.PORTAL);
+
+		TicketMessage initialMessage = new TicketMessage();
+		setField(initialMessage, "id", UUID.randomUUID());
+		initialMessage.setTicket(ticket);
+		initialMessage.setAuthor(requesterEmployee);
+		initialMessage.setMessage("Mensagem inicial");
+		initialMessage.setInternal(false);
+		initialMessage.setCreatedAt(OffsetDateTime.now().minusMinutes(5));
+
+		TicketMessage savedMessage = new TicketMessage();
+		setField(savedMessage, "id", UUID.randomUUID());
+		savedMessage.setTicket(ticket);
+		savedMessage.setAuthor(responderAdmin);
+		savedMessage.setMessage("Resposta do administrador");
+		savedMessage.setInternal(false);
+		savedMessage.setCreatedAt(OffsetDateTime.now());
+
+		TicketReplyNotification existingNotification = new TicketReplyNotification();
+		setField(existingNotification, "id", UUID.randomUUID());
+		existingNotification.setTicket(ticket);
+		existingNotification.setMessage(initialMessage);
+		existingNotification.setRecipient(responderAdmin);
+		existingNotification.setHidden(false);
+
+		when(scopedUserLookupService.findUniqueByEmailInCurrentTenant("admin@empresa.com"))
+			.thenReturn(Optional.of(responderAdmin));
+		when(ticketRepository.findDetailedVisibleByIdAndEmail(ticketId, "admin@empresa.com"))
+			.thenReturn(Optional.of(ticket));
+		when(ticketMessageRepository.existsByTicketId(ticketId)).thenReturn(true);
+		when(ticketMessageRepository.findFirstByTicketIdOrderByCreatedAtAsc(ticketId)).thenReturn(Optional.of(initialMessage));
+		when(ticketMessageRepository.save(any(TicketMessage.class))).thenReturn(savedMessage);
+		when(ticketStatusRepository.findByCode("IN_PROGRESS")).thenReturn(Optional.of(inProgressStatus));
+		when(ticketReplyNotificationRepository.findByTicketId(ticketId)).thenReturn(List.of(existingNotification));
+		when(ticketRepository.save(any(Ticket.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		ticketService.addMessage(
+			ticketId,
+			new CreateTicketMessageRequest("admin@empresa.com", "Resposta do administrador"),
+			List.of()
+		);
+
+		verify(ticketReplyNotificationRepository).saveAll(
+			argThat((List<TicketReplyNotification> notifications) ->
+				notifications.size() == 1 && notifications.get(0).isHidden()
+			)
+		);
+		verify(ticketReplyNotificationRepository, never()).save(any(TicketReplyNotification.class));
 	}
 
 	private User user(String email, String fullName, String roleCode, User companyOwner) {

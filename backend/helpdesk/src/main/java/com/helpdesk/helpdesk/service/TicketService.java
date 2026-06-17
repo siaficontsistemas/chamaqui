@@ -1281,12 +1281,25 @@ public class TicketService {
 			return false;
 		}
 
+		if (isResponderSideAuthor(ticket, author)) {
+			return false;
+		}
+
 		if (author.getId().equals(ticket.getRequester().getId())) {
 			return true;
 		}
 
 		User requesterCompany = ticket.getRequester().getCompanyOwner();
-		return requesterCompany != null && author.getId().equals(requesterCompany.getId());
+		if (requesterCompany == null) {
+			return false;
+		}
+
+		if (author.getId().equals(requesterCompany.getId())) {
+			return true;
+		}
+
+		User authorCompany = author.getCompanyOwner();
+		return authorCompany != null && requesterCompany.getId().equals(authorCompany.getId());
 	}
 
 	private boolean isResponderSideAuthor(Ticket ticket, User author) {
