@@ -451,6 +451,43 @@
   flex-wrap: nowrap;
 }
 
+.my-data__partnership-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 42px;
+  padding: 0.7rem 1rem;
+  border: 1px solid rgba(19, 34, 53, 0.12);
+  border-radius: 999px;
+  background: #f3f6f9;
+  color: #132235;
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    transform 0.18s ease;
+}
+
+.my-data__partnership-toggle:hover {
+  background: #e8edf3;
+  border-color: rgba(19, 34, 53, 0.2);
+  transform: translateY(-1px);
+}
+
+.my-data__partnership-toggle-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  transition: transform 0.18s ease;
+}
+
+.my-data__partnership-toggle-icon.is-expanded {
+  transform: rotate(180deg);
+}
+
 .my-data__partnership-status-block {
   display: flex;
   flex-direction: column;
@@ -671,6 +708,10 @@
   .my-data__partnership-actions--active,
   .my-data__partnership-status-block {
     align-items: stretch;
+  }
+
+  .my-data__partnership-toggle {
+    justify-content: space-between;
   }
 
   .my-data__client-employees-item {

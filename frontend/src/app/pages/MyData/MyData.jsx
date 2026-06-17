@@ -76,6 +76,7 @@ function MyData({
   const [partnershipActionId, setPartnershipActionId] = useState('')
   const [unlinkTarget, setUnlinkTarget] = useState(null)
   const [clientEmployeeTarget, setClientEmployeeTarget] = useState(null)
+  const [expandedPartnershipIds, setExpandedPartnershipIds] = useState([])
   const { companyLogoUrl, setBranding: setTenantBranding } = useTenantBranding()
   const activeContent = dashboardPages.myData
   const isAdmin = currentUser?.roles?.includes('admin')
@@ -404,6 +405,18 @@ function MyData({
     } finally {
       setPartnershipActionId('')
     }
+  }
+
+  function handleTogglePartnershipEmployees(partnershipId) {
+    if (!partnershipId) {
+      return
+    }
+
+    setExpandedPartnershipIds((currentIds) =>
+      currentIds.includes(partnershipId)
+        ? currentIds.filter((currentId) => currentId !== partnershipId)
+        : [...currentIds, partnershipId]
+    )
   }
 
   function getWhatsappStatusLabel() {
@@ -1184,6 +1197,7 @@ function MyData({
                           const partnerDocument = partnership.outgoing
                             ? partnership.targetCompanyDocument
                             : partnership.requesterCompanyDocument
+                          const isExpanded = expandedPartnershipIds.includes(partnership.id)
 
                           return (
                             <article className="my-data__partnership-item" key={partnership.id}>
@@ -1199,6 +1213,21 @@ function MyData({
                                   </span>
                                 </div>
                                 <button
+                                  className="my-data__partnership-toggle"
+                                  type="button"
+                                  onClick={() => handleTogglePartnershipEmployees(partnership.id)}
+                                  aria-expanded={isExpanded}
+                                  aria-controls={`client-employees-${partnership.id}`}
+                                >
+                                  <span>Funcionários</span>
+                                  <span
+                                    className={`my-data__partnership-toggle-icon${isExpanded ? ' is-expanded' : ''}`}
+                                    aria-hidden="true"
+                                  >
+                                    ▾
+                                  </span>
+                                </button>
+                                <button
                                   className="my-data__partnership-button my-data__partnership-button--danger"
                                   type="button"
                                   onClick={() => handleOpenUnlinkModal(partnership)}
@@ -1207,7 +1236,11 @@ function MyData({
                                   {partnershipActionId === partnership.id ? 'Processando...' : 'Desvincular'}
                                 </button>
                               </div>
-                              <div className="my-data__client-employees">
+                              <div
+                                className="my-data__client-employees"
+                                id={`client-employees-${partnership.id}`}
+                                hidden={!isExpanded}
+                              >
                                 <h4 className="my-data__client-employees-title">Funcionários da empresa cliente</h4>
                                 {partnership.employees.length > 0 ? (
                                   <div className="my-data__client-employees-list">
