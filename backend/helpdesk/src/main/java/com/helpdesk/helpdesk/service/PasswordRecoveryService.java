@@ -1,12 +1,7 @@
 package com.helpdesk.helpdesk.service;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
-import java.util.Base64;
 import java.util.Locale;
-import java.util.UUID;
 
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -29,19 +24,25 @@ public class PasswordRecoveryService {
 	private final PasswordRecoveryEmailService passwordRecoveryEmailService;
 	private final TenantAccessService tenantAccessService;
 	private final ScopedUserLookupService scopedUserLookupService;
+	private final SensitiveTokenService sensitiveTokenService;
+	private final AuditTrailService auditTrailService;
 
 	public PasswordRecoveryService(
 		UserRepository userRepository,
 		PasswordEncoder passwordEncoder,
 		PasswordRecoveryEmailService passwordRecoveryEmailService,
 		TenantAccessService tenantAccessService,
-		ScopedUserLookupService scopedUserLookupService
+		ScopedUserLookupService scopedUserLookupService,
+		SensitiveTokenService sensitiveTokenService,
+		AuditTrailService auditTrailService
 	) {
 		this.userRepository = userRepository;
 		this.passwordEncoder = passwordEncoder;
 		this.passwordRecoveryEmailService = passwordRecoveryEmailService;
 		this.tenantAccessService = tenantAccessService;
 		this.scopedUserLookupService = scopedUserLookupService;
+		this.sensitiveTokenService = sensitiveTokenService;
+		this.auditTrailService = auditTrailService;
 	}
 
 	@Transactional
@@ -52,17 +53,19 @@ public class PasswordRecoveryService {
 			: scopedUserLookupService.resolveLoginCandidate(normalizedEmail).orElse(null);
 
 		if (user == null) {
+			auditTrailService.recordAnonymousAction("PASSWORD_RESET_REQUESTED_UNKNOWN_EMAIL", normalizedEmail, "password-reset", null);
 			return new OperationMessageResponse(
 				"Se o email estiver cadastrado, enviaremos um link para redefinir a senha."
 			);
 		}
 
-		String rawToken = generateRawToken();
+		String rawToken = sensitiveTokenService.generateUrlSafeToken();
 		user.setPasswordResetTokenHash(hashToken(rawToken));
 		user.setPasswordResetTokenExpiresAt(OffsetDateTime.now().plusMinutes(TOKEN_EXPIRATION_MINUTES));
 		userRepository.save(user);
 
 		passwordRecoveryEmailService.sendResetPasswordEmail(user.getEmail(), user.getFullName(), rawToken);
+		auditTrailService.recordAnonymousAction("PASSWORD_RESET_REQUESTED", user.getEmail(), "user-profile", user.getId());
 
 		return new OperationMessageResponse(
 			"Se o email estiver cadastrado, enviaremos um link para redefinir a senha."
@@ -93,6 +96,7 @@ public class PasswordRecoveryService {
 		user.setPasswordHash(passwordEncoder.encode(request.password()));
 		clearResetToken(user);
 		userRepository.save(user);
+		auditTrailService.recordUserAction("PASSWORD_RESET_COMPLETED", user, "user-profile", user.getId());
 
 		return new OperationMessageResponse("Senha redefinida com sucesso. Agora você já pode entrar na conta.");
 	}
@@ -110,26 +114,7 @@ public class PasswordRecoveryService {
 		return email.trim().toLowerCase(Locale.ROOT);
 	}
 
-	private String generateRawToken() {
-		byte[] randomBytes = (UUID.randomUUID().toString() + UUID.randomUUID()).getBytes(StandardCharsets.UTF_8);
-		return Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes);
-	}
-
 	private String hashToken(String rawToken) {
-		if (rawToken == null || rawToken.isBlank()) {
-			throw new IllegalArgumentException("Token de redefinição de senha inválido.");
-		}
-
-		try {
-			MessageDigest messageDigest = MessageDigest.getInstance("SHA-256");
-			byte[] hash = messageDigest.digest(rawToken.trim().getBytes(StandardCharsets.UTF_8));
-			StringBuilder hex = new StringBuilder(hash.length * 2);
-			for (byte currentByte : hash) {
-				hex.append(String.format("%02x", currentByte));
-			}
-			return hex.toString();
-		} catch (NoSuchAlgorithmException exception) {
-			throw new IllegalStateException("Não foi possível processar o token de redefinição de senha.", exception);
-		}
+		return sensitiveTokenService.hashToken(rawToken, "Token de redefinição de senha inválido.");
 	}
 }

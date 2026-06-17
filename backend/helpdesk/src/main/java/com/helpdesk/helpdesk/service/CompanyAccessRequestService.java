@@ -43,6 +43,8 @@ public class CompanyAccessRequestService {
 	private final EmailDomainValidationService emailDomainValidationService;
 	private final TenantAccessService tenantAccessService;
 	private final ScopedUserLookupService scopedUserLookupService;
+	private final SensitiveTokenService sensitiveTokenService;
+	private final AuditTrailService auditTrailService;
 
 	public CompanyAccessRequestService(
 		CompanyAccessRequestRepository companyAccessRequestRepository,
@@ -53,7 +55,9 @@ public class CompanyAccessRequestService {
 		CompanyInvitationEmailService companyInvitationEmailService,
 		EmailDomainValidationService emailDomainValidationService,
 		TenantAccessService tenantAccessService,
-		ScopedUserLookupService scopedUserLookupService
+		ScopedUserLookupService scopedUserLookupService,
+		SensitiveTokenService sensitiveTokenService,
+		AuditTrailService auditTrailService
 	) {
 		this.companyAccessRequestRepository = companyAccessRequestRepository;
 		this.companyMembershipRepository = companyMembershipRepository;
@@ -64,6 +68,8 @@ public class CompanyAccessRequestService {
 		this.emailDomainValidationService = emailDomainValidationService;
 		this.tenantAccessService = tenantAccessService;
 		this.scopedUserLookupService = scopedUserLookupService;
+		this.sensitiveTokenService = sensitiveTokenService;
+		this.auditTrailService = auditTrailService;
 	}
 
 	@Transactional
@@ -115,6 +121,8 @@ public class CompanyAccessRequestService {
 			normalizedDocumentNumber = normalizeDocumentNumber(invitedUser.getDocumentNumber());
 		}
 
+		expirePendingAdminInvites(admin.getId(), normalizedEmail);
+
 		if (companyAccessRequestRepository.existsByTargetCompanyIdAndRequesterEmailIgnoreCaseAndRequestTypeAndStatus(
 			admin.getId(),
 			normalizedEmail,
@@ -134,8 +142,8 @@ public class CompanyAccessRequestService {
 
 		String deliveryChannel = "PLATFORM";
 		if (invitedUser == null) {
-			String inviteToken = UUID.randomUUID().toString();
-			accessRequest.setInviteTokenHash(inviteToken);
+			String inviteToken = sensitiveTokenService.generateUrlSafeToken();
+			accessRequest.setInviteTokenHash(hashInviteToken(inviteToken));
 			companyInvitationEmailService.sendInvitation(
 				normalizedEmail,
 				invitedName == null ? "convidado(a)" : invitedName,
@@ -146,6 +154,7 @@ public class CompanyAccessRequestService {
 		}
 
 		CompanyAccessRequest savedRequest = companyAccessRequestRepository.save(accessRequest);
+		auditTrailService.recordUserAction("COMPANY_ADMIN_INVITE_CREATED", admin, "company-access-request", savedRequest.getId());
 		return new CompanyAdminInviteResponse(
 			savedRequest.getId(),
 			savedRequest.getRequesterName(),
@@ -174,15 +183,16 @@ public class CompanyAccessRequestService {
 	@Transactional(readOnly = true)
 	public List<CompanyAdminInviteNotificationResponse> listPendingAdminInvites(String email) {
 		User user = loadUserByEmail(email);
-		return companyAccessRequestRepository.findByRequesterUserIdAndRequestTypeAndStatusOrderByCreatedAtDesc(
+		List<CompanyAdminInviteNotificationResponse> invites = companyAccessRequestRepository.findByRequesterUserIdAndRequestTypeAndStatusOrderByCreatedAtDesc(
 			user.getId(),
 			CompanyAccessRequestType.ADMIN_INVITE,
 			CompanyAccessRequestStatus.PENDING
 		)
 			.stream()
-			.filter(this::isNotExpired)
+			.filter(invite -> expireIfNeeded(invite) == CompanyAccessRequestStatus.PENDING)
 			.map(this::toAdminInviteNotificationResponse)
 			.toList();
+		return invites;
 	}
 
 	@Transactional
@@ -200,6 +210,7 @@ public class CompanyAccessRequestService {
 		accessRequest.setRespondedBy(admin);
 		accessRequest.setRespondedAt(OffsetDateTime.now());
 		companyAccessRequestRepository.save(accessRequest);
+		auditTrailService.recordUserAction("COMPANY_ACCESS_REQUEST_APPROVED", admin, "company-access-request", accessRequest.getId());
 	}
 
 	@Transactional
@@ -217,6 +228,7 @@ public class CompanyAccessRequestService {
 		accessRequest.setRespondedBy(admin);
 		accessRequest.setRespondedAt(OffsetDateTime.now());
 		companyAccessRequestRepository.save(accessRequest);
+		auditTrailService.recordUserAction("COMPANY_ACCESS_REQUEST_DECLINED", admin, "company-access-request", accessRequest.getId());
 	}
 
 	@Transactional
@@ -237,6 +249,7 @@ public class CompanyAccessRequestService {
 		accessRequest.setRespondedAt(OffsetDateTime.now());
 		companyAccessRequestRepository.save(accessRequest);
 		createCompanyJoinedNotification(invitedUser, accessRequest.getTargetCompany());
+		auditTrailService.recordUserAction("COMPANY_ADMIN_INVITE_ACCEPTED", invitedUser, "company-access-request", accessRequest.getId());
 	}
 
 	@Transactional
@@ -255,6 +268,7 @@ public class CompanyAccessRequestService {
 		accessRequest.setRespondedBy(invitedUser);
 		accessRequest.setRespondedAt(OffsetDateTime.now());
 		companyAccessRequestRepository.save(accessRequest);
+		auditTrailService.recordUserAction("COMPANY_ADMIN_INVITE_DECLINED", invitedUser, "company-access-request", accessRequest.getId());
 	}
 
 	@Transactional(readOnly = true)
@@ -286,6 +300,7 @@ public class CompanyAccessRequestService {
 		invite.setRespondedAt(OffsetDateTime.now());
 		companyAccessRequestRepository.save(invite);
 		createCompanyJoinedNotification(user, invite.getTargetCompany());
+		auditTrailService.recordUserAction("COMPANY_ADMIN_INVITE_ACCEPTED_DURING_REGISTRATION", user, "company-access-request", invite.getId());
 	}
 
 	@Transactional
@@ -308,7 +323,7 @@ public class CompanyAccessRequestService {
 		);
 
 		List<CompanyAccessRequest> invitesToAttach = pendingInvites.stream()
-			.filter(this::isNotExpired)
+			.filter(invite -> expireIfNeeded(invite) == CompanyAccessRequestStatus.PENDING)
 			.filter(invite -> invite.getRequesterUser() == null)
 			.toList();
 
@@ -378,11 +393,12 @@ public class CompanyAccessRequestService {
 		if (accessRequest.getRequestType() != CompanyAccessRequestType.ADMIN_INVITE) {
 			throw new IllegalArgumentException("Esse convite não pode ser respondido por esse fluxo.");
 		}
-		if (accessRequest.getStatus() != CompanyAccessRequestStatus.PENDING) {
+		CompanyAccessRequestStatus currentStatus = expireIfNeeded(accessRequest);
+		if (currentStatus != CompanyAccessRequestStatus.PENDING) {
+			if (currentStatus == CompanyAccessRequestStatus.EXPIRED) {
+				throw new IllegalArgumentException("Esse convite expirou e não pode mais ser respondido.");
+			}
 			throw new IllegalArgumentException("Esse convite para empresa já foi respondido.");
-		}
-		if (!isNotExpired(accessRequest)) {
-			throw new IllegalArgumentException("Esse convite expirou e não pode mais ser respondido.");
 		}
 
 		User requesterUser = accessRequest.getRequesterUser();
@@ -406,13 +422,18 @@ public class CompanyAccessRequestService {
 			throw new IllegalArgumentException("O convite informado é inválido.");
 		}
 
+		String normalizedToken = inviteToken.trim();
 		CompanyAccessRequest invite = companyAccessRequestRepository.findByInviteTokenHashAndRequestTypeAndStatus(
-			inviteToken.trim(),
+			hashInviteToken(normalizedToken),
 			CompanyAccessRequestType.ADMIN_INVITE,
 			CompanyAccessRequestStatus.PENDING
-		).orElseThrow(() -> new NotFoundException("Convite não encontrado ou já utilizado."));
+		).or(() -> companyAccessRequestRepository.findByInviteTokenHashAndRequestTypeAndStatus(
+			normalizedToken,
+			CompanyAccessRequestType.ADMIN_INVITE,
+			CompanyAccessRequestStatus.PENDING
+		)).orElseThrow(() -> new NotFoundException("Convite não encontrado ou já utilizado."));
 
-		if (!isNotExpired(invite)) {
+		if (expireIfNeeded(invite) == CompanyAccessRequestStatus.EXPIRED) {
 			throw new IllegalArgumentException("Esse convite expirou e não pode mais ser utilizado.");
 		}
 		if (tenantAccessService.hasCurrentTenant()
@@ -497,6 +518,41 @@ public class CompanyAccessRequestService {
 		request.setRequesterName(blankToNull(requesterName));
 		request.setRequesterEmail(normalizeEmail(requesterEmail));
 		request.setRequesterDocumentNumber(normalizeDocumentNumber(requesterDocumentNumber));
+	}
+
+	private String hashInviteToken(String rawToken) {
+		return sensitiveTokenService.hashToken(rawToken, "O convite informado é inválido.");
+	}
+
+	private void expirePendingAdminInvites(UUID targetCompanyId, String requesterEmail) {
+		List<CompanyAccessRequest> pendingInvites = companyAccessRequestRepository
+			.findByTargetCompanyIdAndRequesterEmailIgnoreCaseAndRequestTypeAndStatusOrderByCreatedAtDesc(
+				targetCompanyId,
+				requesterEmail,
+				CompanyAccessRequestType.ADMIN_INVITE,
+				CompanyAccessRequestStatus.PENDING
+			);
+
+		pendingInvites.forEach(this::expireIfNeeded);
+	}
+
+	private CompanyAccessRequestStatus expireIfNeeded(CompanyAccessRequest request) {
+		if (request == null || request.getStatus() != CompanyAccessRequestStatus.PENDING || isNotExpired(request)) {
+			return request == null ? null : request.getStatus();
+		}
+
+		request.setStatus(CompanyAccessRequestStatus.EXPIRED);
+		request.setRespondedAt(OffsetDateTime.now());
+		companyAccessRequestRepository.save(request);
+		if (request.getTargetCompany() != null) {
+			auditTrailService.recordUserAction(
+				"COMPANY_ADMIN_INVITE_EXPIRED",
+				request.getTargetCompany(),
+				"company-access-request",
+				request.getId()
+			);
+		}
+		return CompanyAccessRequestStatus.EXPIRED;
 	}
 
 	private User loadAdminByEmail(String email) {

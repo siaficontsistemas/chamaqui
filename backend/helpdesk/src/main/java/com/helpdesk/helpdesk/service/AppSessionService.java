@@ -25,15 +25,18 @@ public class AppSessionService {
 	private final UserRepository userRepository;
 	private final UserMapper userMapper;
 	private final TenantAccessService tenantAccessService;
+	private final AuditTrailService auditTrailService;
 
 	public AppSessionService(
 		UserRepository userRepository,
 		UserMapper userMapper,
-		TenantAccessService tenantAccessService
+		TenantAccessService tenantAccessService,
+		AuditTrailService auditTrailService
 	) {
 		this.userRepository = userRepository;
 		this.userMapper = userMapper;
 		this.tenantAccessService = tenantAccessService;
+		this.auditTrailService = auditTrailService;
 	}
 
 	@Transactional
@@ -42,6 +45,7 @@ public class AppSessionService {
 		persistedUser.setLastLoginAt(OffsetDateTime.now());
 		session.setAttribute(APP_SESSION_KEY, persistedUser.getId().toString());
 		session.setMaxInactiveInterval(SESSION_TTL_SECONDS);
+		auditTrailService.recordUserAction("APP_LOGIN", persistedUser, "user-session", persistedUser.getId());
 		return userMapper.toAuthResponse(persistedUser);
 	}
 
@@ -84,7 +88,16 @@ public class AppSessionService {
 	}
 
 	public void logout(HttpSession session) {
+		User currentUser = null;
+		try {
+			currentUser = requireUser(session);
+		} catch (RuntimeException ignored) {
+			// Ignora quando a sessao já não está válida.
+		}
 		session.invalidate();
+		if (currentUser != null) {
+			auditTrailService.recordUserAction("APP_LOGOUT", currentUser, "user-session", currentUser.getId());
+		}
 	}
 
 	private User requireActiveUser(UUID userId) {

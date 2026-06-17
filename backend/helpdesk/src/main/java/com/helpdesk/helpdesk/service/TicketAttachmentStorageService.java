@@ -8,6 +8,8 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -24,20 +26,49 @@ import org.springframework.web.multipart.MultipartFile;
 public class TicketAttachmentStorageService {
 
 	private static final Logger logger = LoggerFactory.getLogger(TicketAttachmentStorageService.class);
+	private static final Map<String, String> CONTENT_TYPES_BY_EXTENSION = Map.ofEntries(
+		Map.entry("pdf", "application/pdf"),
+		Map.entry("png", "image/png"),
+		Map.entry("jpg", "image/jpeg"),
+		Map.entry("jpeg", "image/jpeg"),
+		Map.entry("webp", "image/webp"),
+		Map.entry("gif", "image/gif"),
+		Map.entry("txt", "text/plain"),
+		Map.entry("csv", "text/csv"),
+		Map.entry("doc", "application/msword"),
+		Map.entry(
+			"docx",
+			"application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+		),
+		Map.entry("xls", "application/vnd.ms-excel"),
+		Map.entry(
+			"xlsx",
+			"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+		),
+		Map.entry("mp4", "video/mp4"),
+		Map.entry("mp3", "audio/mpeg"),
+		Map.entry("ogg", "audio/ogg")
+	);
+	private static final Set<String> ALLOWED_CONTENT_TYPES = Set.copyOf(CONTENT_TYPES_BY_EXTENSION.values());
 
 	private final Path rootDirectory;
 	private final List<Path> readableDirectories;
+	private final long maxFileSizeBytes;
 
 	public TicketAttachmentStorageService(
 		@Value("${app.storage.attachments-dir:${user.home}/.helpdesk/uploads/ticket-attachments}") String rootDirectory,
-		@Value("${app.storage.attachments-legacy-dirs:${user.dir}/uploads/ticket-attachments}") String legacyDirectories
+		@Value("${app.storage.attachments-legacy-dirs:${user.dir}/uploads/ticket-attachments}") String legacyDirectories,
+		@Value("${app.storage.attachments-max-file-size-bytes:26214400}") long maxFileSizeBytes
 	) {
 		this.rootDirectory = Paths.get(rootDirectory).toAbsolutePath().normalize();
 		this.readableDirectories = buildReadableDirectories(this.rootDirectory, legacyDirectories);
+		this.maxFileSizeBytes = maxFileSizeBytes;
 	}
 
 	public StoredAttachment store(MultipartFile file) {
 		String originalFileName = sanitizeFileName(file.getOriginalFilename());
+		String normalizedContentType = normalizeContentType(originalFileName, file.getContentType());
+		validate(originalFileName, normalizedContentType, file.getSize());
 		Path targetPath = prepareTargetPath(originalFileName);
 
 		try {
@@ -49,7 +80,7 @@ public class TicketAttachmentStorageService {
 		return new StoredAttachment(
 			originalFileName,
 			targetPath.getFileName().toString(),
-			Objects.requireNonNullElse(file.getContentType(), "application/octet-stream"),
+			normalizedContentType,
 			file.getSize()
 		);
 	}
@@ -60,6 +91,8 @@ public class TicketAttachmentStorageService {
 		}
 
 		String sanitizedFileName = sanitizeFileName(originalFileName);
+		String normalizedContentType = normalizeContentType(sanitizedFileName, contentType);
+		validate(sanitizedFileName, normalizedContentType, content.length);
 		Path targetPath = prepareTargetPath(sanitizedFileName);
 
 		try {
@@ -71,7 +104,7 @@ public class TicketAttachmentStorageService {
 		return new StoredAttachment(
 			sanitizedFileName,
 			targetPath.getFileName().toString(),
-			Objects.requireNonNullElse(contentType, "application/octet-stream"),
+			normalizedContentType,
 			content.length
 		);
 	}
@@ -87,6 +120,25 @@ public class TicketAttachmentStorageService {
 			return resource;
 		} catch (MalformedURLException exception) {
 			throw new IllegalArgumentException("Arquivo não encontrado para download.");
+		}
+	}
+
+	public void deleteIfManaged(String storageKey) {
+		if (storageKey == null || storageKey.isBlank()) {
+			return;
+		}
+
+		for (Path directory : readableDirectories) {
+			Path candidate = directory.resolve(storageKey.trim()).normalize();
+			if (!candidate.startsWith(directory)) {
+				continue;
+			}
+
+			try {
+				Files.deleteIfExists(candidate);
+			} catch (IOException exception) {
+				logger.warn("Não foi possível remover o anexo gerenciado: storageKey={}", storageKey.trim());
+			}
 		}
 	}
 
@@ -156,6 +208,41 @@ public class TicketAttachmentStorageService {
 		}
 
 		return sanitizedValue;
+	}
+
+	private void validate(String originalFileName, String contentType, long sizeBytes) {
+		if (!ALLOWED_CONTENT_TYPES.contains(contentType)) {
+			throw new IllegalArgumentException(
+				"Tipo de anexo não permitido. Envie PDF, imagem, texto, planilha, documento Office, áudio MP3/OGG ou vídeo MP4."
+			);
+		}
+		if (sizeBytes <= 0) {
+			throw new IllegalArgumentException("Os anexos enviados devem conter conteúdo.");
+		}
+		if (sizeBytes > maxFileSizeBytes) {
+			throw new IllegalArgumentException("O anexo excede o limite permitido de 25 MB.");
+		}
+		if (extractExtension(originalFileName).isEmpty()) {
+			throw new IllegalArgumentException("O anexo precisa ter uma extensão válida.");
+		}
+	}
+
+	private String normalizeContentType(String originalFileName, String contentType) {
+		String normalizedContentType = Objects.requireNonNullElse(contentType, "").trim().toLowerCase(Locale.ROOT);
+		if (!normalizedContentType.isBlank() && ALLOWED_CONTENT_TYPES.contains(normalizedContentType)) {
+			return normalizedContentType;
+		}
+
+		return CONTENT_TYPES_BY_EXTENSION.getOrDefault(extractExtension(originalFileName), normalizedContentType);
+	}
+
+	private String extractExtension(String originalFileName) {
+		String fileName = originalFileName == null ? "" : originalFileName.trim().toLowerCase(Locale.ROOT);
+		int extensionIndex = fileName.lastIndexOf('.');
+		if (extensionIndex < 0 || extensionIndex == fileName.length() - 1) {
+			return "";
+		}
+		return fileName.substring(extensionIndex + 1);
 	}
 
 	public record StoredAttachment(

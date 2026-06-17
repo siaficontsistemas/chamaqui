@@ -2,6 +2,7 @@ package com.helpdesk.helpdesk.dto.auth;
 
 import java.util.UUID;
 
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
@@ -34,6 +35,10 @@ public record RegisterRequest(
 	@Pattern(regexp = "admin|employee|user", message = "O perfil informado é inválido.")
 	String role,
 	@Size(max = 120, message = "O token do convite é inválido.")
-	String inviteToken
+	String inviteToken,
+	@AssertTrue(message = "É necessário aceitar os termos para concluir o cadastro.")
+	boolean acceptedTerms,
+	@AssertTrue(message = "É necessário aceitar a política de privacidade para concluir o cadastro.")
+	boolean acceptedPrivacyPolicy
 ) {
 }

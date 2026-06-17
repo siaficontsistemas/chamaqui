@@ -85,6 +85,18 @@ public class User {
 	@Column(name = "password_reset_token_expires_at")
 	private OffsetDateTime passwordResetTokenExpiresAt;
 
+	@Column(name = "terms_accepted_at")
+	private OffsetDateTime termsAcceptedAt;
+
+	@Column(name = "terms_version", length = 40)
+	private String termsVersion;
+
+	@Column(name = "privacy_policy_accepted_at")
+	private OffsetDateTime privacyPolicyAcceptedAt;
+
+	@Column(name = "privacy_policy_version", length = 40)
+	private String privacyPolicyVersion;
+
 	@Column(name = "created_at", nullable = false)
 	private OffsetDateTime createdAt;
 
@@ -264,6 +276,38 @@ public class User {
 
 	public OffsetDateTime getCreatedAt() {
 		return createdAt;
+	}
+
+	public OffsetDateTime getTermsAcceptedAt() {
+		return termsAcceptedAt;
+	}
+
+	public void setTermsAcceptedAt(OffsetDateTime termsAcceptedAt) {
+		this.termsAcceptedAt = termsAcceptedAt;
+	}
+
+	public String getTermsVersion() {
+		return termsVersion;
+	}
+
+	public void setTermsVersion(String termsVersion) {
+		this.termsVersion = termsVersion;
+	}
+
+	public OffsetDateTime getPrivacyPolicyAcceptedAt() {
+		return privacyPolicyAcceptedAt;
+	}
+
+	public void setPrivacyPolicyAcceptedAt(OffsetDateTime privacyPolicyAcceptedAt) {
+		this.privacyPolicyAcceptedAt = privacyPolicyAcceptedAt;
+	}
+
+	public String getPrivacyPolicyVersion() {
+		return privacyPolicyVersion;
+	}
+
+	public void setPrivacyPolicyVersion(String privacyPolicyVersion) {
+		this.privacyPolicyVersion = privacyPolicyVersion;
 	}
 
 	public OffsetDateTime getUpdatedAt() {

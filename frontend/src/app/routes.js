@@ -3,6 +3,8 @@ import { generatePath, matchPath } from 'react-router-dom'
 export const PUBLIC_ROUTE_PATHS = {
   login: '/login',
   register: '/register',
+  terms: '/termos-de-uso',
+  privacy: '/politica-de-privacidade',
 }
 
 export const SECTION_ROUTE_PATHS = {

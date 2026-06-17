@@ -13,9 +13,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.helpdesk.helpdesk.domain.LegalDocumentType;
 import com.helpdesk.helpdesk.dto.company.PublicCompanyBrandingResponse;
 import com.helpdesk.helpdesk.dto.company.PublicTenantSummaryResponse;
+import com.helpdesk.helpdesk.dto.legal.PublicLegalDocumentResponse;
 import com.helpdesk.helpdesk.service.CompanyLogoStorageService;
+import com.helpdesk.helpdesk.service.LegalDocumentService;
 import com.helpdesk.helpdesk.service.TenantBrandingService;
 import com.helpdesk.helpdesk.util.RequestHostResolver;
 
@@ -27,13 +30,16 @@ public class PublicTenantController {
 
 	private final TenantBrandingService tenantBrandingService;
 	private final CompanyLogoStorageService companyLogoStorageService;
+	private final LegalDocumentService legalDocumentService;
 
 	public PublicTenantController(
 		TenantBrandingService tenantBrandingService,
-		CompanyLogoStorageService companyLogoStorageService
+		CompanyLogoStorageService companyLogoStorageService,
+		LegalDocumentService legalDocumentService
 	) {
 		this.tenantBrandingService = tenantBrandingService;
 		this.companyLogoStorageService = companyLogoStorageService;
+		this.legalDocumentService = legalDocumentService;
 	}
 
 	@GetMapping("/tenant-branding")
@@ -55,6 +61,20 @@ public class PublicTenantController {
 	@GetMapping("/tenants")
 	public List<PublicTenantSummaryResponse> listTenants() {
 		return tenantBrandingService.listPublicTenants();
+	}
+
+	@GetMapping("/legal-documents")
+	public List<PublicLegalDocumentResponse> listLegalDocuments() {
+		return legalDocumentService.listPublicDocuments();
+	}
+
+	@GetMapping("/legal-documents/{documentType}")
+	public PublicLegalDocumentResponse getLegalDocument(@PathVariable String documentType) {
+		try {
+			return legalDocumentService.getPublicDocument(LegalDocumentType.valueOf(documentType.trim().toUpperCase()));
+		} catch (IllegalArgumentException exception) {
+			throw new IllegalArgumentException("Documento legal não encontrado.");
+		}
 	}
 
 	@GetMapping("/company-assets/{storageKey}")

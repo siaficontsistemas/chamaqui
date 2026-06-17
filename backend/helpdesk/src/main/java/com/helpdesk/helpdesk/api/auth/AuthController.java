@@ -20,6 +20,7 @@ import com.helpdesk.helpdesk.service.AppSessionService;
 import com.helpdesk.helpdesk.service.AuthService;
 import com.helpdesk.helpdesk.service.PasswordRecoveryService;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 
@@ -43,8 +44,12 @@ public class AuthController {
 
 	@PostMapping("/register")
 	@ResponseStatus(HttpStatus.CREATED)
-	public AuthResponse register(@Valid @RequestBody RegisterRequest request, HttpSession session) {
-		return authService.register(request, session);
+	public AuthResponse register(
+		@Valid @RequestBody RegisterRequest request,
+		HttpSession session,
+		HttpServletRequest httpRequest
+	) {
+		return authService.register(request, session, httpRequest);
 	}
 
 	@PostMapping("/login")

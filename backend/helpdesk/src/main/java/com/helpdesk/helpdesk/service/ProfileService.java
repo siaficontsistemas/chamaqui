@@ -29,6 +29,7 @@ import com.helpdesk.helpdesk.repository.CompanyRepository;
 import com.helpdesk.helpdesk.repository.RoleRepository;
 import com.helpdesk.helpdesk.repository.SectorMemberRepository;
 import com.helpdesk.helpdesk.repository.TeamMembershipNotificationRepository;
+import com.helpdesk.helpdesk.repository.TicketAttachmentRepository;
 import com.helpdesk.helpdesk.repository.UserRepository;
 
 @Service
@@ -49,6 +50,9 @@ public class ProfileService {
 	private final ScopedUserLookupService scopedUserLookupService;
 	private final CompanyRepository companyRepository;
 	private final CompanyLogoStorageService companyLogoStorageService;
+	private final TicketAttachmentRepository ticketAttachmentRepository;
+	private final TicketAttachmentStorageService ticketAttachmentStorageService;
+	private final AuditTrailService auditTrailService;
 
 	public ProfileService(
 		UserRepository userRepository,
@@ -65,7 +69,10 @@ public class ProfileService {
 		TenantAccessService tenantAccessService,
 		ScopedUserLookupService scopedUserLookupService,
 		CompanyRepository companyRepository,
-		CompanyLogoStorageService companyLogoStorageService
+		CompanyLogoStorageService companyLogoStorageService,
+		TicketAttachmentRepository ticketAttachmentRepository,
+		TicketAttachmentStorageService ticketAttachmentStorageService,
+		AuditTrailService auditTrailService
 	) {
 		this.userRepository = userRepository;
 		this.passwordEncoder = passwordEncoder;
@@ -82,6 +89,9 @@ public class ProfileService {
 		this.scopedUserLookupService = scopedUserLookupService;
 		this.companyRepository = companyRepository;
 		this.companyLogoStorageService = companyLogoStorageService;
+		this.ticketAttachmentRepository = ticketAttachmentRepository;
+		this.ticketAttachmentStorageService = ticketAttachmentStorageService;
+		this.auditTrailService = auditTrailService;
 	}
 
 	@Transactional(readOnly = true)
@@ -89,6 +99,7 @@ public class ProfileService {
 		return scopedUserLookupService.findUniqueByEmailInCurrentTenant(email)
 			.map(user -> {
 				tenantAccessService.ensureUserBelongsToCurrentTenant(user, "Esse perfil não pertence ao tenant atual.");
+				auditTrailService.recordUserAction("PROFILE_VIEWED", user, "user-profile", user.getId());
 				return userMapper.toProfileResponse(user);
 			})
 			.orElseThrow(() -> new NotFoundException("Perfil não encontrado."));
@@ -109,6 +120,7 @@ public class ProfileService {
 		user.setPasswordResetTokenHash(null);
 		user.setPasswordResetTokenExpiresAt(null);
 		userRepository.save(user);
+		auditTrailService.recordUserAction("PROFILE_PASSWORD_CHANGED", user, "user-profile", user.getId());
 
 		return new OperationMessageResponse("Sua senha foi alterada com sucesso.");
 	}
@@ -155,6 +167,7 @@ public class ProfileService {
 		if (hasRole(savedUser, "ADMIN")) {
 			companyProvisioningService.syncAdminCompany(savedUser);
 		}
+		auditTrailService.recordUserAction("PROFILE_UPDATED", savedUser, "user-profile", savedUser.getId());
 		return userMapper.toProfileResponse(savedUser);
 	}
 
@@ -169,6 +182,7 @@ public class ProfileService {
 
 		company.setLogoUrl(companyLogoUrl);
 		company.setLoginLogoUrl(companyLogoUrl);
+		auditTrailService.recordUserAction("COMPANY_LOGO_UPDATED", company.getOwnerUser(), "company", company.getId());
 		return saveCompanyLogoResponse(company);
 	}
 
@@ -178,6 +192,7 @@ public class ProfileService {
 		deleteManagedCompanyLogos(company);
 		company.setLogoUrl(null);
 		company.setLoginLogoUrl(null);
+		auditTrailService.recordUserAction("COMPANY_LOGO_DELETED", company.getOwnerUser(), "company", company.getId());
 		return saveCompanyLogoResponse(company);
 	}
 
@@ -192,7 +207,9 @@ public class ProfileService {
 			deleteCompanyData(user, true);
 		}
 
+		deleteManagedTicketAttachmentsForUser(user.getId());
 		deleteUserOwnedRecords(user.getId(), normalizedEmail);
+		auditTrailService.recordUserAction("PROFILE_DELETED", user, "user-profile", user.getId());
 
 		userRepository.delete(user);
 	}
@@ -209,6 +226,7 @@ public class ProfileService {
 		}
 
 		deleteCompanyData(admin, false);
+		auditTrailService.recordUserAction("COMPANY_DELETED", admin, "company", admin.getId());
 	}
 
 	private void deleteCompanyData(User admin, boolean deletingAdminAccount) {
@@ -244,6 +262,7 @@ public class ProfileService {
 			);
 		}
 
+		deleteManagedTicketAttachmentsForUser(admin.getId());
 		deleteCompanyOwnedRecords(admin.getId());
 		companyMembershipRepository.deleteByCompanyOwnerId(admin.getId());
 		jdbcTemplate.update("update users set company_owner_id = null where company_owner_id = ? and id <> ?", admin.getId(), admin.getId());
@@ -484,6 +503,16 @@ public class ProfileService {
 				|| user.getCompanyType() != null
 				|| !companyMembershipRepository.findByCompanyOwnerIdOrderByJoinedAtAsc(user.getId()).isEmpty()
 			);
+	}
+
+	private void deleteManagedTicketAttachmentsForUser(UUID userId) {
+		Map<String, Boolean> deletedStorageKeys = new LinkedHashMap<>();
+		ticketAttachmentRepository.findManagedForUserCleanup(userId)
+			.forEach(attachment -> deletedStorageKeys.putIfAbsent(attachment.getStorageKey(), Boolean.TRUE));
+		ticketAttachmentRepository.findByUploadedByIdOrderByCreatedAtAsc(userId)
+			.forEach(attachment -> deletedStorageKeys.putIfAbsent(attachment.getStorageKey(), Boolean.TRUE));
+
+		deletedStorageKeys.keySet().forEach(ticketAttachmentStorageService::deleteIfManaged);
 	}
 
 	private void refreshAffectedPrimaryCompanyOwners(Collection<User> affectedMembers) {

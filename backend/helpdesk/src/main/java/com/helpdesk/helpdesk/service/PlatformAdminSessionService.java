@@ -25,15 +25,18 @@ public class PlatformAdminSessionService {
 	private final PlatformAdminUserRepository platformAdminUserRepository;
 	private final PasswordEncoder passwordEncoder;
 	private final String allowedEmail;
+	private final AuditTrailService auditTrailService;
 
 	public PlatformAdminSessionService(
 		PlatformAdminUserRepository platformAdminUserRepository,
 		PasswordEncoder passwordEncoder,
-		@Value("${app.platform-admin.email:}") String allowedEmail
+		@Value("${app.platform-admin.email:}") String allowedEmail,
+		AuditTrailService auditTrailService
 	) {
 		this.platformAdminUserRepository = platformAdminUserRepository;
 		this.passwordEncoder = passwordEncoder;
 		this.allowedEmail = allowedEmail == null ? "" : allowedEmail.trim().toLowerCase(Locale.ROOT);
+		this.auditTrailService = auditTrailService;
 	}
 
 	@Transactional
@@ -55,6 +58,7 @@ public class PlatformAdminSessionService {
 		user.setLastLoginAt(OffsetDateTime.now());
 		session.setAttribute(PLATFORM_ADMIN_SESSION_KEY, user.getId().toString());
 		session.setMaxInactiveInterval(60 * 60 * 12);
+		auditTrailService.recordPlatformAdminAction("PLATFORM_ADMIN_LOGIN", user, "platform-admin-session", user.getId());
 		return toResponse(user);
 	}
 
@@ -70,8 +74,12 @@ public class PlatformAdminSessionService {
 			throw new UnauthorizedException("Faça login como administrador da plataforma para continuar.");
 		}
 
-		return platformAdminUserRepository.findById(java.util.UUID.fromString(rawValue))
+		PlatformAdminUser user = platformAdminUserRepository.findById(java.util.UUID.fromString(rawValue))
 			.orElseThrow(() -> new NotFoundException("Administrador da plataforma não encontrado."));
+		if (!user.isActive()) {
+			throw new UnauthorizedException("O administrador da plataforma está inativo.");
+		}
+		return user;
 	}
 
 	public void logout(HttpSession session) {

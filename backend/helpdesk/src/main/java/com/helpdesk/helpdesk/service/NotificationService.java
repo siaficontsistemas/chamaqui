@@ -102,11 +102,7 @@ public class NotificationService {
 	public void deleteTicketAssignment(UUID notificationId, String email) {
 		TicketAssignmentNotification notification = ticketAssignmentNotificationRepository.findDetailedById(notificationId)
 			.orElseThrow(() -> new NotFoundException("Notificação não encontrada."));
-		String normalizedEmail = normalizeEmail(email);
-
-		if (!notification.getRecipient().getEmail().equalsIgnoreCase(normalizedEmail)) {
-			throw new IllegalArgumentException("Essa notificação não pertence ao usuário informado.");
-		}
+		ensureNotificationRecipient(notification.getRecipient(), loadUserByEmail(email));
 
 		notification.setHidden(true);
 		ticketAssignmentNotificationRepository.save(notification);
@@ -231,11 +227,7 @@ public class NotificationService {
 	@Transactional
 	public void deleteTicketTransfer(UUID notificationId, String email) {
 		TicketTransferNotification notification = loadTransferNotification(notificationId);
-		String normalizedEmail = normalizeEmail(email);
-
-		if (!notification.getRecipient().getEmail().equalsIgnoreCase(normalizedEmail)) {
-			throw new IllegalArgumentException("Essa notificação não pertence ao usuário informado.");
-		}
+		ensureNotificationRecipient(notification.getRecipient(), loadUserByEmail(email));
 
 		if (notification.getStatus() == TicketTransferStatus.PENDING) {
 			throw new IllegalArgumentException("Responda a transferência antes de excluir essa notificação.");
@@ -249,11 +241,7 @@ public class NotificationService {
 	public void deleteTicketClosure(UUID notificationId, String email) {
 		TicketClosureNotification notification = ticketClosureNotificationRepository.findDetailedById(notificationId)
 			.orElseThrow(() -> new NotFoundException("Notificação de fechamento não encontrada."));
-		String normalizedEmail = normalizeEmail(email);
-
-		if (!notification.getRecipient().getEmail().equalsIgnoreCase(normalizedEmail)) {
-			throw new IllegalArgumentException("Essa notificação não pertence ao usuário informado.");
-		}
+		ensureNotificationRecipient(notification.getRecipient(), loadUserByEmail(email));
 
 		notification.setHidden(true);
 		ticketClosureNotificationRepository.save(notification);
@@ -263,11 +251,7 @@ public class NotificationService {
 	public void deleteTicketReply(UUID notificationId, String email) {
 		TicketReplyNotification notification = ticketReplyNotificationRepository.findDetailedById(notificationId)
 			.orElseThrow(() -> new NotFoundException("Notificação de resposta não encontrada."));
-		String normalizedEmail = normalizeEmail(email);
-
-		if (!notification.getRecipient().getEmail().equalsIgnoreCase(normalizedEmail)) {
-			throw new IllegalArgumentException("Essa notificação não pertence ao usuário informado.");
-		}
+		ensureNotificationRecipient(notification.getRecipient(), loadUserByEmail(email));
 
 		notification.setHidden(true);
 		ticketReplyNotificationRepository.save(notification);
@@ -277,11 +261,7 @@ public class NotificationService {
 	public void deleteTeamMembership(UUID notificationId, String email) {
 		TeamMembershipNotification notification = teamMembershipNotificationRepository.findDetailedById(notificationId)
 			.orElseThrow(() -> new NotFoundException("Notificação de remoção não encontrada."));
-		String normalizedEmail = normalizeEmail(email);
-
-		if (!notification.getRecipient().getEmail().equalsIgnoreCase(normalizedEmail)) {
-			throw new IllegalArgumentException("Essa notificação não pertence ao usuário informado.");
-		}
+		ensureNotificationRecipient(notification.getRecipient(), loadUserByEmail(email));
 
 		notification.setHidden(true);
 		teamMembershipNotificationRepository.save(notification);
@@ -291,11 +271,7 @@ public class NotificationService {
 	public void deleteCalendarReminder(UUID notificationId, String email) {
 		CalendarReminderNotification notification = calendarReminderNotificationRepository.findDetailedById(notificationId)
 			.orElseThrow(() -> new NotFoundException("Notificação de lembrete não encontrada."));
-		String normalizedEmail = normalizeEmail(email);
-
-		if (!notification.getRecipient().getEmail().equalsIgnoreCase(normalizedEmail)) {
-			throw new IllegalArgumentException("Essa notificação não pertence ao usuário informado.");
-		}
+		ensureNotificationRecipient(notification.getRecipient(), loadUserByEmail(email));
 
 		notification.setHidden(true);
 		calendarReminderNotificationRepository.save(notification);
@@ -305,11 +281,7 @@ public class NotificationService {
 	public void deleteCompanyPartnership(UUID notificationId, String email) {
 		CompanyPartnershipNotification notification = companyPartnershipNotificationRepository.findDetailedById(notificationId)
 			.orElseThrow(() -> new NotFoundException("Notificação de parceria não encontrada."));
-		String normalizedEmail = normalizeEmail(email);
-
-		if (!notification.getRecipient().getEmail().equalsIgnoreCase(normalizedEmail)) {
-			throw new IllegalArgumentException("Essa notificação não pertence ao usuário informado.");
-		}
+		ensureNotificationRecipient(notification.getRecipient(), loadUserByEmail(email));
 
 		notification.setHidden(true);
 		companyPartnershipNotificationRepository.save(notification);
@@ -714,5 +686,11 @@ public class NotificationService {
 			.orElseThrow(() -> new NotFoundException("Usuário responsável pela consulta não encontrado."));
 		tenantAccessService.ensureUserBelongsToCurrentTenant(user, "Esse usuário não pertence ao tenant atual.");
 		return user;
+	}
+
+	private void ensureNotificationRecipient(User notificationRecipient, User currentUser) {
+		if (notificationRecipient == null || currentUser == null || !notificationRecipient.getId().equals(currentUser.getId())) {
+			throw new IllegalArgumentException("Essa notificação não pertence ao usuário informado.");
+		}
 	}
 }

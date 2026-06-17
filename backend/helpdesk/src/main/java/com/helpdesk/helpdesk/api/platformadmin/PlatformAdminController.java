@@ -70,8 +70,7 @@ public class PlatformAdminController {
 		@Valid @RequestBody CreatePlatformCompanyRequest request,
 		HttpSession session
 	) {
-		platformAdminSessionService.requireUser(session);
-		return platformAdminCompanyService.createResponderCompany(request);
+		return platformAdminCompanyService.createResponderCompany(request, platformAdminSessionService.requireUser(session));
 	}
 
 	@PatchMapping("/companies/{companyId}/deactivate")
@@ -79,8 +78,10 @@ public class PlatformAdminController {
 		@PathVariable UUID companyId,
 		HttpSession session
 	) {
-		platformAdminSessionService.requireUser(session);
-		return platformAdminCompanyService.deactivateResponderCompany(companyId);
+		return platformAdminCompanyService.deactivateResponderCompany(
+			companyId,
+			platformAdminSessionService.requireUser(session)
+		);
 	}
 
 	@PatchMapping("/companies/{companyId}/activate")
@@ -88,7 +89,9 @@ public class PlatformAdminController {
 		@PathVariable UUID companyId,
 		HttpSession session
 	) {
-		platformAdminSessionService.requireUser(session);
-		return platformAdminCompanyService.activateResponderCompany(companyId);
+		return platformAdminCompanyService.activateResponderCompany(
+			companyId,
+			platformAdminSessionService.requireUser(session)
+		);
 	}
 }

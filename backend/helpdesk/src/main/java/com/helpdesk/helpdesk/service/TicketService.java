@@ -89,6 +89,7 @@ public class TicketService {
 	private final WhatsappConversationRepository whatsappConversationRepository;
 	private final TenantAccessService tenantAccessService;
 	private final ScopedUserLookupService scopedUserLookupService;
+	private final AuditTrailService auditTrailService;
 
 	public TicketService(
 		TicketRepository ticketRepository,
@@ -109,7 +110,8 @@ public class TicketService {
 		WhatsappService whatsappService,
 		WhatsappConversationRepository whatsappConversationRepository,
 		TenantAccessService tenantAccessService,
-		ScopedUserLookupService scopedUserLookupService
+		ScopedUserLookupService scopedUserLookupService,
+		AuditTrailService auditTrailService
 	) {
 		this.ticketRepository = ticketRepository;
 		this.userRepository = userRepository;
@@ -130,11 +132,13 @@ public class TicketService {
 		this.whatsappConversationRepository = whatsappConversationRepository;
 		this.tenantAccessService = tenantAccessService;
 		this.scopedUserLookupService = scopedUserLookupService;
+		this.auditTrailService = auditTrailService;
 	}
 
 	@Transactional(readOnly = true)
 	public List<TicketResponse> list(String email, String status) {
-		String normalizedEmail = normalizeEmail(email);
+		User viewer = loadCurrentUserByEmail(email, "Usuário responsável pela consulta não encontrado.");
+		String normalizedEmail = normalizeEmail(viewer.getEmail());
 		List<String> statusCodes = normalizeStatusCodes(status);
 		List<Ticket> tickets = statusCodes.isEmpty()
 			? ticketRepository.findVisibleByEmailOrderByCreatedAtDesc(normalizedEmail)
@@ -150,12 +154,16 @@ public class TicketService {
 
 	@Transactional(readOnly = true)
 	public TicketResponse get(UUID ticketId, String email) {
-		return toResponse(loadDetailedAccessibleTicket(ticketId, email));
+		User viewer = loadCurrentUserByEmail(email, "Usuário responsável pela consulta não encontrado.");
+		Ticket ticket = loadDetailedAccessibleTicket(ticketId, viewer.getEmail());
+		auditTrailService.recordUserAction("TICKET_VIEWED", viewer, "ticket", ticket.getId());
+		return toResponse(ticket);
 	}
 
 	@Transactional(readOnly = true)
 	public TicketSummaryResponse summary(String email) {
-		List<Ticket> tickets = ticketRepository.findVisibleByEmailOrderByCreatedAtDesc(normalizeEmail(email));
+		User viewer = loadCurrentUserByEmail(email, "Usuário responsável pelo resumo não encontrado.");
+		List<Ticket> tickets = ticketRepository.findVisibleByEmailOrderByCreatedAtDesc(normalizeEmail(viewer.getEmail()));
 		long open = 0;
 		long inProgress = 0;
 		long closed = 0;
@@ -351,7 +359,8 @@ public class TicketService {
 
 	@Transactional
 	public List<TicketMessageResponse> listMessages(UUID ticketId, String email) {
-		Ticket ticket = loadDetailedAccessibleTicket(ticketId, email);
+		User viewer = loadCurrentUserByEmail(email, "Usuário responsável pela consulta não encontrado.");
+		Ticket ticket = loadDetailedAccessibleTicket(ticketId, viewer.getEmail());
 		ensureInitialMessage(ticket);
 		Map<UUID, List<TicketAttachmentResponse>> attachmentsByMessageId = loadAttachmentsByMessageId(ticketId);
 
@@ -478,11 +487,13 @@ public class TicketService {
 				? ticket
 				: closeTicketInternal(ticket, author, true);
 
+			purgeManagedAttachments(managedTicket.getId());
 			managedTicket.setDeletedAt(OffsetDateTime.now());
 			managedTicket.setPendingTransferTo(null);
 			managedTicket.setPendingTransferRequestedBy(null);
 			managedTicket.setPendingTransferRequestedAt(null);
 			ticketRepository.save(managedTicket);
+			auditTrailService.recordUserAction("TICKET_DELETED", author, "ticket", managedTicket.getId());
 			hideRelatedTicketNotifications(managedTicket.getId());
 			clearWhatsappConversationForTicket(managedTicket.getId());
 		}
@@ -613,10 +624,12 @@ public class TicketService {
 
 	@Transactional(readOnly = true)
 	public AttachmentDownload downloadAttachment(UUID ticketId, UUID attachmentId, String email) {
-		Ticket ticket = loadDetailedAccessibleTicket(ticketId, email);
+		User viewer = loadCurrentUserByEmail(email, "Usuário responsável pelo download não encontrado.");
+		Ticket ticket = loadDetailedAccessibleTicket(ticketId, viewer.getEmail());
 		TicketAttachment attachment = ticketAttachmentRepository.findByIdAndTicketId(attachmentId, ticket.getId())
 			.orElseThrow(() -> new NotFoundException("Anexo não encontrado para este chamado."));
 		Resource resource = ticketAttachmentStorageService.loadAsResource(attachment.getStorageKey());
+		auditTrailService.recordUserAction("TICKET_ATTACHMENT_DOWNLOADED", viewer, "ticket-attachment", attachment.getId());
 
 		return new AttachmentDownload(
 			resource,
@@ -828,6 +841,13 @@ public class TicketService {
 	private Ticket loadDetailedAccessibleTicket(UUID ticketId, String email) {
 		return ticketRepository.findDetailedVisibleByIdAndEmail(ticketId, normalizeEmail(email))
 			.orElseThrow(() -> new NotFoundException("Chamado não encontrado ou indisponível para esse usuário."));
+	}
+
+	private User loadCurrentUserByEmail(String email, String notFoundMessage) {
+		User user = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(email))
+			.orElseThrow(() -> new NotFoundException(notFoundMessage));
+		tenantAccessService.ensureUserBelongsToCurrentTenant(user, "Esse usuário não pertence ao tenant atual.");
+		return user;
 	}
 
 	private User resolveAssignee(com.helpdesk.helpdesk.domain.Sector sector, UUID assignedToUserId) {
@@ -1086,6 +1106,16 @@ public class TicketService {
 		savedAttachment.setSizeBytes(storedAttachment.sizeBytes());
 
 		return ticketAttachmentRepository.save(savedAttachment);
+	}
+
+	private void purgeManagedAttachments(UUID ticketId) {
+		List<TicketAttachment> attachments = ticketAttachmentRepository.findByTicketIdOrderByCreatedAtAsc(ticketId);
+		for (TicketAttachment attachment : attachments) {
+			ticketAttachmentStorageService.deleteIfManaged(attachment.getStorageKey());
+		}
+		if (!attachments.isEmpty()) {
+			ticketAttachmentRepository.deleteAll(attachments);
+		}
 	}
 
 	private TicketMessageResponse toMessageResponse(

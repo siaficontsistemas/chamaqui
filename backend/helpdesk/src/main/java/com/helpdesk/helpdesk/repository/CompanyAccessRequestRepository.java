@@ -49,6 +49,14 @@ public interface CompanyAccessRequestRepository extends JpaRepository<CompanyAcc
 		CompanyAccessRequestStatus status
 	);
 
+	@EntityGraph(attributePaths = {"requesterUser", "requesterUser.roles", "targetCompany", "respondedBy"})
+	List<CompanyAccessRequest> findByTargetCompanyIdAndRequesterEmailIgnoreCaseAndRequestTypeAndStatusOrderByCreatedAtDesc(
+		UUID targetCompanyId,
+		String requesterEmail,
+		CompanyAccessRequestType requestType,
+		CompanyAccessRequestStatus status
+	);
+
 	@org.springframework.data.jpa.repository.Query("""
 		select request
 		from CompanyAccessRequest request

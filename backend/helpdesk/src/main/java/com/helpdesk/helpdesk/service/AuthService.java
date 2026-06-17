@@ -1,5 +1,6 @@
 package com.helpdesk.helpdesk.service;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Locale;
 
@@ -10,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.helpdesk.helpdesk.common.NotFoundException;
 import com.helpdesk.helpdesk.domain.CompanyPartnershipStatus;
 import com.helpdesk.helpdesk.domain.CompanyType;
+import com.helpdesk.helpdesk.domain.LegalDocumentType;
 import com.helpdesk.helpdesk.domain.Role;
 import com.helpdesk.helpdesk.domain.User;
 import com.helpdesk.helpdesk.domain.UserStatus;
@@ -22,6 +24,7 @@ import com.helpdesk.helpdesk.repository.RoleRepository;
 import com.helpdesk.helpdesk.repository.UserRepository;
 import com.helpdesk.helpdesk.util.BrazilianDocumentValidator;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 
 @Service
@@ -39,6 +42,8 @@ public class AuthService {
 	private final ScopedUserLookupService scopedUserLookupService;
 	private final CompanyPartnershipRepository companyPartnershipRepository;
 	private final AppSessionService appSessionService;
+	private final LegalDocumentService legalDocumentService;
+	private final LegalAcceptanceService legalAcceptanceService;
 
 	public AuthService(
 		UserRepository userRepository,
@@ -52,7 +57,9 @@ public class AuthService {
 		TenantAccessService tenantAccessService,
 		ScopedUserLookupService scopedUserLookupService,
 		CompanyPartnershipRepository companyPartnershipRepository,
-		AppSessionService appSessionService
+		AppSessionService appSessionService,
+		LegalDocumentService legalDocumentService,
+		LegalAcceptanceService legalAcceptanceService
 	) {
 		this.userRepository = userRepository;
 		this.roleRepository = roleRepository;
@@ -66,10 +73,12 @@ public class AuthService {
 		this.scopedUserLookupService = scopedUserLookupService;
 		this.companyPartnershipRepository = companyPartnershipRepository;
 		this.appSessionService = appSessionService;
+		this.legalDocumentService = legalDocumentService;
+		this.legalAcceptanceService = legalAcceptanceService;
 	}
 
 	@Transactional
-	public AuthResponse register(RegisterRequest request, HttpSession session) {
+	public AuthResponse register(RegisterRequest request, HttpSession session, HttpServletRequest httpRequest) {
 		boolean isAdminRegistration = "admin".equalsIgnoreCase(request.role());
 		CompanyType companyType = CompanyType.fromValue(request.companyType());
 		String normalizedEmail = request.email().trim().toLowerCase(Locale.ROOT);
@@ -188,10 +197,15 @@ public class AuthService {
 		user.setStatus(resolveInitialStatus(isAdminRegistration, normalizedInviteToken, companyOwner, directTenantMembership));
 		user.setEmailVerified(true);
 		user.setSimplified(false);
+		user.setTermsAcceptedAt(OffsetDateTime.now());
+		user.setTermsVersion(legalDocumentService.getCurrentVersion(LegalDocumentType.TERMS_OF_USE));
+		user.setPrivacyPolicyAcceptedAt(OffsetDateTime.now());
+		user.setPrivacyPolicyVersion(legalDocumentService.getCurrentVersion(LegalDocumentType.PRIVACY_POLICY));
 		user.getRoles().clear();
 		user.getRoles().add(role);
 
 		User savedUser = userRepository.save(user);
+		legalAcceptanceService.recordRegistrationAcceptances(savedUser, httpRequest);
 		if (isAdminRegistration) {
 			companyProvisioningService.syncAdminCompany(savedUser);
 		}

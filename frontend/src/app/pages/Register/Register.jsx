@@ -4,6 +4,7 @@ import {
   getRegisterInvite,
   registerUser,
 } from '../../api'
+import { PUBLIC_ROUTE_PATHS } from '../../routes'
 import TenantBrandImage from '../../components/branding/TenantBrandImage'
 import { useTenantBranding } from '../../context/TenantBrandingContext'
 import './Register.css'
@@ -62,6 +63,7 @@ function Register({ onNavigateHome, onNavigateLogin }) {
     passwordConfirm: false,
   })
   const [acceptedTerms, setAcceptedTerms] = useState(false)
+  const [acceptedPrivacyPolicy, setAcceptedPrivacyPolicy] = useState(false)
   const [isTermsModalOpen, setIsTermsModalOpen] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
@@ -319,6 +321,11 @@ function Register({ onNavigateHome, onNavigateLogin }) {
       return
     }
 
+    if (!acceptedPrivacyPolicy) {
+      setErrorMessage('Você precisa concordar com a politica de privacidade para concluir o cadastro.')
+      return
+    }
+
     try {
       setIsSubmitting(true)
       setErrorMessage('')
@@ -357,6 +364,8 @@ function Register({ onNavigateHome, onNavigateLogin }) {
         password: formValues.password,
         role: roleToSubmit,
         inviteToken: inviteToken || null,
+        acceptedTerms,
+        acceptedPrivacyPolicy,
       })
 
       if (selectedRole === 'user' && user?.status === 'PENDING') {
@@ -365,6 +374,7 @@ function Register({ onNavigateHome, onNavigateLogin }) {
           participationLabel: selectedParticipationLabel || 'Criar chamados',
         })
         setAcceptedTerms(false)
+        setAcceptedPrivacyPolicy(false)
         setFormValues((currentValues) => ({
           ...INITIAL_FORM_VALUES,
           companyOwnerId:
@@ -704,28 +714,53 @@ function Register({ onNavigateHome, onNavigateLogin }) {
                 </div>
 
                 {!pendingApprovalRegistration ? (
-                <label className="terms-check" htmlFor="terms">
-                  <input
-                    id="terms"
-                    name="terms"
-                    type="checkbox"
-                    checked={acceptedTerms}
-                    onChange={(event) => {
-                      setSuccessMessage('')
-                      setAcceptedTerms(event.target.checked)
-                    }}
-                  />
-                  <span>
-                    Eu li e concordo com os{' '}
-                    <button
-                      className="terms-check__button"
-                      type="button"
-                      onClick={() => setIsTermsModalOpen(true)}
-                    >
-                      termos e condições de uso
-                    </button>
-                  </span>
-                </label>
+                  <>
+                    <label className="terms-check" htmlFor="terms">
+                      <input
+                        id="terms"
+                        name="terms"
+                        type="checkbox"
+                        checked={acceptedTerms}
+                        onChange={(event) => {
+                          setSuccessMessage('')
+                          setAcceptedTerms(event.target.checked)
+                        }}
+                      />
+                      <span>
+                        Eu li e concordo com os{' '}
+                        <button
+                          className="terms-check__button"
+                          type="button"
+                          onClick={() => setIsTermsModalOpen(true)}
+                        >
+                          termos e condições de uso
+                        </button>
+                      </span>
+                    </label>
+                    <label className="terms-check" htmlFor="privacy-policy">
+                      <input
+                        id="privacy-policy"
+                        name="privacy-policy"
+                        type="checkbox"
+                        checked={acceptedPrivacyPolicy}
+                        onChange={(event) => {
+                          setSuccessMessage('')
+                          setAcceptedPrivacyPolicy(event.target.checked)
+                        }}
+                      />
+                      <span>
+                        Eu li e concordo com a{' '}
+                        <a
+                          className="terms-check__button"
+                          href={PUBLIC_ROUTE_PATHS.privacy}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          politica de privacidade
+                        </a>
+                      </span>
+                    </label>
+                  </>
                 ) : null}
 
                 {!pendingApprovalRegistration ? (

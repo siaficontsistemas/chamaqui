@@ -86,6 +86,7 @@ import ClientCompanyRegister from './app/pages/ClientCompanyRegister/ClientCompa
 import CreateSector from './app/pages/CreateSector/CreateSector'
 import Home from './app/pages/Home/Home'
 import Login from './app/pages/Login/Login'
+import LegalDocumentPage from './app/pages/LegalDocument/LegalDocumentPage'
 import MyData from './app/pages/MyData/MyData'
 import NewTicket from './app/pages/NewTicket/NewTicket'
 import OpenTickets from './app/pages/OpenTickets/OpenTickets'
@@ -1634,6 +1635,24 @@ function App() {
               <Navigate
                 replace
                 to={authUser ? SECTION_ROUTE_PATHS.tickets : PUBLIC_ROUTE_PATHS.login}
+              />
+            }
+          />
+          <Route
+            path={PUBLIC_ROUTE_PATHS.terms}
+            element={
+              <LegalDocumentPage
+                documentSlug="termos-de-uso"
+                backHref={authUser ? SECTION_ROUTE_PATHS.tickets : PUBLIC_ROUTE_PATHS.register}
+              />
+            }
+          />
+          <Route
+            path={PUBLIC_ROUTE_PATHS.privacy}
+            element={
+              <LegalDocumentPage
+                documentSlug="politica-de-privacidade"
+                backHref={authUser ? SECTION_ROUTE_PATHS.tickets : PUBLIC_ROUTE_PATHS.register}
               />
             }
           />

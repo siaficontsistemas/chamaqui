@@ -145,12 +145,6 @@ npm start
 
 O backend utiliza PostgreSQL e migrações versionadas com Flyway.
 
-Configuração padrão observada no projeto:
-
-- banco: `helpdesk`
-- usuário: `helpdesk`
-- senha: `helpdesk`
-
 Ao iniciar a aplicação com o banco configurado corretamente, as migrações são aplicadas automaticamente.
 
 ## Documentação da API
@@ -158,6 +152,18 @@ Ao iniciar a aplicação com o banco configurado corretamente, as migrações s�
 O backend expõe documentação Swagger UI em:
 
 - [http://localhost:4200/swagger-ui.html](http://localhost:4200/swagger-ui.html)
+
+## Documentação LGPD
+
+Artefatos operacionais desta frente ficam em:
+
+- `docs/lgpd/data-processing-register.md`
+- `docs/lgpd/data-subject-rights-process.md`
+
+Documentos legais publicados no fluxo público da aplicação:
+
+- `/termos-de-uso`
+- `/politica-de-privacidade`
 
 ## Variáveis de Ambiente
 

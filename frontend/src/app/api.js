@@ -118,6 +118,8 @@ function getFieldLabel(fieldName) {
     title: 'Título',
     password: 'Senha',
     role: 'Tipo de cadastro',
+    acceptedTerms: 'Termos de uso',
+    acceptedPrivacyPolicy: 'Politica de privacidade',
   }
 
   return labelsByField[fieldName] || fieldName
@@ -209,6 +211,10 @@ export function getPublicTenantBranding(host) {
   return apiRequest('/api/v1/public/tenant-branding', {
     headers: host ? { 'X-Tenant-Host': host } : {},
   })
+}
+
+export function getPublicLegalDocument(documentType) {
+  return apiRequest(`/api/v1/public/legal-documents/${encodeURIComponent(documentType)}`)
 }
 
 export function getAvailableCompanies(companyType) {

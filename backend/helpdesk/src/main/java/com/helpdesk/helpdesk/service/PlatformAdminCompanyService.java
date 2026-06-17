@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.helpdesk.helpdesk.common.NotFoundException;
 import com.helpdesk.helpdesk.domain.Company;
 import com.helpdesk.helpdesk.domain.CompanyType;
+import com.helpdesk.helpdesk.domain.PlatformAdminUser;
 import com.helpdesk.helpdesk.domain.Role;
 import com.helpdesk.helpdesk.domain.User;
 import com.helpdesk.helpdesk.domain.UserStatus;
@@ -31,6 +32,7 @@ public class PlatformAdminCompanyService {
 	private final CompanyProvisioningService companyProvisioningService;
 	private final CnpjLookupService cnpjLookupService;
 	private final EmailDomainValidationService emailDomainValidationService;
+	private final AuditTrailService auditTrailService;
 
 	public PlatformAdminCompanyService(
 		CompanyRepository companyRepository,
@@ -39,7 +41,8 @@ public class PlatformAdminCompanyService {
 		PasswordEncoder passwordEncoder,
 		CompanyProvisioningService companyProvisioningService,
 		CnpjLookupService cnpjLookupService,
-		EmailDomainValidationService emailDomainValidationService
+		EmailDomainValidationService emailDomainValidationService,
+		AuditTrailService auditTrailService
 	) {
 		this.companyRepository = companyRepository;
 		this.userRepository = userRepository;
@@ -48,6 +51,7 @@ public class PlatformAdminCompanyService {
 		this.companyProvisioningService = companyProvisioningService;
 		this.cnpjLookupService = cnpjLookupService;
 		this.emailDomainValidationService = emailDomainValidationService;
+		this.auditTrailService = auditTrailService;
 	}
 
 	@Transactional(readOnly = true)
@@ -59,7 +63,7 @@ public class PlatformAdminCompanyService {
 	}
 
 	@Transactional
-	public PlatformCompanySummaryResponse createResponderCompany(CreatePlatformCompanyRequest request) {
+	public PlatformCompanySummaryResponse createResponderCompany(CreatePlatformCompanyRequest request, PlatformAdminUser actor) {
 		String normalizedCompanyName = requireText(request.companyName(), "Informe o nome da empresa.");
 		String normalizedCompanyDocument = normalizeDigits(request.companyDocument());
 		String normalizedSubdomain = requireText(request.subdomain(), "Informe o subdomínio desejado.");
@@ -108,20 +112,22 @@ public class PlatformAdminCompanyService {
 
 		User savedAdmin = userRepository.save(admin);
 		Company savedCompany = companyProvisioningService.syncAdminCompany(savedAdmin, normalizedSubdomain);
+		auditTrailService.recordPlatformAdminAction("PLATFORM_COMPANY_CREATED", actor, "company", savedCompany.getId());
 		return toSummary(savedCompany);
 	}
 
 	@Transactional
-	public PlatformCompanySummaryResponse deactivateResponderCompany(UUID companyId) {
+	public PlatformCompanySummaryResponse deactivateResponderCompany(UUID companyId, PlatformAdminUser actor) {
 		Company company = loadResponderCompany(companyId);
 		company.setActive(false);
 		userRepository.findByCompanyOwnerIdOrIdOrderByCreatedAtAsc(company.getOwnerUser().getId(), company.getOwnerUser().getId())
 			.forEach(user -> user.setStatus(UserStatus.INACTIVE));
+		auditTrailService.recordPlatformAdminAction("PLATFORM_COMPANY_DEACTIVATED", actor, "company", company.getId());
 		return toSummary(company);
 	}
 
 	@Transactional
-	public PlatformCompanySummaryResponse activateResponderCompany(UUID companyId) {
+	public PlatformCompanySummaryResponse activateResponderCompany(UUID companyId, PlatformAdminUser actor) {
 		Company company = loadResponderCompany(companyId);
 		company.setActive(true);
 		userRepository.findByCompanyOwnerIdOrIdOrderByCreatedAtAsc(company.getOwnerUser().getId(), company.getOwnerUser().getId())
@@ -130,6 +136,7 @@ public class PlatformAdminCompanyService {
 					user.setStatus(UserStatus.ACTIVE);
 				}
 			});
+		auditTrailService.recordPlatformAdminAction("PLATFORM_COMPANY_ACTIVATED", actor, "company", company.getId());
 		return toSummary(company);
 	}
 
