@@ -20,6 +20,7 @@ public class TenantSchemaProvisioningService {
 		"ticket_assignment_notifications",
 		"ticket_transfer_notifications",
 		"ticket_closure_notifications",
+		"ticket_reply_notifications",
 		"team_membership_notifications",
 		"calendar_obligations",
 		"calendar_obligation_recipients",

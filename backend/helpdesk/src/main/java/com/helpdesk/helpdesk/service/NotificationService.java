@@ -537,7 +537,20 @@ public class NotificationService {
 			return false;
 		}
 
-		return ticket.getRequester().getId().equals(message.getAuthor().getId());
+		return isRequesterSideAuthor(ticket, message.getAuthor());
+	}
+
+	private boolean isRequesterSideAuthor(Ticket ticket, User author) {
+		if (ticket == null || author == null || ticket.getRequester() == null) {
+			return false;
+		}
+
+		if (ticket.getRequester().getId().equals(author.getId())) {
+			return true;
+		}
+
+		User requesterCompany = ticket.getRequester().getCompanyOwner();
+		return requesterCompany != null && requesterCompany.getId().equals(author.getId());
 	}
 
 	private void ensureTicketReplyNotification(Ticket ticket, TicketMessage message, User recipient) {
