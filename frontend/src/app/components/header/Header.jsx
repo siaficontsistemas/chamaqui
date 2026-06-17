@@ -4,7 +4,6 @@ import ConfirmActionModal from '../confirm-action-modal/ConfirmActionModal'
 
 function Header({
   activeSection,
-  isTeamRole,
   isNotificationLoading,
   navigationGroups = [],
   onNavigateLogin,
@@ -611,11 +610,6 @@ function Header({
               <div className="home-mobile-menu__section">
                 <span className="home-mobile-menu__eyebrow">Ações rápidas</span>
                 <div className="home-mobile-menu__actions">
-                  {isTeamRole ? (
-                    <button className="home-mobile-menu__action" type="button" onClick={() => handleSectionNavigation('team')}>
-                      Equipe
-                    </button>
-                  ) : null}
                   <button className="home-mobile-menu__action" type="button" onClick={() => handleSectionNavigation('newTicket')}>
                     Novo chamado
                   </button>
@@ -686,15 +680,6 @@ function Header({
             <span className="home-stat__label">{item.label}</span>
           </div>
         ))}
-        {isTeamRole ? (
-          <button
-            className={`home-topbar__action${activeSection === 'team' ? ' is-active' : ''}`}
-            type="button"
-            onClick={() => handleSectionNavigation('team')}
-          >
-            Equipe
-          </button>
-        ) : null}
         <button
           className={`home-topbar__action${activeSection === 'newTicket' ? ' is-active' : ''}`}
           type="button"
