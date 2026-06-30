@@ -21,13 +21,17 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
 		left join requester.companyOwner requesterCompanyOwner
 		left join ticket.sector sector
 		left join sector.createdBy sectorOwner
+		left join sectorOwner.companyOwner sectorOwnerCompanyOwner
 		left join ticket.assignedTo assignedTo
+		left join assignedTo.companyOwner assignedToCompanyOwner
 		where ticket.deletedAt is null
 			and (
 				lower(requester.email) = lower(:email)
 			or lower(requesterCompanyOwner.email) = lower(:email)
 			or lower(sectorOwner.email) = lower(:email)
+			or lower(sectorOwnerCompanyOwner.email) = lower(:email)
 			or lower(assignedTo.email) = lower(:email)
+			or lower(assignedToCompanyOwner.email) = lower(:email)
 			)
 		order by ticket.createdAt desc
 		""")
@@ -49,14 +53,18 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
 		left join requester.companyOwner requesterCompanyOwner
 		left join ticket.sector sector
 		left join sector.createdBy sectorOwner
+		left join sectorOwner.companyOwner sectorOwnerCompanyOwner
 		left join ticket.assignedTo assignedTo
+		left join assignedTo.companyOwner assignedToCompanyOwner
 		where ticket.deletedAt is null
 			and ticket.status.code in :statusCodes
 			and (
 				lower(requester.email) = lower(:email)
 				or lower(requesterCompanyOwner.email) = lower(:email)
 				or lower(sectorOwner.email) = lower(:email)
+				or lower(sectorOwnerCompanyOwner.email) = lower(:email)
 				or lower(assignedTo.email) = lower(:email)
+				or lower(assignedToCompanyOwner.email) = lower(:email)
 			)
 		order by ticket.createdAt desc
 		""")
@@ -81,13 +89,17 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
 		left join requester.companyOwner requesterCompanyOwner
 		left join ticket.sector sector
 		left join sector.createdBy sectorOwner
+		left join sectorOwner.companyOwner sectorOwnerCompanyOwner
 		left join ticket.assignedTo assignedTo
+		left join assignedTo.companyOwner assignedToCompanyOwner
 		where ticket.deletedAt is null
 			and (
 				lower(requester.email) = lower(:email)
 				or lower(requesterCompanyOwner.email) = lower(:email)
 				or lower(sectorOwner.email) = lower(:email)
+				or lower(sectorOwnerCompanyOwner.email) = lower(:email)
 				or lower(assignedTo.email) = lower(:email)
+				or lower(assignedToCompanyOwner.email) = lower(:email)
 			)
 			and (
 				:search = ''
@@ -116,14 +128,18 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
 		left join requester.companyOwner requesterCompanyOwner
 		left join ticket.sector sector
 		left join sector.createdBy sectorOwner
+		left join sectorOwner.companyOwner sectorOwnerCompanyOwner
 		left join ticket.assignedTo assignedTo
+		left join assignedTo.companyOwner assignedToCompanyOwner
 		where ticket.id = :id
 			and ticket.deletedAt is null
 			and (
 				lower(requester.email) = lower(:email)
 				or lower(requesterCompanyOwner.email) = lower(:email)
 				or lower(sectorOwner.email) = lower(:email)
+				or lower(sectorOwnerCompanyOwner.email) = lower(:email)
 				or lower(assignedTo.email) = lower(:email)
+				or lower(assignedToCompanyOwner.email) = lower(:email)
 			)
 		""")
 	@EntityGraph(attributePaths = {

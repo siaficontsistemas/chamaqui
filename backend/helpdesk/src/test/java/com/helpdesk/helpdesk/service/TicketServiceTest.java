@@ -305,6 +305,7 @@ class TicketServiceTest {
 		assertEquals(TicketChannel.WHATSAPP, createdTicket.getChannel());
 	}
 
+
 	private User user(String email, String fullName, String roleCode, User companyOwner) {
 		User user = new User();
 		setField(user, "id", UUID.randomUUID());
@@ -349,6 +350,7 @@ class TicketServiceTest {
 		conversation.setActiveTicket(ticket);
 		return conversation;
 	}
+
 
 	private void setField(Object target, String fieldName, Object value) {
 		try {
