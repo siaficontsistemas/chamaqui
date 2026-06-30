@@ -1611,11 +1611,9 @@ public class TicketService {
 		try {
 			String debugServerUrl = firstNonBlank(
 				System.getenv("TRAE_DEBUG_SERVER_URL"),
-				System.getProperty("trae.debug.server.url")
+				System.getProperty("trae.debug.server.url"),
+				"http://172.31.178.73:7778/event"
 			);
-			if (debugServerUrl.isBlank()) {
-				return;
-			}
 			java.util.Map<String, Object> event = new java.util.LinkedHashMap<>();
 			event.put(
 				"sessionId",
