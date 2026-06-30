@@ -20,7 +20,12 @@
 
 ## Log Evidence
 - Instrumentation added in `WhatsappWebhookService.handleDescriptionStep(...)` and `TicketService.createFromWhatsapp(...)`.
-- Awaiting reproduction to collect `pre-fix` evidence.
+- Instrumentation is now deploy-safe and **disabled by default**.
+- To enable on deploy, configure:
+  - `TRAE_DEBUG_SERVER_URL=<collector-url>/event`
+  - `TRAE_DEBUG_SESSION_ID=whatsapp-ticket-create`
+  - `TRAE_DEBUG_RUN_ID=pre-fix`
+- Payload uses short hashes for email/phone/transport identifiers instead of raw values.
 
 ## Verification Conclusion
 - Pending

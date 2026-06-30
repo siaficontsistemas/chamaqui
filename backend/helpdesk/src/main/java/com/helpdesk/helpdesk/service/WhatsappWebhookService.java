@@ -1350,10 +1350,10 @@ public class WhatsappWebhookService {
 				"conversationId", conversation == null ? null : conversation.getId(),
 				"sectorId", conversation == null || conversation.getSector() == null ? null : conversation.getSector().getId(),
 				"pendingAssignedUserId", conversation == null ? null : conversation.getPendingAssignedUserId(),
-				"phoneNumber", conversation == null ? null : conversation.getPhoneNumber(),
-				"transportId", conversation == null ? null : conversation.getWhatsappTransportId(),
-				"pendingEmail", pendingEmail,
-				"pendingName", pendingName,
+				"phoneHash", shortHash(conversation == null ? null : conversation.getPhoneNumber()),
+				"transportIdHash", shortHash(conversation == null ? null : conversation.getWhatsappTransportId()),
+				"pendingEmailHash", shortHash(pendingEmail),
+				"pendingNameLength", pendingName == null ? 0 : pendingName.length(),
 				"attachmentCount", attachments == null ? 0 : attachments.size(),
 				"descriptionLength", normalizedDescription.length()
 			)
@@ -1376,7 +1376,7 @@ public class WhatsappWebhookService {
 				debugData(
 					"traceId", debugTraceId,
 					"requesterId", requester == null ? null : requester.getId(),
-					"requesterEmail", requester == null ? null : requester.getEmail(),
+					"requesterEmailHash", shortHash(requester == null ? null : requester.getEmail()),
 					"requesterCompanyOwnerId", requester == null || requester.getCompanyOwner() == null ? null : requester.getCompanyOwner().getId(),
 					"requesterCompanyType", requester == null || requester.getCompanyType() == null ? null : requester.getCompanyType().name()
 				)
@@ -1472,7 +1472,7 @@ public class WhatsappWebhookService {
 					"conversationId", conversation == null ? null : conversation.getId(),
 					"sectorId", conversation == null || conversation.getSector() == null ? null : conversation.getSector().getId(),
 					"pendingAssignedUserId", conversation == null ? null : conversation.getPendingAssignedUserId(),
-					"transportId", conversation == null ? null : conversation.getWhatsappTransportId()
+					"transportIdHash", shortHash(conversation == null ? null : conversation.getWhatsappTransportId())
 				)
 			);
 			// #endregion
@@ -2464,17 +2464,34 @@ public class WhatsappWebhookService {
 
 	private void reportDebugEvent(String hypothesisId, String location, String message, java.util.Map<String, Object> data) {
 		try {
+			String debugServerUrl = firstNonBlank(
+				System.getenv("TRAE_DEBUG_SERVER_URL"),
+				System.getProperty("trae.debug.server.url")
+			);
+			if (debugServerUrl.isBlank()) {
+				return;
+			}
 			java.util.Map<String, Object> event = new java.util.LinkedHashMap<>();
-			event.put("sessionId", "whatsapp-ticket-create");
-			event.put("runId", "pre-fix");
+			event.put(
+				"sessionId",
+				firstNonBlank(System.getenv("TRAE_DEBUG_SESSION_ID"), System.getProperty("trae.debug.session.id"), "whatsapp-ticket-create")
+			);
+			event.put(
+				"runId",
+				firstNonBlank(System.getenv("TRAE_DEBUG_RUN_ID"), System.getProperty("trae.debug.run.id"), "pre-fix")
+			);
 			event.put("hypothesisId", hypothesisId);
 			event.put("location", location);
 			event.put("msg", message);
 			event.put("data", data == null ? java.util.Map.of() : data);
 			event.put("ts", System.currentTimeMillis());
 			String payload = objectMapper.writeValueAsString(event);
-			java.net.http.HttpClient.newHttpClient().send(
-				java.net.http.HttpRequest.newBuilder(java.net.URI.create("http://127.0.0.1:7777/event"))
+			java.net.http.HttpClient.newBuilder()
+				.connectTimeout(java.time.Duration.ofMillis(400))
+				.build()
+				.send(
+				java.net.http.HttpRequest.newBuilder(java.net.URI.create(debugServerUrl))
+					.timeout(java.time.Duration.ofMillis(700))
 					.header("Content-Type", "application/json")
 					.POST(java.net.http.HttpRequest.BodyPublishers.ofString(payload))
 					.build(),
@@ -2494,6 +2511,23 @@ public class WhatsappWebhookService {
 			data.put(String.valueOf(keyValues[index]), keyValues[index + 1]);
 		}
 		return data;
+	}
+
+	private String shortHash(String value) {
+		if (value == null || value.isBlank()) {
+			return "";
+		}
+		try {
+			byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+				.digest(value.trim().toLowerCase(Locale.ROOT).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+			StringBuilder builder = new StringBuilder();
+			for (int index = 0; index < Math.min(6, digest.length); index++) {
+				builder.append(String.format("%02x", digest[index]));
+			}
+			return builder.toString();
+		} catch (java.security.NoSuchAlgorithmException exception) {
+			return Integer.toHexString(value.hashCode());
+		}
 	}
 
 	private boolean isMessageEvent(String event) {
