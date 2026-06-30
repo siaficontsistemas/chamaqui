@@ -418,7 +418,7 @@ class WhatsappWebhookServiceTest {
 			eq(savedRequester.getEmail()),
 			eq("5511999999999"),
 			eq("")
-		)).thenReturn(List.of()).thenThrow(new IllegalStateException("falha de consulta"));
+		)).thenReturn(List.of()).thenReturn(List.of()).thenThrow(new IllegalStateException("falha de consulta"));
 
 		service.handleIncomingMessage(companyOwner, "5511999999999", "", "mensagem inicial longa", List.of());
 
@@ -503,6 +503,64 @@ class WhatsappWebhookServiceTest {
 		assertEquals(createdTicket, savedConversation.getActiveTicket());
 	}
 
+	@Test
+	void shouldRecoverRecentOpenTicketWhenConversationIsStillAskDescription() {
+		User companyOwner = companyOwner();
+		companyOwner.setCompanyType(CompanyType.RESPONDER);
+
+		WhatsappConversation conversation = conversation(companyOwner, WhatsappConversationStep.ASK_DESCRIPTION);
+		conversation.setPendingName("Cliente Externo");
+		conversation.setPendingEmail("cliente@gmail.com");
+		conversation.setLastInboundMessageAt(OffsetDateTime.now().minusMinutes(1));
+
+		Sector sector = new Sector();
+		setField(sector, "id", UUID.randomUUID());
+		sector.setName("Administrativo");
+		sector.setCreatedBy(companyOwner);
+		conversation.setSector(sector);
+
+		User requester = new User();
+		setField(requester, "id", UUID.randomUUID());
+		requester.setFullName("Cliente Externo");
+		requester.setEmail("cliente@gmail.com");
+		requester.setPhoneNumber("5511999999999");
+		requester.getRoles().add(role("USER"));
+
+		User assignee = new User();
+		setField(assignee, "id", UUID.randomUUID());
+		assignee.setFullName("Silvia Freire");
+
+		com.helpdesk.helpdesk.domain.Ticket openTicket = new com.helpdesk.helpdesk.domain.Ticket();
+		setField(openTicket, "id", UUID.randomUUID());
+		setField(openTicket, "createdAt", OffsetDateTime.now().minusSeconds(20));
+		openTicket.setProtocol("CA-2026-0059");
+		openTicket.setRequester(requester);
+		openTicket.setAssignedTo(assignee);
+		openTicket.setSector(sector);
+		openTicket.setStatus(ticketStatus("OPEN"));
+
+		when(whatsappConversationRepository.findByCompanyOwnerIdAndPhoneNumber(companyOwner.getId(), "5511999999999"))
+			.thenReturn(Optional.of(conversation));
+		when(scopedUserLookupService.findUniqueByPhoneNumberInCurrentTenant("5511999999999"))
+			.thenReturn(Optional.of(requester));
+		when(scopedUserLookupService.findUniqueByEmailInCurrentTenant("cliente@gmail.com"))
+			.thenReturn(Optional.of(requester));
+		when(ticketRepository.findOpenWhatsappTicketsForRouting(
+			eq(companyOwner.getId()),
+			eq(requester.getId()),
+			eq(requester.getEmail()),
+			eq("5511999999999"),
+			eq("")
+		)).thenReturn(List.of(openTicket));
+
+		service.handleIncomingMessage(companyOwner, "5511999999999", "", "oi", List.of());
+
+		verify(ticketService).addWhatsappMessage(openTicket.getId(), "oi", List.of());
+		verify(whatsappConversationRepository, atLeastOnce()).save(conversationCaptor.capture());
+		assertEquals(WhatsappConversationStep.ACTIVE_TICKET, conversationCaptor.getValue().getCurrentStep());
+		assertEquals(openTicket, conversationCaptor.getValue().getActiveTicket());
+	}
+
 	private User companyOwner() {
 		User user = new User();
 		user.setFullName("Empresa A");
@@ -530,6 +588,14 @@ class WhatsappWebhookServiceTest {
 		setField(role, "code", code);
 		setField(role, "name", code);
 		return role;
+	}
+
+	private com.helpdesk.helpdesk.domain.TicketStatus ticketStatus(String code) {
+		com.helpdesk.helpdesk.domain.TicketStatus status = new com.helpdesk.helpdesk.domain.TicketStatus();
+		setField(status, "id", UUID.randomUUID());
+		setField(status, "code", code);
+		setField(status, "name", code);
+		return status;
 	}
 
 	private void setField(Object target, String fieldName, Object value) {

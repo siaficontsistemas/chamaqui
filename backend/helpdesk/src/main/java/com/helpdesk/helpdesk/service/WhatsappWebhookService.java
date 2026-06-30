@@ -211,8 +211,14 @@ public class WhatsappWebhookService {
 
 		String replyTarget = resolveReplyTarget(conversation, normalizedPhone);
 		boolean isNewConversation = conversation.getId() == null;
+		boolean recoveredRecentOpenTicket = recoverRecentOpenTicketConversation(
+			companyOwner,
+			conversation,
+			previousInboundMessageAt,
+			normalizedBody
+		);
 
-		if (isNewConversation) {
+		if (isNewConversation && !recoveredRecentOpenTicket) {
 			promptForInitialMode(companyOwner, conversation, replyTarget, null);
 			return;
 		}
@@ -863,6 +869,85 @@ public class WhatsappWebhookService {
 		).stream()
 			.sorted(Comparator.comparing(Ticket::getCreatedAt).reversed())
 			.toList();
+	}
+
+	private boolean recoverRecentOpenTicketConversation(
+		User companyOwner,
+		WhatsappConversation conversation,
+		OffsetDateTime previousInboundMessageAt,
+		String body
+	) {
+		if (conversation == null
+			|| conversation.isNormalConversationActive()
+			|| hasActiveOpenTicket(conversation)
+			|| conversation.getCurrentStep() == WhatsappConversationStep.ASK_ACTIVE_TICKET_SELECTION
+			|| conversation.getCurrentStep() == WhatsappConversationStep.ASK_INACTIVITY_MESSAGE_DESTINATION
+			|| isOpenNewTicketCommand(body)
+			|| isTicketModeSelection(body)
+			|| isNormalConversationSelection(body)
+			|| isCancelCommand(body)) {
+			return false;
+		}
+
+		List<Ticket> openTickets = loadOpenTicketsForConversation(companyOwner, conversation);
+		if (openTickets.isEmpty()) {
+			return false;
+		}
+
+		Ticket latestOpenTicket = openTickets.get(0);
+		if (!shouldRecoverRecentOpenTicket(conversation, latestOpenTicket, previousInboundMessageAt)) {
+			return false;
+		}
+
+		conversation.setActiveTicket(latestOpenTicket);
+		conversation.setSector(latestOpenTicket.getSector());
+		conversation.setCurrentStep(WhatsappConversationStep.ACTIVE_TICKET);
+		conversation.setLastTicketSelectionPromptAt(null);
+		if (latestOpenTicket.getRequester() != null) {
+			conversation.setPendingName(firstNonBlank(
+				conversation.getPendingName(),
+				latestOpenTicket.getRequester().getFullName()
+			));
+			conversation.setPendingEmail(firstNonBlank(
+				conversation.getPendingEmail(),
+				latestOpenTicket.getRequester().getEmail()
+			));
+			conversation.setPendingDocument(firstNonBlank(
+				conversation.getPendingDocument(),
+				latestOpenTicket.getRequester().getDocumentNumber()
+			));
+		}
+		whatsappConversationRepository.save(conversation);
+		return true;
+	}
+
+	private boolean shouldRecoverRecentOpenTicket(
+		WhatsappConversation conversation,
+		Ticket latestOpenTicket,
+		OffsetDateTime previousInboundMessageAt
+	) {
+		if (latestOpenTicket == null) {
+			return false;
+		}
+
+		OffsetDateTime ticketCreatedAt = latestOpenTicket.getCreatedAt();
+		if (ticketCreatedAt == null) {
+			return false;
+		}
+
+		if (conversation.getId() == null) {
+			return ticketCreatedAt.isAfter(OffsetDateTime.now().minusMinutes(30));
+		}
+
+		if (conversation.getCurrentStep() != WhatsappConversationStep.ASK_DESCRIPTION) {
+			return false;
+		}
+
+		if (previousInboundMessageAt == null) {
+			return ticketCreatedAt.isAfter(OffsetDateTime.now().minusMinutes(30));
+		}
+
+		return !ticketCreatedAt.isBefore(previousInboundMessageAt.minusSeconds(5));
 	}
 
 	private Ticket resolveSelectedOpenTicket(WhatsappConversation conversation, List<Ticket> openTickets) {
