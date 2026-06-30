@@ -5,6 +5,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -154,6 +155,41 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
 		"priority"
 	})
 	Optional<Ticket> findDetailedVisibleByIdAndEmail(@Param("id") UUID id, @Param("email") String email);
+
+	@EntityGraph(attributePaths = {
+		"requester",
+		"assignedTo",
+		"pendingTransferTo",
+		"pendingTransferRequestedBy",
+		"sector",
+		"status",
+		"priority"
+	})
+	List<Ticket> findByDeletedAtIsNull(Sort sort);
+
+	@EntityGraph(attributePaths = {
+		"requester",
+		"assignedTo",
+		"pendingTransferTo",
+		"pendingTransferRequestedBy",
+		"sector",
+		"status",
+		"priority"
+	})
+	List<Ticket> findByDeletedAtIsNullAndStatusCodeIn(List<String> statusCodes, Sort sort);
+
+	@EntityGraph(attributePaths = {
+		"requester",
+		"requester.roles",
+		"assignedTo",
+		"pendingTransferTo",
+		"pendingTransferRequestedBy",
+		"sector",
+		"sector.createdBy",
+		"status",
+		"priority"
+	})
+	Optional<Ticket> findByIdAndDeletedAtIsNull(UUID id);
 
 	@EntityGraph(attributePaths = {"assignedTo"})
 	Optional<Ticket> findFirstBySectorIdAndAssignedToIdInOrderByCreatedAtDesc(UUID sectorId, List<UUID> assignedToIds);

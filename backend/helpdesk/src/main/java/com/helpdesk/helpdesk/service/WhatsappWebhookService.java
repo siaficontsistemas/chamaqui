@@ -1953,19 +1953,120 @@ public class WhatsappWebhookService {
 		String normalizedPhone,
 		String whatsappTransportId
 	) {
-		if (!whatsappTransportId.isBlank()) {
-			java.util.Optional<WhatsappConversation> byTransportId =
-				whatsappConversationRepository.findByCompanyOwnerIdAndWhatsappTransportId(companyOwnerId, whatsappTransportId);
-			if (byTransportId.isPresent()) {
-				return byTransportId;
-			}
+		java.util.Optional<WhatsappConversation> byTransportId = whatsappTransportId.isBlank()
+			? java.util.Optional.empty()
+			: whatsappConversationRepository.findByCompanyOwnerIdAndWhatsappTransportId(companyOwnerId, whatsappTransportId);
+		java.util.Optional<WhatsappConversation> byPhone = normalizedPhone.isBlank()
+			? java.util.Optional.empty()
+			: whatsappConversationRepository.findByCompanyOwnerIdAndPhoneNumber(companyOwnerId, normalizedPhone);
+
+		if (byTransportId.isEmpty()) {
+			return byPhone;
+		}
+		if (byPhone.isEmpty()) {
+			return byTransportId;
 		}
 
-		if (!normalizedPhone.isBlank()) {
-			return whatsappConversationRepository.findByCompanyOwnerIdAndPhoneNumber(companyOwnerId, normalizedPhone);
+		WhatsappConversation transportConversation = byTransportId.get();
+		WhatsappConversation phoneConversation = byPhone.get();
+		if (transportConversation.getId().equals(phoneConversation.getId())) {
+			return byTransportId;
 		}
 
-		return java.util.Optional.empty();
+		WhatsappConversation canonicalConversation = chooseCanonicalConversation(phoneConversation, transportConversation);
+		WhatsappConversation staleConversation = canonicalConversation.getId().equals(phoneConversation.getId())
+			? transportConversation
+			: phoneConversation;
+
+		mergeConversationState(canonicalConversation, staleConversation);
+		whatsappConversationRepository.delete(staleConversation);
+		return java.util.Optional.of(canonicalConversation);
+	}
+
+	private WhatsappConversation chooseCanonicalConversation(
+		WhatsappConversation phoneConversation,
+		WhatsappConversation transportConversation
+	) {
+		int phoneRank = conversationStateRank(phoneConversation);
+		int transportRank = conversationStateRank(transportConversation);
+		if (transportRank > phoneRank) {
+			return transportConversation;
+		}
+		if (phoneRank > transportRank) {
+			return phoneConversation;
+		}
+
+		OffsetDateTime phoneUpdatedAt = phoneConversation.getUpdatedAt();
+		OffsetDateTime transportUpdatedAt = transportConversation.getUpdatedAt();
+		if (phoneUpdatedAt == null) {
+			return transportConversation;
+		}
+		if (transportUpdatedAt == null) {
+			return phoneConversation;
+		}
+		return transportUpdatedAt.isAfter(phoneUpdatedAt) ? transportConversation : phoneConversation;
+	}
+
+	private int conversationStateRank(WhatsappConversation conversation) {
+		if (conversation == null) {
+			return -1;
+		}
+		if (conversation.getActiveTicket() != null) {
+			return 5;
+		}
+		if (conversation.getCurrentStep() == WhatsappConversationStep.ACTIVE_TICKET) {
+			return 4;
+		}
+		if (conversation.getCurrentStep() == WhatsappConversationStep.ASK_DESCRIPTION) {
+			return 3;
+		}
+		if (conversation.getCurrentStep() == WhatsappConversationStep.ASK_EMAIL
+			|| conversation.getCurrentStep() == WhatsappConversationStep.ASK_NAME
+			|| conversation.getCurrentStep() == WhatsappConversationStep.ASK_ASSIGNEE
+			|| conversation.getCurrentStep() == WhatsappConversationStep.ASK_SECTOR) {
+			return 2;
+		}
+		if (conversation.getCurrentStep() == WhatsappConversationStep.ASK_INITIAL_MODE) {
+			return 1;
+		}
+		return 0;
+	}
+
+	private void mergeConversationState(WhatsappConversation canonicalConversation, WhatsappConversation staleConversation) {
+		if (canonicalConversation == null || staleConversation == null) {
+			return;
+		}
+		if (canonicalConversation.getActiveTicket() == null) {
+			canonicalConversation.setActiveTicket(staleConversation.getActiveTicket());
+		}
+		if (canonicalConversation.getSector() == null) {
+			canonicalConversation.setSector(staleConversation.getSector());
+		}
+		if ((canonicalConversation.getPendingName() == null || canonicalConversation.getPendingName().isBlank())
+			&& staleConversation.getPendingName() != null
+			&& !staleConversation.getPendingName().isBlank()) {
+			canonicalConversation.setPendingName(staleConversation.getPendingName());
+		}
+		if ((canonicalConversation.getPendingEmail() == null || canonicalConversation.getPendingEmail().isBlank())
+			&& staleConversation.getPendingEmail() != null
+			&& !staleConversation.getPendingEmail().isBlank()) {
+			canonicalConversation.setPendingEmail(staleConversation.getPendingEmail());
+		}
+		if ((canonicalConversation.getPendingMessage() == null || canonicalConversation.getPendingMessage().isBlank())
+			&& staleConversation.getPendingMessage() != null
+			&& !staleConversation.getPendingMessage().isBlank()) {
+			canonicalConversation.setPendingMessage(staleConversation.getPendingMessage());
+		}
+		if (canonicalConversation.getPendingAssignedUserId() == null) {
+			canonicalConversation.setPendingAssignedUserId(staleConversation.getPendingAssignedUserId());
+		}
+		if (canonicalConversation.getCurrentStep() == null
+			|| conversationStateRank(staleConversation) > conversationStateRank(canonicalConversation)) {
+			canonicalConversation.setCurrentStep(staleConversation.getCurrentStep());
+		}
+		if (!canonicalConversation.isNormalConversationActive() && staleConversation.isNormalConversationActive()) {
+			canonicalConversation.setNormalConversationActive(true);
+		}
 	}
 
 	private String resolveSessionName(JsonNode payload) {
@@ -2361,7 +2462,8 @@ public class WhatsappWebhookService {
 	}
 
 	private String normalizePhone(String phone) {
-		return phone == null ? "" : phone.replaceAll("\\D+", "");
+		String normalizedAddress = normalizeWhatsappAddress(phone);
+		return normalizedAddress.replaceAll("\\D+", "");
 	}
 
 	private boolean looksLikeHumanPhoneNumber(String phone) {
@@ -2378,7 +2480,31 @@ public class WhatsappWebhookService {
 	}
 
 	private String normalizeWhatsappAddress(String phone) {
-		return phone == null ? "" : phone.trim();
+		if (phone == null) {
+			return "";
+		}
+
+		String normalized = phone.trim();
+		if (normalized.isBlank()) {
+			return "";
+		}
+
+		int atIndex = normalized.indexOf('@');
+		if (atIndex >= 0) {
+			String localPart = normalized.substring(0, atIndex);
+			int deviceSeparatorIndex = localPart.indexOf(':');
+			if (deviceSeparatorIndex >= 0) {
+				localPart = localPart.substring(0, deviceSeparatorIndex);
+			}
+			normalized = localPart + normalized.substring(atIndex);
+		} else {
+			int deviceSeparatorIndex = normalized.indexOf(':');
+			if (deviceSeparatorIndex >= 0) {
+				normalized = normalized.substring(0, deviceSeparatorIndex);
+			}
+		}
+
+		return normalized;
 	}
 
 	private String normalizeWhatsappTransportId(String phone) {

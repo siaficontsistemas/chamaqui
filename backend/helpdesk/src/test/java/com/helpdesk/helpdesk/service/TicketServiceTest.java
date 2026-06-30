@@ -11,6 +11,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import org.springframework.data.domain.Sort;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import static org.mockito.Mockito.never;
@@ -31,6 +32,7 @@ import com.helpdesk.helpdesk.domain.User;
 import com.helpdesk.helpdesk.domain.UserStatus;
 import com.helpdesk.helpdesk.dto.ticket.CreateTicketMessageRequest;
 import com.helpdesk.helpdesk.dto.ticket.TicketMessageResponse;
+import com.helpdesk.helpdesk.dto.ticket.TicketResponse;
 import com.helpdesk.helpdesk.repository.CompanyPartnershipRepository;
 import com.helpdesk.helpdesk.repository.SectorMemberRepository;
 import com.helpdesk.helpdesk.repository.SectorRepository;
@@ -300,6 +302,48 @@ class TicketServiceTest {
 		);
 
 		assertEquals(responderAdmin, createdTicket.getAssignedTo());
+	}
+
+	@Test
+	void shouldListAllTenantTicketsForTenantOwnerAdmin() {
+		User tenantOwner = user("admin@empresa.com", "Empresa Admin", "ADMIN", null);
+		UUID tenantOwnerId = tenantOwner.getId();
+
+		User requester = user("cliente@gmail.com", "Cliente Externo", "USER", null);
+		User employee = user("silvia@empresa.com", "Silvia Freire", "EMPLOYEE", tenantOwner);
+
+		Sector sector = new Sector();
+		sector.setName("Administrativo");
+		sector.setSlug("administrativo");
+		sector.setCreatedBy(tenantOwner);
+
+		TicketStatus openStatus = ticketStatus("OPEN");
+		TicketPriority mediumPriority = ticketPriority("MEDIUM");
+
+		Ticket ticket = new Ticket();
+		setField(ticket, "id", UUID.randomUUID());
+		ticket.setProtocol("CA-2026-0059");
+		ticket.setTitle("Chamado WhatsApp");
+		ticket.setDescription("Mensagem inicial");
+		ticket.setRequester(requester);
+		ticket.setAssignedTo(employee);
+		ticket.setSector(sector);
+		ticket.setStatus(openStatus);
+		ticket.setPriority(mediumPriority);
+		ticket.setChannel(TicketChannel.WHATSAPP);
+
+		when(scopedUserLookupService.findUniqueByEmailInCurrentTenant("admin@empresa.com"))
+			.thenReturn(Optional.of(tenantOwner));
+		when(tenantAccessService.getCurrentTenantOwnerUserId()).thenReturn(Optional.of(tenantOwnerId));
+		when(ticketRepository.findByDeletedAtIsNull(Sort.by(Sort.Direction.DESC, "createdAt")))
+			.thenReturn(List.of(ticket));
+
+		List<TicketResponse> tickets = ticketService.list("admin@empresa.com", null);
+
+		assertEquals(1, tickets.size());
+		assertEquals("CA-2026-0059", tickets.get(0).protocol());
+		assertEquals(employee.getFullName(), tickets.get(0).assignedToName());
+		verify(ticketRepository).findByDeletedAtIsNull(Sort.by(Sort.Direction.DESC, "createdAt"));
 	}
 
 	private User user(String email, String fullName, String roleCode, User companyOwner) {

@@ -16,6 +16,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.Resource;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -138,14 +139,8 @@ public class TicketService {
 	@Transactional(readOnly = true)
 	public List<TicketResponse> list(String email, String status) {
 		User viewer = loadCurrentUserByEmail(email, "Usuário responsável pela consulta não encontrado.");
-		String normalizedEmail = normalizeEmail(viewer.getEmail());
 		List<String> statusCodes = normalizeStatusCodes(status);
-		List<Ticket> tickets = statusCodes.isEmpty()
-			? ticketRepository.findVisibleByEmailOrderByCreatedAtDesc(normalizedEmail)
-			: ticketRepository.findVisibleByEmailAndStatusCodesOrderByCreatedAtDesc(
-				normalizedEmail,
-				statusCodes
-			);
+		List<Ticket> tickets = loadVisibleTickets(viewer, statusCodes);
 
 		return tickets.stream()
 			.map(this::toResponse)
@@ -155,7 +150,7 @@ public class TicketService {
 	@Transactional(readOnly = true)
 	public TicketResponse get(UUID ticketId, String email) {
 		User viewer = loadCurrentUserByEmail(email, "Usuário responsável pela consulta não encontrado.");
-		Ticket ticket = loadDetailedAccessibleTicket(ticketId, viewer.getEmail());
+		Ticket ticket = loadDetailedAccessibleTicket(ticketId, viewer);
 		auditTrailService.recordUserAction("TICKET_VIEWED", viewer, "ticket", ticket.getId());
 		return toResponse(ticket);
 	}
@@ -163,7 +158,7 @@ public class TicketService {
 	@Transactional(readOnly = true)
 	public TicketSummaryResponse summary(String email) {
 		User viewer = loadCurrentUserByEmail(email, "Usuário responsável pelo resumo não encontrado.");
-		List<Ticket> tickets = ticketRepository.findVisibleByEmailOrderByCreatedAtDesc(normalizeEmail(viewer.getEmail()));
+		List<Ticket> tickets = loadVisibleTickets(viewer, List.of());
 		long open = 0;
 		long inProgress = 0;
 		long closed = 0;
@@ -841,7 +836,17 @@ public class TicketService {
 	}
 
 	private Ticket loadDetailedAccessibleTicket(UUID ticketId, String email) {
-		return ticketRepository.findDetailedVisibleByIdAndEmail(ticketId, normalizeEmail(email))
+		User viewer = loadCurrentUserByEmail(email, "Usuário responsável pela consulta não encontrado.");
+		return loadDetailedAccessibleTicket(ticketId, viewer);
+	}
+
+	private Ticket loadDetailedAccessibleTicket(UUID ticketId, User viewer) {
+		if (isTenantOwnerAdmin(viewer)) {
+			return ticketRepository.findByIdAndDeletedAtIsNull(ticketId)
+				.orElseThrow(() -> new NotFoundException("Chamado não encontrado ou indisponível para esse usuário."));
+		}
+
+		return ticketRepository.findDetailedVisibleByIdAndEmail(ticketId, normalizeEmail(viewer.getEmail()))
 			.orElseThrow(() -> new NotFoundException("Chamado não encontrado ou indisponível para esse usuário."));
 	}
 
@@ -850,6 +855,29 @@ public class TicketService {
 			.orElseThrow(() -> new NotFoundException(notFoundMessage));
 		tenantAccessService.ensureUserBelongsToCurrentTenant(user, "Esse usuário não pertence ao tenant atual.");
 		return user;
+	}
+
+	private List<Ticket> loadVisibleTickets(User viewer, List<String> statusCodes) {
+		if (isTenantOwnerAdmin(viewer)) {
+			Sort sort = Sort.by(Sort.Direction.DESC, "createdAt");
+			return statusCodes == null || statusCodes.isEmpty()
+				? ticketRepository.findByDeletedAtIsNull(sort)
+				: ticketRepository.findByDeletedAtIsNullAndStatusCodeIn(statusCodes, sort);
+		}
+
+		String normalizedEmail = normalizeEmail(viewer.getEmail());
+		return statusCodes == null || statusCodes.isEmpty()
+			? ticketRepository.findVisibleByEmailOrderByCreatedAtDesc(normalizedEmail)
+			: ticketRepository.findVisibleByEmailAndStatusCodesOrderByCreatedAtDesc(normalizedEmail, statusCodes);
+	}
+
+	private boolean isTenantOwnerAdmin(User viewer) {
+		return viewer != null
+			&& viewer.getId() != null
+			&& hasRole(viewer, "admin")
+			&& tenantAccessService.getCurrentTenantOwnerUserId()
+				.map(ownerUserId -> ownerUserId.equals(viewer.getId()))
+				.orElse(false);
 	}
 
 	private User resolveAssignee(com.helpdesk.helpdesk.domain.Sector sector, UUID assignedToUserId) {
@@ -980,11 +1008,9 @@ public class TicketService {
 	}
 
 	private User resolveTicketCompanyAdmin(Ticket ticket) {
-		if (ticket == null || ticket.getSector() == null) {
-			return null;
-		}
-
-		User companyAdmin = ticket.getSector().getCreatedBy();
+		User companyAdmin = tenantAccessService.getCurrentTenantOwnerUserId()
+			.flatMap(userRepository::findById)
+			.orElseGet(() -> ticket == null || ticket.getSector() == null ? null : ticket.getSector().getCreatedBy());
 		if (companyAdmin == null || companyAdmin.getStatus() == null) {
 			return null;
 		}
