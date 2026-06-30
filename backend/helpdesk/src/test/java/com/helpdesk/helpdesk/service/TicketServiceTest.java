@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import org.mockito.InjectMocks;
@@ -18,6 +19,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.helpdesk.helpdesk.domain.CompanyType;
 import com.helpdesk.helpdesk.domain.Role;
 import com.helpdesk.helpdesk.domain.Sector;
 import com.helpdesk.helpdesk.domain.Ticket;
@@ -252,6 +254,57 @@ class TicketServiceTest {
 		verify(ticketReplyNotificationRepository, never()).save(any(TicketReplyNotification.class));
 	}
 
+	@Test
+	void shouldCreateWhatsappTicketAssignedToCompanyAdminWhenSectorHasNoEmployees() {
+		User responderAdmin = user("admin@empresa.com", "Empresa Admin", "ADMIN", null);
+		responderAdmin.setCompanyType(CompanyType.RESPONDER);
+		User requester = user("cliente@gmail.com", "Cliente Externo", "USER", null);
+
+		Sector sector = new Sector();
+		UUID sectorId = UUID.randomUUID();
+		setField(sector, "id", sectorId);
+		sector.setName("Financeiro");
+		sector.setSlug("financeiro");
+		sector.setCreatedBy(responderAdmin);
+
+		TicketStatus openStatus = ticketStatus("OPEN");
+		com.helpdesk.helpdesk.domain.TicketPriority mediumPriority = ticketPriority("MEDIUM");
+
+		when(ticketStatusRepository.findByCode("OPEN")).thenReturn(Optional.of(openStatus));
+		when(ticketPriorityRepository.findByCode("MEDIUM")).thenReturn(Optional.of(mediumPriority));
+		when(sectorRepository.findById(sectorId)).thenReturn(Optional.of(sector));
+		when(tenantAccessService.getCurrentTenantOwnerUserId()).thenReturn(Optional.of(responderAdmin.getId()));
+		when(ticketRepository.findMaxProtocolSequenceByPrefix(anyString())).thenReturn(0L);
+		when(sectorMemberRepository.findBySectorIdOrderByAssignedAtAsc(sectorId)).thenReturn(List.of());
+		when(ticketRepository.saveAndFlush(any(Ticket.class))).thenAnswer(invocation -> {
+			Ticket savedTicket = invocation.getArgument(0);
+			setField(savedTicket, "id", UUID.randomUUID());
+			return savedTicket;
+		});
+		when(ticketMessageRepository.existsByTicketId(any(UUID.class))).thenReturn(false);
+		when(ticketMessageRepository.save(any(TicketMessage.class))).thenAnswer(invocation -> {
+			TicketMessage message = invocation.getArgument(0);
+			setField(message, "id", UUID.randomUUID());
+			return message;
+		});
+
+		Ticket createdTicket = ticketService.createFromWhatsapp(
+			new TicketService.CreateWhatsappTicketRequest(
+				requester,
+				"5511999999999",
+				"5511999999999@c.us",
+				responderAdmin.getId(),
+				sectorId,
+				null,
+				"Mensagem inicial do cliente pelo WhatsApp",
+				List.of()
+			)
+		);
+
+		assertEquals(responderAdmin.getId(), createdTicket.getAssignedTo().getId());
+		assertEquals(TicketChannel.WHATSAPP, createdTicket.getChannel());
+	}
+
 	private User user(String email, String fullName, String roleCode, User companyOwner) {
 		User user = new User();
 		setField(user, "id", UUID.randomUUID());
@@ -268,6 +321,14 @@ class TicketServiceTest {
 		setField(role, "code", code);
 		setField(role, "name", code);
 		return role;
+	}
+
+	private com.helpdesk.helpdesk.domain.TicketPriority ticketPriority(String code) {
+		com.helpdesk.helpdesk.domain.TicketPriority priority = new com.helpdesk.helpdesk.domain.TicketPriority();
+		setField(priority, "id", UUID.randomUUID());
+		setField(priority, "code", code);
+		setField(priority, "name", code);
+		return priority;
 	}
 
 	private TicketStatus ticketStatus(String code) {

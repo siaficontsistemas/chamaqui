@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   acceptCompanyAccessRequestNotification,
@@ -1243,13 +1243,16 @@ function App() {
     return updatedTicket
   }
 
-  async function handleLoadTransferCandidates(ticketId) {
-    if (!ticketId || !currentUserEmail) {
-      return []
-    }
+  const handleLoadTransferCandidates = useCallback(
+    async (ticketId) => {
+      if (!ticketId || !currentUserEmail) {
+        return []
+      }
 
-    return getTicketTransferCandidates(ticketId, currentUserEmail)
-  }
+      return getTicketTransferCandidates(ticketId, currentUserEmail)
+    },
+    [currentUserEmail]
+  )
 
   async function handleUpdateMemberSectors(memberId, nextSectors) {
     if (!currentUserEmail) {

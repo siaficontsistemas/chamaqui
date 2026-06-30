@@ -870,13 +870,27 @@ public class TicketService {
 	}
 
 	private List<User> loadEligibleAssignees(com.helpdesk.helpdesk.domain.Sector sector) {
-		return sectorMemberRepository.findBySectorIdOrderByAssignedAtAsc(sector.getId()).stream()
+		List<User> eligibleEmployees = sectorMemberRepository.findBySectorIdOrderByAssignedAtAsc(sector.getId()).stream()
 			.map(SectorMember::getUser)
 			.filter(java.util.Objects::nonNull)
 			.filter(user -> user.getStatus() != null)
 			.filter(user -> user.getStatus().name().equalsIgnoreCase("ACTIVE"))
 			.filter(user -> hasRole(user, "employee"))
 			.toList();
+
+		if (!eligibleEmployees.isEmpty()) {
+			return eligibleEmployees;
+		}
+
+		User companyAdmin = sector.getCreatedBy();
+		if (companyAdmin != null
+			&& companyAdmin.getStatus() != null
+			&& companyAdmin.getStatus().name().equalsIgnoreCase("ACTIVE")
+			&& hasRole(companyAdmin, "admin")) {
+			return List.of(companyAdmin);
+		}
+
+		return List.of();
 	}
 
 	private User resolveNextAssignee(com.helpdesk.helpdesk.domain.Sector sector, List<User> eligibleAssignees) {
