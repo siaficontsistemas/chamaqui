@@ -2566,7 +2566,8 @@ public class WhatsappWebhookService {
 	}
 
 	private String normalizePhone(String phone) {
-		return phone == null ? "" : phone.replaceAll("\\D+", "");
+		String normalizedSource = normalizeWhatsappIdentifier(phone);
+		return normalizedSource.replaceAll("\\D+", "");
 	}
 
 	private boolean looksLikeHumanPhoneNumber(String phone) {
@@ -2583,12 +2584,48 @@ public class WhatsappWebhookService {
 	}
 
 	private String normalizeWhatsappAddress(String phone) {
-		return phone == null ? "" : phone.trim();
+		String normalized = normalizeWhatsappIdentifier(phone);
+		if (normalized.isBlank()) {
+			return "";
+		}
+
+		if (normalized.contains("@")) {
+			int separatorIndex = normalized.indexOf('@');
+			String localPart = normalized.substring(0, separatorIndex).replaceAll("\\D+", "");
+			String domainPart = normalized.substring(separatorIndex + 1).trim().toLowerCase(Locale.ROOT);
+			if (localPart.isBlank() || domainPart.isBlank()) {
+				return "";
+			}
+			return localPart + "@" + domainPart;
+		}
+
+		return normalized;
 	}
 
 	private String normalizeWhatsappTransportId(String phone) {
 		String normalized = normalizeWhatsappAddress(phone);
 		return normalized.contains("@") ? normalized : "";
+	}
+
+	private String normalizeWhatsappIdentifier(String value) {
+		if (value == null || value.isBlank()) {
+			return "";
+		}
+
+		String normalized = value.trim();
+		int atIndex = normalized.indexOf('@');
+		String suffix = "";
+		if (atIndex >= 0) {
+			suffix = normalized.substring(atIndex).trim();
+			normalized = normalized.substring(0, atIndex).trim();
+		}
+
+		int colonIndex = normalized.indexOf(':');
+		if (colonIndex >= 0) {
+			normalized = normalized.substring(0, colonIndex).trim();
+		}
+
+		return suffix.isBlank() ? normalized : normalized + suffix.toLowerCase(Locale.ROOT);
 	}
 
 	private String blankToNull(String value) {

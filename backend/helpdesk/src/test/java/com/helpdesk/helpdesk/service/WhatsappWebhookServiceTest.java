@@ -561,6 +561,51 @@ class WhatsappWebhookServiceTest {
 		assertEquals(openTicket, conversationCaptor.getValue().getActiveTicket());
 	}
 
+	@Test
+	void shouldKeepActiveTicketWhenIncomingWhatsappIdContainsDeviceSuffix() {
+		User companyOwner = companyOwner();
+		companyOwner.setCompanyType(CompanyType.RESPONDER);
+
+		WhatsappConversation conversation = conversation(companyOwner, WhatsappConversationStep.ACTIVE_TICKET);
+		conversation.setWhatsappTransportId("5511999999999@s.whatsapp.net");
+
+		User requester = new User();
+		setField(requester, "id", UUID.randomUUID());
+		requester.setFullName("Cliente Externo");
+		requester.setEmail("cliente@gmail.com");
+		requester.setPhoneNumber("5511999999999");
+		requester.setWhatsappTransportId("5511999999999@s.whatsapp.net");
+		requester.getRoles().add(role("USER"));
+
+		Sector sector = new Sector();
+		setField(sector, "id", UUID.randomUUID());
+		sector.setName("Administrativo");
+		sector.setCreatedBy(companyOwner);
+
+		com.helpdesk.helpdesk.domain.Ticket openTicket = new com.helpdesk.helpdesk.domain.Ticket();
+		setField(openTicket, "id", UUID.randomUUID());
+		openTicket.setProtocol("CA-2026-0060");
+		openTicket.setRequester(requester);
+		openTicket.setSector(sector);
+		openTicket.setStatus(ticketStatus("OPEN"));
+		conversation.setActiveTicket(openTicket);
+
+		when(whatsappConversationRepository.findByCompanyOwnerIdAndWhatsappTransportId(
+			companyOwner.getId(),
+			"5511999999999@s.whatsapp.net"
+		)).thenReturn(Optional.of(conversation));
+
+		service.handleIncomingMessage(
+			companyOwner,
+			"5511999999999:17@s.whatsapp.net",
+			"5511999999999:17@s.whatsapp.net",
+			"nova mensagem",
+			List.of()
+		);
+
+		verify(ticketService).addWhatsappMessage(openTicket.getId(), "nova mensagem", List.of());
+	}
+
 	private User companyOwner() {
 		User user = new User();
 		user.setFullName("Empresa A");
