@@ -343,8 +343,8 @@ class WhatsappWebhookServiceTest {
 			.thenReturn(Optional.of(conversation));
 		when(scopedUserLookupService.findUniqueByEmailInCurrentTenant("kauanrubem@gmail.com"))
 			.thenReturn(Optional.empty());
-		when(scopedUserLookupService.findUniqueByPhoneNumberInCurrentTenant("5511999999999"))
-			.thenReturn(Optional.of(requester));
+		when(scopedUserLookupService.findAllByPhoneNumberInCurrentTenant("5511999999999"))
+			.thenReturn(List.of(requester));
 		when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 		when(ticketService.createFromWhatsapp(any(TicketService.CreateWhatsappTicketRequest.class)))
 			.thenReturn(createdTicket);
@@ -395,8 +395,8 @@ class WhatsappWebhookServiceTest {
 			.thenReturn(Optional.of(conversation));
 		when(scopedUserLookupService.findUniqueByEmailInCurrentTenant("funcionario@empresa.com"))
 			.thenReturn(Optional.of(responderEmployee));
-		when(scopedUserLookupService.findUniqueByPhoneNumberInCurrentTenant("5511999999999"))
-			.thenReturn(Optional.empty());
+		when(scopedUserLookupService.findAllByPhoneNumberInCurrentTenant("5511999999999"))
+			.thenReturn(List.of());
 		when(roleRepository.findByCode("USER")).thenReturn(Optional.of(defaultUserRole));
 		when(passwordEncoder.encode(any(String.class))).thenReturn("hash");
 		when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -452,8 +452,8 @@ class WhatsappWebhookServiceTest {
 			.thenReturn(Optional.of(phoneConversation));
 		when(scopedUserLookupService.findUniqueByEmailInCurrentTenant("kauanrubem@gmail.com"))
 			.thenReturn(Optional.empty());
-		when(scopedUserLookupService.findUniqueByPhoneNumberInCurrentTenant("5511999999999"))
-			.thenReturn(Optional.of(requester));
+		when(scopedUserLookupService.findAllByPhoneNumberInCurrentTenant("5511999999999"))
+			.thenReturn(List.of(requester));
 		when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 		when(ticketService.createFromWhatsapp(any(TicketService.CreateWhatsappTicketRequest.class)))
 			.thenReturn(createdTicket);
@@ -475,6 +475,66 @@ class WhatsappWebhookServiceTest {
 		assertEquals("5511999999999@s.whatsapp.net", conversationCaptor.getValue().getWhatsappTransportId());
 		assertEquals(WhatsappConversationStep.ACTIVE_TICKET, conversationCaptor.getValue().getCurrentStep());
 		assertEquals(createdTicket, conversationCaptor.getValue().getActiveTicket());
+	}
+
+	@Test
+	void shouldIgnoreUnstableLidTransportIdWhenCreatingRequester() {
+		User companyOwner = companyOwner();
+		WhatsappConversation conversation = conversation(companyOwner, WhatsappConversationStep.ASK_DESCRIPTION);
+		conversation.setPhoneNumber("209607456719099");
+		conversation.setWhatsappTransportId("209607456719099@lid");
+		conversation.setPendingName("Kauan Rubem");
+		conversation.setPendingEmail("kauanrubem@gmail.com");
+
+		Sector sector = new Sector();
+		setField(sector, "id", UUID.randomUUID());
+		sector.setName("Administrativo");
+		conversation.setSector(sector);
+
+		Role defaultUserRole = role("USER");
+		Ticket createdTicket = new Ticket();
+		setField(createdTicket, "id", UUID.randomUUID());
+		createdTicket.setProtocol("CA-2026-0062");
+
+		ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
+
+		when(whatsappConversationRepository.findByCompanyOwnerIdAndWhatsappTransportId(
+			companyOwner.getId(),
+			"209607456719099@lid"
+		)).thenReturn(Optional.of(conversation));
+		when(scopedUserLookupService.findUniqueByEmailInCurrentTenant("kauanrubem@gmail.com"))
+			.thenReturn(Optional.empty());
+		when(scopedUserLookupService.findAllByPhoneNumberInCurrentTenant("209607456719099"))
+			.thenReturn(List.of());
+		when(roleRepository.findByCode("USER")).thenReturn(Optional.of(defaultUserRole));
+		when(passwordEncoder.encode(any(String.class))).thenReturn("hash");
+		when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
+			User savedUser = invocation.getArgument(0);
+			if (savedUser.getId() == null) {
+				setField(savedUser, "id", UUID.randomUUID());
+			}
+			return savedUser;
+		});
+		when(ticketService.createFromWhatsapp(any(TicketService.CreateWhatsappTicketRequest.class)))
+			.thenReturn(createdTicket);
+		when(ticketRepository.findOpenWhatsappTicketsForRouting(any(), any(), any(), any(), any()))
+			.thenReturn(List.of(createdTicket));
+
+		service.handleIncomingMessage(
+			companyOwner,
+			"",
+			"209607456719099@lid",
+			"mensagem inicial completa",
+			List.of()
+		);
+
+		verify(userRepository).save(userCaptor.capture());
+		assertNull(userCaptor.getValue().getWhatsappTransportId());
+		assertNull(userCaptor.getValue().getPhoneNumber());
+		verify(whatsappConversationRepository).saveAndFlush(conversationCaptor.capture());
+		assertEquals(WhatsappConversationStep.ACTIVE_TICKET, conversationCaptor.getValue().getCurrentStep());
+		assertEquals(createdTicket, conversationCaptor.getValue().getActiveTicket());
+		verify(whatsappService).sendMessage(eq(companyOwner), eq("209607456719099@lid"), contains("Chamado aberto"));
 	}
 
 	private User companyOwner() {

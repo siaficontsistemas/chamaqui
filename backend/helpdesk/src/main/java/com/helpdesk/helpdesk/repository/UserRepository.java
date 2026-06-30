@@ -60,7 +60,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 	Optional<User> findByPasswordResetTokenHash(String passwordResetTokenHash);
 
 	@EntityGraph(attributePaths = {"roles", "companyOwner"})
-	Optional<User> findByWhatsappTransportId(String whatsappTransportId);
+	java.util.List<User> findAllByWhatsappTransportIdOrderByCreatedAtAsc(String whatsappTransportId);
 
 	@Override
 	@EntityGraph(attributePaths = {"roles", "companyOwner"})

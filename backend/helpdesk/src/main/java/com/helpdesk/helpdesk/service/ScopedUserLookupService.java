@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -12,6 +14,8 @@ import com.helpdesk.helpdesk.repository.UserRepository;
 
 @Service
 public class ScopedUserLookupService {
+
+	private static final Logger logger = LoggerFactory.getLogger(ScopedUserLookupService.class);
 
 	private final UserRepository userRepository;
 	private final TenantAccessService tenantAccessService;
@@ -138,13 +142,30 @@ public class ScopedUserLookupService {
 
 	@Transactional(readOnly = true)
 	public Optional<User> findUniqueByWhatsappTransportIdInCurrentTenant(String whatsappTransportId) {
-		String normalizedTransportId = normalizeTransportId(whatsappTransportId);
-		if (normalizedTransportId == null) {
+		List<User> matches = findAllByWhatsappTransportIdInCurrentTenant(whatsappTransportId);
+		if (matches.isEmpty()) {
 			return Optional.empty();
 		}
+		if (matches.size() > 1) {
+			logger.warn(
+				"Existe mais de um usuário com o mesmo whatsappTransportId no tenant atual. Usando o primeiro registro. transportId={}, total={}",
+				normalizeTransportId(whatsappTransportId),
+				matches.size()
+			);
+		}
+		return Optional.of(matches.getFirst());
+	}
 
-		return userRepository.findByWhatsappTransportId(normalizedTransportId)
-			.filter(tenantAccessService::belongsToCurrentTenant);
+	@Transactional(readOnly = true)
+	public List<User> findAllByWhatsappTransportIdInCurrentTenant(String whatsappTransportId) {
+		String normalizedTransportId = normalizeTransportId(whatsappTransportId);
+		if (normalizedTransportId == null) {
+			return List.of();
+		}
+
+		return userRepository.findAllByWhatsappTransportIdOrderByCreatedAtAsc(normalizedTransportId).stream()
+			.filter(tenantAccessService::belongsToCurrentTenant)
+			.toList();
 	}
 
 	@Transactional(readOnly = true)

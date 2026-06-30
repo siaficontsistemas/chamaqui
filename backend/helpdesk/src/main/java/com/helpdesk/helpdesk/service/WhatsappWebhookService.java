@@ -1524,6 +1524,7 @@ public class WhatsappWebhookService {
 		String email
 	) {
 		emailDomainValidationService.ensurePublicEmailDomainExists(email);
+		String stableRequesterTransportId = normalizeRequesterTransportId(whatsappTransportId);
 		java.util.Optional<User> requesterByEmail = scopedUserLookupService.findUniqueByEmailInCurrentTenant(email)
 			.filter(user -> !isResponderSideUser(user));
 		java.util.Optional<User> requesterByContact = resolveExistingRequester(normalizedPhone, whatsappTransportId);
@@ -1555,8 +1556,10 @@ public class WhatsappWebhookService {
 			if (looksLikeHumanPhoneNumber(normalizedPhone)) {
 				requester.setPhoneNumber(normalizedPhone);
 			}
-			if (!whatsappTransportId.isBlank()) {
-				requester.setWhatsappTransportId(whatsappTransportId);
+			if (!stableRequesterTransportId.isBlank()) {
+				requester.setWhatsappTransportId(stableRequesterTransportId);
+			} else if (isUnstableRequesterTransportId(requester.getWhatsappTransportId())) {
+				requester.setWhatsappTransportId(null);
 			}
 		} else {
 			logger.info(
@@ -1571,18 +1574,22 @@ public class WhatsappWebhookService {
 	}
 
 	private java.util.Optional<User> resolveExistingRequester(String normalizedPhone, String whatsappTransportId) {
-		if (!whatsappTransportId.isBlank()) {
+		String stableRequesterTransportId = normalizeRequesterTransportId(whatsappTransportId);
+		if (!stableRequesterTransportId.isBlank()) {
 			java.util.Optional<User> byTransportId = scopedUserLookupService
-				.findUniqueByWhatsappTransportIdInCurrentTenant(whatsappTransportId)
-				.filter(user -> !isResponderSideUser(user));
+				.findAllByWhatsappTransportIdInCurrentTenant(stableRequesterTransportId)
+				.stream()
+				.filter(user -> !isResponderSideUser(user))
+				.findFirst();
 			if (byTransportId.isPresent()) {
 				return byTransportId;
 			}
 		}
 
 		if (!normalizedPhone.isBlank()) {
-			return scopedUserLookupService.findUniqueByPhoneNumberInCurrentTenant(normalizedPhone)
-				.filter(user -> !isResponderSideUser(user));
+			return scopedUserLookupService.findAllByPhoneNumberInCurrentTenant(normalizedPhone).stream()
+				.filter(user -> !isResponderSideUser(user))
+				.findFirst();
 		}
 
 		return java.util.Optional.empty();
@@ -2510,6 +2517,18 @@ public class WhatsappWebhookService {
 	private String normalizeWhatsappTransportId(String phone) {
 		String normalized = normalizeWhatsappAddress(phone);
 		return normalized.contains("@") ? normalized : "";
+	}
+
+	private String normalizeRequesterTransportId(String whatsappTransportId) {
+		String normalized = normalizeWhatsappTransportId(whatsappTransportId);
+		return isUnstableRequesterTransportId(normalized) ? "" : normalized;
+	}
+
+	private boolean isUnstableRequesterTransportId(String whatsappTransportId) {
+		if (whatsappTransportId == null || whatsappTransportId.isBlank()) {
+			return false;
+		}
+		return normalizeWhatsappTransportId(whatsappTransportId).endsWith("@lid");
 	}
 
 	private String resolveReplyTarget(WhatsappConversation conversation, String normalizedPhone) {
