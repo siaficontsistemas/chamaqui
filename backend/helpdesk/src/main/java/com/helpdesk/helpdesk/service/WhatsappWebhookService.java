@@ -832,6 +832,12 @@ public class WhatsappWebhookService {
 		User requesterByEmail = pendingEmail.isBlank()
 			? null
 			: scopedUserLookupService.findUniqueByEmailInCurrentTenant(pendingEmail).orElse(null);
+		if (isResponderSideUser(requesterByPhone)) {
+			requesterByPhone = null;
+		}
+		if (isResponderSideUser(requesterByEmail)) {
+			requesterByEmail = null;
+		}
 		User requesterFromActiveTicket = conversation.getActiveTicket() == null
 			? null
 			: conversation.getActiveTicket().getRequester();
@@ -1338,51 +1344,17 @@ public class WhatsappWebhookService {
 		}
 
 		conversation.setPendingMessage(normalizedDescription);
-		String debugTraceId = UUID.randomUUID().toString();
-		// #region debug-point A:webhook-handle-description
-		reportDebugEvent(
-			"A",
-			"WhatsappWebhookService.handleDescriptionStep",
-			"[DEBUG] Starting WhatsApp ticket creation flow",
-			debugData(
-				"traceId", debugTraceId,
-				"companyOwnerId", companyOwner == null ? null : companyOwner.getId(),
-				"conversationId", conversation == null ? null : conversation.getId(),
-				"sectorId", conversation == null || conversation.getSector() == null ? null : conversation.getSector().getId(),
-				"pendingAssignedUserId", conversation == null ? null : conversation.getPendingAssignedUserId(),
-				"phoneHash", shortHash(conversation == null ? null : conversation.getPhoneNumber()),
-				"transportIdHash", shortHash(conversation == null ? null : conversation.getWhatsappTransportId()),
-				"pendingEmailHash", shortHash(pendingEmail),
-				"pendingNameLength", pendingName == null ? 0 : pendingName.length(),
-				"attachmentCount", attachments == null ? 0 : attachments.size(),
-				"descriptionLength", normalizedDescription.length()
-			)
-		);
-		// #endregion
+		boolean keepNormalConversation = conversation.isNormalConversationActive();
+		User requester;
+		Ticket createdTicket;
 		try {
-			boolean keepNormalConversation = conversation.isNormalConversationActive();
-			User requester = resolveOrCreateRequester(
+			requester = resolveOrCreateRequester(
 				conversation.getPhoneNumber(),
 				conversation.getWhatsappTransportId(),
 				pendingName,
 				pendingEmail
-			)
-			;
-			// #region debug-point B:webhook-requester-resolved
-			reportDebugEvent(
-				"B",
-				"WhatsappWebhookService.handleDescriptionStep",
-				"[DEBUG] Requester resolved for WhatsApp ticket creation",
-				debugData(
-					"traceId", debugTraceId,
-					"requesterId", requester == null ? null : requester.getId(),
-					"requesterEmailHash", shortHash(requester == null ? null : requester.getEmail()),
-					"requesterCompanyOwnerId", requester == null || requester.getCompanyOwner() == null ? null : requester.getCompanyOwner().getId(),
-					"requesterCompanyType", requester == null || requester.getCompanyType() == null ? null : requester.getCompanyType().name()
-				)
 			);
-			// #endregion
-			Ticket createdTicket = ticketService.createFromWhatsapp(
+			createdTicket = ticketService.createFromWhatsapp(
 				new TicketService.CreateWhatsappTicketRequest(
 					requester,
 					conversation.getPhoneNumber(),
@@ -1394,88 +1366,7 @@ public class WhatsappWebhookService {
 					attachments == null ? List.of() : attachments
 				)
 			);
-			// #region debug-point D:webhook-ticket-created
-			reportDebugEvent(
-				"D",
-				"WhatsappWebhookService.handleDescriptionStep",
-				"[DEBUG] WhatsApp ticket created successfully",
-				debugData(
-					"traceId", debugTraceId,
-					"ticketId", createdTicket == null ? null : createdTicket.getId(),
-					"ticketProtocol", createdTicket == null ? null : createdTicket.getProtocol(),
-					"assignedToId", createdTicket == null || createdTicket.getAssignedTo() == null ? null : createdTicket.getAssignedTo().getId()
-				)
-			);
-			// #endregion
-			conversation.setPendingName(requester.getFullName());
-			conversation.setPendingEmail(requester.getEmail());
-			conversation.setPendingDocument(requester.getDocumentNumber());
-			conversation.setPendingMessage(null);
-			clearPendingResumeState(conversation);
-			conversation.setLastTicketSelectionPromptAt(null);
-			if (keepNormalConversation) {
-				conversation.setActiveTicket(null);
-				conversation.setCurrentStep(WhatsappConversationStep.NORMAL_CONVERSATION_ACTIVE);
-			} else {
-				conversation.setActiveTicket(createdTicket);
-				conversation.setCurrentStep(WhatsappConversationStep.ACTIVE_TICKET);
-			}
-			whatsappConversationRepository.saveAndFlush(conversation);
-			List<Ticket> openTickets = loadOpenTicketsForConversation(companyOwner, conversation);
-			String multipleOpenTicketsGuidance = openTickets.size() >= 2
-				? """
-
-				Como você possui mais de um chamado em aberto, as próximas mensagens que você enviar serão para o último chamado que você criou.
-				Se quiser trocar de chamado, envie *trocar chamado*.
-				""".trim()
-				: "";
-
-			replyWithMessage(
-				companyOwner,
-				replyTarget,
-				(keepNormalConversation
-					? """
-					Chamado aberto.
-					Protocolo: %s
-					Setor: %s
-					Destinatário: %s
-					A conversa normal continua ativa.
-					Para usar um chamado, envie *trocar chamado*.
-					Para abrir outro, envie *abrir novo chamado*.
-					%s
-					"""
-					: """
-					Chamado aberto.
-					Protocolo: %s
-					Setor: %s
-					Destinatário: %s
-					Para abrir outro, envie *abrir novo chamado*.
-					%s
-					""").formatted(
-						createdTicket.getProtocol(),
-						conversation.getSector().getName(),
-						createdTicket.getAssignedTo() == null ? "Não informado" : createdTicket.getAssignedTo().getFullName(),
-						multipleOpenTicketsGuidance.isBlank() ? "" : "\n" + multipleOpenTicketsGuidance
-					).trim()
-			);
 		} catch (RuntimeException exception) {
-			// #region debug-point E:webhook-ticket-create-exception
-			reportDebugEvent(
-				"E",
-				"WhatsappWebhookService.handleDescriptionStep",
-				"[DEBUG] WhatsApp ticket creation failed with runtime exception",
-				debugData(
-					"traceId", debugTraceId,
-					"exceptionType", exception.getClass().getName(),
-					"exceptionMessage", exception.getMessage(),
-					"companyOwnerId", companyOwner == null ? null : companyOwner.getId(),
-					"conversationId", conversation == null ? null : conversation.getId(),
-					"sectorId", conversation == null || conversation.getSector() == null ? null : conversation.getSector().getId(),
-					"pendingAssignedUserId", conversation == null ? null : conversation.getPendingAssignedUserId(),
-					"transportIdHash", shortHash(conversation == null ? null : conversation.getWhatsappTransportId())
-				)
-			);
-			// #endregion
 			logger.error(
 				"Falha ao criar chamado do WhatsApp: companyOwnerId={}, phoneNumber={}, transportId={}",
 				companyOwner.getId(),
@@ -1491,7 +1382,71 @@ public class WhatsappWebhookService {
 			clearPendingResumeState(conversation);
 			conversation.setCurrentStep(WhatsappConversationStep.ASK_DESCRIPTION);
 			whatsappConversationRepository.save(conversation);
+			return;
 		}
+
+		conversation.setPendingName(requester.getFullName());
+		conversation.setPendingEmail(requester.getEmail());
+		conversation.setPendingDocument(requester.getDocumentNumber());
+		conversation.setPendingMessage(null);
+		clearPendingResumeState(conversation);
+		conversation.setLastTicketSelectionPromptAt(null);
+		if (keepNormalConversation) {
+			conversation.setActiveTicket(null);
+			conversation.setCurrentStep(WhatsappConversationStep.NORMAL_CONVERSATION_ACTIVE);
+		} else {
+			conversation.setActiveTicket(createdTicket);
+			conversation.setCurrentStep(WhatsappConversationStep.ACTIVE_TICKET);
+		}
+		whatsappConversationRepository.saveAndFlush(conversation);
+
+		String multipleOpenTicketsGuidance = "";
+		try {
+			List<Ticket> openTickets = loadOpenTicketsForConversation(companyOwner, conversation);
+			if (openTickets.size() >= 2) {
+				multipleOpenTicketsGuidance = """
+
+					Como você possui mais de um chamado em aberto, as próximas mensagens que você enviar serão para o último chamado que você criou.
+					Se quiser trocar de chamado, envie *trocar chamado*.
+					""".trim();
+			}
+		} catch (RuntimeException exception) {
+			logger.warn(
+				"Falha ao montar orientação pós-criação do chamado do WhatsApp: companyOwnerId={}, ticketId={}",
+				companyOwner.getId(),
+				createdTicket.getId(),
+				exception
+			);
+		}
+
+		replyWithMessage(
+			companyOwner,
+			replyTarget,
+			(keepNormalConversation
+				? """
+				Chamado aberto.
+				Protocolo: %s
+				Setor: %s
+				Destinatário: %s
+				A conversa normal continua ativa.
+				Para usar um chamado, envie *trocar chamado*.
+				Para abrir outro, envie *abrir novo chamado*.
+				%s
+				"""
+				: """
+				Chamado aberto.
+				Protocolo: %s
+				Setor: %s
+				Destinatário: %s
+				Para abrir outro, envie *abrir novo chamado*.
+				%s
+				""").formatted(
+					createdTicket.getProtocol(),
+					conversation.getSector().getName(),
+					createdTicket.getAssignedTo() == null ? "Não informado" : createdTicket.getAssignedTo().getFullName(),
+					multipleOpenTicketsGuidance.isBlank() ? "" : "\n" + multipleOpenTicketsGuidance
+				).trim()
+		);
 	}
 
 	private void continueTicketCreationFromPendingResume(
@@ -1559,8 +1514,15 @@ public class WhatsappWebhookService {
 		emailDomainValidationService.ensurePublicEmailDomainExists(email);
 		java.util.Optional<User> requesterByEmail = scopedUserLookupService.findUniqueByEmailInCurrentTenant(email);
 		java.util.Optional<User> requesterByContact = resolveExistingRequester(normalizedPhone, whatsappTransportId);
-		User requester = requesterByEmail
-			.orElseGet(() -> requesterByContact.orElseGet(User::new));
+		if (requesterByEmail.filter(this::isResponderSideUser).isPresent()) {
+			requesterByEmail = java.util.Optional.empty();
+		}
+		if (requesterByContact.filter(this::isResponderSideUser).isPresent()) {
+			requesterByContact = java.util.Optional.empty();
+		}
+		User requester = requesterByEmail.isPresent()
+			? requesterByEmail.get()
+			: requesterByContact.isPresent() ? requesterByContact.get() : new User();
 		boolean hasDifferentContactOwner = requesterByEmail.isPresent()
 			&& requesterByContact.isPresent()
 			&& !requesterByEmail.get().getId().equals(requesterByContact.get().getId());
@@ -1616,6 +1578,28 @@ public class WhatsappWebhookService {
 		}
 
 		return java.util.Optional.empty();
+	}
+
+	private boolean isResponderSideUser(User user) {
+		if (user == null) {
+			return false;
+		}
+		if (hasRole(user, "ADMIN") || hasRole(user, "EMPLOYEE")) {
+			return true;
+		}
+		if (user.getCompanyType() == com.helpdesk.helpdesk.domain.CompanyType.RESPONDER) {
+			return true;
+		}
+		User companyOwner = user.getCompanyOwner();
+		return companyOwner != null && companyOwner.getCompanyType() == com.helpdesk.helpdesk.domain.CompanyType.RESPONDER;
+	}
+
+	private boolean hasRole(User user, String roleCode) {
+		if (user == null || roleCode == null || roleCode.isBlank()) {
+			return false;
+		}
+		return user.getRoles().stream()
+			.anyMatch(role -> role != null && roleCode.equalsIgnoreCase(role.getCode()));
 	}
 
 	private Role loadDefaultUserRole() {
@@ -2462,71 +2446,6 @@ public class WhatsappWebhookService {
 		return normalized.length() <= 1200 ? normalized : normalized.substring(0, 1200) + "...";
 	}
 
-	private void reportDebugEvent(String hypothesisId, String location, String message, java.util.Map<String, Object> data) {
-		try {
-			String debugServerUrl = firstNonBlank(
-				System.getenv("TRAE_DEBUG_SERVER_URL"),
-				System.getProperty("trae.debug.server.url"),
-				"http://172.31.178.73:7778/event"
-			);
-			java.util.Map<String, Object> event = new java.util.LinkedHashMap<>();
-			event.put(
-				"sessionId",
-				firstNonBlank(System.getenv("TRAE_DEBUG_SESSION_ID"), System.getProperty("trae.debug.session.id"), "whatsapp-ticket-create")
-			);
-			event.put(
-				"runId",
-				firstNonBlank(System.getenv("TRAE_DEBUG_RUN_ID"), System.getProperty("trae.debug.run.id"), "pre-fix")
-			);
-			event.put("hypothesisId", hypothesisId);
-			event.put("location", location);
-			event.put("msg", message);
-			event.put("data", data == null ? java.util.Map.of() : data);
-			event.put("ts", System.currentTimeMillis());
-			String payload = objectMapper.writeValueAsString(event);
-			java.net.http.HttpClient.newBuilder()
-				.connectTimeout(java.time.Duration.ofMillis(400))
-				.build()
-				.send(
-				java.net.http.HttpRequest.newBuilder(java.net.URI.create(debugServerUrl))
-					.timeout(java.time.Duration.ofMillis(700))
-					.header("Content-Type", "application/json")
-					.POST(java.net.http.HttpRequest.BodyPublishers.ofString(payload))
-					.build(),
-				java.net.http.HttpResponse.BodyHandlers.discarding()
-			);
-		} catch (Exception ignored) {
-			// Keep production flow unchanged when debug reporting is unavailable.
-		}
-	}
-
-	private java.util.Map<String, Object> debugData(Object... keyValues) {
-		java.util.Map<String, Object> data = new java.util.LinkedHashMap<>();
-		if (keyValues == null) {
-			return data;
-		}
-		for (int index = 0; index + 1 < keyValues.length; index += 2) {
-			data.put(String.valueOf(keyValues[index]), keyValues[index + 1]);
-		}
-		return data;
-	}
-
-	private String shortHash(String value) {
-		if (value == null || value.isBlank()) {
-			return "";
-		}
-		try {
-			byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
-				.digest(value.trim().toLowerCase(Locale.ROOT).getBytes(java.nio.charset.StandardCharsets.UTF_8));
-			StringBuilder builder = new StringBuilder();
-			for (int index = 0; index < Math.min(6, digest.length); index++) {
-				builder.append(String.format("%02x", digest[index]));
-			}
-			return builder.toString();
-		} catch (java.security.NoSuchAlgorithmException exception) {
-			return Integer.toHexString(value.hashCode());
-		}
-	}
 
 	private boolean isMessageEvent(String event) {
 		String normalizedEvent = normalizeComparable(event);
