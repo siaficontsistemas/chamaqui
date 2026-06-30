@@ -514,7 +514,20 @@ public class WhatsappWebhookService {
 		String body,
 		List<TicketService.IncomingAttachment> attachments
 	) {
-		List<Ticket> openTickets = loadOpenTicketsForConversation(companyOwner, conversation);
+		List<Ticket> openTickets;
+		try {
+			openTickets = loadOpenTicketsForConversation(companyOwner, conversation);
+		} catch (RuntimeException exception) {
+			logger.warn(
+				"Falha ao carregar chamados abertos para roteamento no WhatsApp: companyOwnerId={}, phoneNumber={}, transportId={}, step={}",
+				companyOwner.getId(),
+				conversation.getPhoneNumber(),
+				conversation.getWhatsappTransportId(),
+				conversation.getCurrentStep(),
+				exception
+			);
+			return false;
+		}
 		if (openTickets.isEmpty()) {
 			if (isSwitchTicketCommand(body) && canInterruptForTicketSwitch(conversation.getCurrentStep())) {
 				replyWithMessage(
@@ -831,10 +844,15 @@ public class WhatsappWebhookService {
 		String pendingEmail = normalizeContactEmail(conversation.getPendingEmail());
 		User requesterByEmail = pendingEmail.isBlank()
 			? null
-			: scopedUserLookupService.findUniqueByEmailInCurrentTenant(pendingEmail).orElse(null);
+			: scopedUserLookupService.findUniqueByEmailInCurrentTenant(pendingEmail)
+				.filter(user -> !isResponderSideUser(user))
+				.orElse(null);
 		User requesterFromActiveTicket = conversation.getActiveTicket() == null
 			? null
 			: conversation.getActiveTicket().getRequester();
+		if (isResponderSideUser(requesterFromActiveTicket)) {
+			requesterFromActiveTicket = null;
+		}
 
 		UUID requesterId = requesterFromActiveTicket != null
 			? requesterFromActiveTicket.getId()
@@ -1338,16 +1356,17 @@ public class WhatsappWebhookService {
 		}
 
 		conversation.setPendingMessage(normalizedDescription);
+		boolean keepNormalConversation = conversation.isNormalConversationActive();
+		User requester;
+		Ticket createdTicket;
 		try {
-			boolean keepNormalConversation = conversation.isNormalConversationActive();
-			User requester = resolveOrCreateRequester(
+			requester = resolveOrCreateRequester(
 				conversation.getPhoneNumber(),
 				conversation.getWhatsappTransportId(),
 				pendingName,
 				pendingEmail
-			)
-			;
-			Ticket createdTicket = ticketService.createFromWhatsapp(
+			);
+			createdTicket = ticketService.createFromWhatsapp(
 				new TicketService.CreateWhatsappTicketRequest(
 					requester,
 					conversation.getPhoneNumber(),
@@ -1358,57 +1377,6 @@ public class WhatsappWebhookService {
 					normalizedDescription,
 					attachments == null ? List.of() : attachments
 				)
-			);
-			conversation.setPendingName(requester.getFullName());
-			conversation.setPendingEmail(requester.getEmail());
-			conversation.setPendingDocument(requester.getDocumentNumber());
-			conversation.setPendingMessage(null);
-			clearPendingResumeState(conversation);
-			conversation.setLastTicketSelectionPromptAt(null);
-			if (keepNormalConversation) {
-				conversation.setActiveTicket(null);
-				conversation.setCurrentStep(WhatsappConversationStep.NORMAL_CONVERSATION_ACTIVE);
-			} else {
-				conversation.setActiveTicket(createdTicket);
-				conversation.setCurrentStep(WhatsappConversationStep.ACTIVE_TICKET);
-			}
-			whatsappConversationRepository.saveAndFlush(conversation);
-			List<Ticket> openTickets = loadOpenTicketsForConversation(companyOwner, conversation);
-			String multipleOpenTicketsGuidance = openTickets.size() >= 2
-				? """
-
-				Como você possui mais de um chamado em aberto, as próximas mensagens que você enviar serão para o último chamado que você criou.
-				Se quiser trocar de chamado, envie *trocar chamado*.
-				""".trim()
-				: "";
-
-			replyWithMessage(
-				companyOwner,
-				replyTarget,
-				(keepNormalConversation
-					? """
-					Chamado aberto.
-					Protocolo: %s
-					Setor: %s
-					Destinatário: %s
-					A conversa normal continua ativa.
-					Para usar um chamado, envie *trocar chamado*.
-					Para abrir outro, envie *abrir novo chamado*.
-					%s
-					"""
-					: """
-					Chamado aberto.
-					Protocolo: %s
-					Setor: %s
-					Destinatário: %s
-					Para abrir outro, envie *abrir novo chamado*.
-					%s
-					""").formatted(
-						createdTicket.getProtocol(),
-						conversation.getSector().getName(),
-						createdTicket.getAssignedTo() == null ? "Não informado" : createdTicket.getAssignedTo().getFullName(),
-						multipleOpenTicketsGuidance.isBlank() ? "" : "\n" + multipleOpenTicketsGuidance
-					).trim()
 			);
 		} catch (RuntimeException exception) {
 			logger.error(
@@ -1426,7 +1394,71 @@ public class WhatsappWebhookService {
 			clearPendingResumeState(conversation);
 			conversation.setCurrentStep(WhatsappConversationStep.ASK_DESCRIPTION);
 			whatsappConversationRepository.save(conversation);
+			return;
 		}
+
+		conversation.setPendingName(requester.getFullName());
+		conversation.setPendingEmail(requester.getEmail());
+		conversation.setPendingDocument(requester.getDocumentNumber());
+		conversation.setPendingMessage(null);
+		clearPendingResumeState(conversation);
+		conversation.setLastTicketSelectionPromptAt(null);
+		if (keepNormalConversation) {
+			conversation.setActiveTicket(null);
+			conversation.setCurrentStep(WhatsappConversationStep.NORMAL_CONVERSATION_ACTIVE);
+		} else {
+			conversation.setActiveTicket(createdTicket);
+			conversation.setCurrentStep(WhatsappConversationStep.ACTIVE_TICKET);
+		}
+		whatsappConversationRepository.saveAndFlush(conversation);
+
+		String multipleOpenTicketsGuidance = "";
+		try {
+			List<Ticket> openTickets = loadOpenTicketsForConversation(companyOwner, conversation);
+			if (openTickets.size() >= 2) {
+				multipleOpenTicketsGuidance = """
+
+				Como você possui mais de um chamado em aberto, as próximas mensagens que você enviar serão para o último chamado que você criou.
+				Se quiser trocar de chamado, envie *trocar chamado*.
+				""".trim();
+			}
+		} catch (RuntimeException exception) {
+			logger.warn(
+				"Chamado do WhatsApp criado, mas falhou ao carregar a orientação pós-criação: ticketId={}, companyOwnerId={}",
+				createdTicket.getId(),
+				companyOwner.getId(),
+				exception
+			);
+		}
+
+		replyWithMessage(
+			companyOwner,
+			replyTarget,
+			(keepNormalConversation
+				? """
+				Chamado aberto.
+				Protocolo: %s
+				Setor: %s
+				Destinatário: %s
+				A conversa normal continua ativa.
+				Para usar um chamado, envie *trocar chamado*.
+				Para abrir outro, envie *abrir novo chamado*.
+				%s
+				"""
+				: """
+				Chamado aberto.
+				Protocolo: %s
+				Setor: %s
+				Destinatário: %s
+				Para abrir outro, envie *abrir novo chamado*.
+				%s
+				""").formatted(
+					createdTicket.getProtocol(),
+					conversation.getSector().getName(),
+					createdTicket.getAssignedTo() == null ? "Não informado" : createdTicket.getAssignedTo().getFullName(),
+					multipleOpenTicketsGuidance.isBlank() ? "" : "\n" + multipleOpenTicketsGuidance
+				).trim()
+		);
 	}
 
 	private void continueTicketCreationFromPendingResume(
@@ -1492,7 +1524,8 @@ public class WhatsappWebhookService {
 		String email
 	) {
 		emailDomainValidationService.ensurePublicEmailDomainExists(email);
-		java.util.Optional<User> requesterByEmail = scopedUserLookupService.findUniqueByEmailInCurrentTenant(email);
+		java.util.Optional<User> requesterByEmail = scopedUserLookupService.findUniqueByEmailInCurrentTenant(email)
+			.filter(user -> !isResponderSideUser(user));
 		java.util.Optional<User> requesterByContact = resolveExistingRequester(normalizedPhone, whatsappTransportId);
 		User requester = requesterByEmail
 			.orElseGet(() -> requesterByContact.orElseGet(User::new));
@@ -1540,22 +1573,33 @@ public class WhatsappWebhookService {
 	private java.util.Optional<User> resolveExistingRequester(String normalizedPhone, String whatsappTransportId) {
 		if (!whatsappTransportId.isBlank()) {
 			java.util.Optional<User> byTransportId = scopedUserLookupService
-				.findUniqueByWhatsappTransportIdInCurrentTenant(whatsappTransportId);
+				.findUniqueByWhatsappTransportIdInCurrentTenant(whatsappTransportId)
+				.filter(user -> !isResponderSideUser(user));
 			if (byTransportId.isPresent()) {
 				return byTransportId;
 			}
 		}
 
 		if (!normalizedPhone.isBlank()) {
-			return scopedUserLookupService.findUniqueByPhoneNumberInCurrentTenant(normalizedPhone);
+			return scopedUserLookupService.findUniqueByPhoneNumberInCurrentTenant(normalizedPhone)
+				.filter(user -> !isResponderSideUser(user));
 		}
 
 		return java.util.Optional.empty();
 	}
 
+	private boolean isResponderSideUser(User user) {
+		return user != null && (hasRole(user, "admin") || hasRole(user, "employee"));
+	}
+
 	private Role loadDefaultUserRole() {
 		return roleRepository.findByCode("USER")
 			.orElseThrow(() -> new NotFoundException("Perfil padrão de usuário não encontrado."));
+	}
+
+	private boolean hasRole(User user, String roleCode) {
+		return user != null
+			&& user.getRoles().stream().anyMatch(role -> roleCode.equalsIgnoreCase(role.getCode()));
 	}
 
 	private List<Sector> loadCompanySectors(User companyOwner) {
