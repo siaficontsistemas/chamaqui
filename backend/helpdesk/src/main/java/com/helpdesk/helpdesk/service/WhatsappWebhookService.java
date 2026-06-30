@@ -1338,6 +1338,27 @@ public class WhatsappWebhookService {
 		}
 
 		conversation.setPendingMessage(normalizedDescription);
+		String debugTraceId = UUID.randomUUID().toString();
+		// #region debug-point A:webhook-handle-description
+		reportDebugEvent(
+			"A",
+			"WhatsappWebhookService.handleDescriptionStep",
+			"[DEBUG] Starting WhatsApp ticket creation flow",
+			debugData(
+				"traceId", debugTraceId,
+				"companyOwnerId", companyOwner == null ? null : companyOwner.getId(),
+				"conversationId", conversation == null ? null : conversation.getId(),
+				"sectorId", conversation == null || conversation.getSector() == null ? null : conversation.getSector().getId(),
+				"pendingAssignedUserId", conversation == null ? null : conversation.getPendingAssignedUserId(),
+				"phoneNumber", conversation == null ? null : conversation.getPhoneNumber(),
+				"transportId", conversation == null ? null : conversation.getWhatsappTransportId(),
+				"pendingEmail", pendingEmail,
+				"pendingName", pendingName,
+				"attachmentCount", attachments == null ? 0 : attachments.size(),
+				"descriptionLength", normalizedDescription.length()
+			)
+		);
+		// #endregion
 		try {
 			boolean keepNormalConversation = conversation.isNormalConversationActive();
 			User requester = resolveOrCreateRequester(
@@ -1347,6 +1368,20 @@ public class WhatsappWebhookService {
 				pendingEmail
 			)
 			;
+			// #region debug-point B:webhook-requester-resolved
+			reportDebugEvent(
+				"B",
+				"WhatsappWebhookService.handleDescriptionStep",
+				"[DEBUG] Requester resolved for WhatsApp ticket creation",
+				debugData(
+					"traceId", debugTraceId,
+					"requesterId", requester == null ? null : requester.getId(),
+					"requesterEmail", requester == null ? null : requester.getEmail(),
+					"requesterCompanyOwnerId", requester == null || requester.getCompanyOwner() == null ? null : requester.getCompanyOwner().getId(),
+					"requesterCompanyType", requester == null || requester.getCompanyType() == null ? null : requester.getCompanyType().name()
+				)
+			);
+			// #endregion
 			Ticket createdTicket = ticketService.createFromWhatsapp(
 				new TicketService.CreateWhatsappTicketRequest(
 					requester,
@@ -1359,6 +1394,19 @@ public class WhatsappWebhookService {
 					attachments == null ? List.of() : attachments
 				)
 			);
+			// #region debug-point D:webhook-ticket-created
+			reportDebugEvent(
+				"D",
+				"WhatsappWebhookService.handleDescriptionStep",
+				"[DEBUG] WhatsApp ticket created successfully",
+				debugData(
+					"traceId", debugTraceId,
+					"ticketId", createdTicket == null ? null : createdTicket.getId(),
+					"ticketProtocol", createdTicket == null ? null : createdTicket.getProtocol(),
+					"assignedToId", createdTicket == null || createdTicket.getAssignedTo() == null ? null : createdTicket.getAssignedTo().getId()
+				)
+			);
+			// #endregion
 			conversation.setPendingName(requester.getFullName());
 			conversation.setPendingEmail(requester.getEmail());
 			conversation.setPendingDocument(requester.getDocumentNumber());
@@ -1411,6 +1459,23 @@ public class WhatsappWebhookService {
 					).trim()
 			);
 		} catch (RuntimeException exception) {
+			// #region debug-point E:webhook-ticket-create-exception
+			reportDebugEvent(
+				"E",
+				"WhatsappWebhookService.handleDescriptionStep",
+				"[DEBUG] WhatsApp ticket creation failed with runtime exception",
+				debugData(
+					"traceId", debugTraceId,
+					"exceptionType", exception.getClass().getName(),
+					"exceptionMessage", exception.getMessage(),
+					"companyOwnerId", companyOwner == null ? null : companyOwner.getId(),
+					"conversationId", conversation == null ? null : conversation.getId(),
+					"sectorId", conversation == null || conversation.getSector() == null ? null : conversation.getSector().getId(),
+					"pendingAssignedUserId", conversation == null ? null : conversation.getPendingAssignedUserId(),
+					"transportId", conversation == null ? null : conversation.getWhatsappTransportId()
+				)
+			);
+			// #endregion
 			logger.error(
 				"Falha ao criar chamado do WhatsApp: companyOwnerId={}, phoneNumber={}, transportId={}",
 				companyOwner.getId(),
@@ -2395,6 +2460,40 @@ public class WhatsappWebhookService {
 	private String previewRawPayload(String value) {
 		String normalized = value == null ? "" : value.trim().replaceAll("\\s+", " ");
 		return normalized.length() <= 1200 ? normalized : normalized.substring(0, 1200) + "...";
+	}
+
+	private void reportDebugEvent(String hypothesisId, String location, String message, java.util.Map<String, Object> data) {
+		try {
+			java.util.Map<String, Object> event = new java.util.LinkedHashMap<>();
+			event.put("sessionId", "whatsapp-ticket-create");
+			event.put("runId", "pre-fix");
+			event.put("hypothesisId", hypothesisId);
+			event.put("location", location);
+			event.put("msg", message);
+			event.put("data", data == null ? java.util.Map.of() : data);
+			event.put("ts", System.currentTimeMillis());
+			String payload = objectMapper.writeValueAsString(event);
+			java.net.http.HttpClient.newHttpClient().send(
+				java.net.http.HttpRequest.newBuilder(java.net.URI.create("http://127.0.0.1:7777/event"))
+					.header("Content-Type", "application/json")
+					.POST(java.net.http.HttpRequest.BodyPublishers.ofString(payload))
+					.build(),
+				java.net.http.HttpResponse.BodyHandlers.discarding()
+			);
+		} catch (Exception ignored) {
+			// Keep production flow unchanged when debug reporting is unavailable.
+		}
+	}
+
+	private java.util.Map<String, Object> debugData(Object... keyValues) {
+		java.util.Map<String, Object> data = new java.util.LinkedHashMap<>();
+		if (keyValues == null) {
+			return data;
+		}
+		for (int index = 0; index + 1 < keyValues.length; index += 2) {
+			data.put(String.valueOf(keyValues[index]), keyValues[index + 1]);
+		}
+		return data;
 	}
 
 	private boolean isMessageEvent(String event) {

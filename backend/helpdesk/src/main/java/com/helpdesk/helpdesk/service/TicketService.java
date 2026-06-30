@@ -270,8 +270,26 @@ public class TicketService {
 
 	@Transactional
 	public Ticket createFromWhatsapp(CreateWhatsappTicketRequest request) {
+		String debugTraceId = UUID.randomUUID().toString();
 		User requester = request.requester();
 		List<IncomingAttachment> incomingAttachments = normalizeIncomingAttachments(request.attachments());
+		// #region debug-point A:ticket-service-create-whatsapp-entry
+		reportDebugEvent(
+			"A",
+			"TicketService.createFromWhatsapp",
+			"[DEBUG] Entering TicketService.createFromWhatsapp",
+			debugData(
+				"traceId", debugTraceId,
+				"requesterId", requester == null ? null : requester.getId(),
+				"requesterEmail", requester == null ? null : requester.getEmail(),
+				"companyOwnerId", request.companyOwnerId(),
+				"sectorId", request.sectorId(),
+				"assignedToUserId", request.assignedToUserId(),
+				"attachmentCount", incomingAttachments.size(),
+				"descriptionLength", request.description() == null ? 0 : request.description().trim().length()
+			)
+		);
+		// #endregion
 		TicketStatus status = ticketStatusRepository.findByCode("OPEN")
 			.orElseThrow(() -> new NotFoundException("Status padrão de abertura não encontrado."));
 		TicketPriority priority = ticketPriorityRepository.findByCode("MEDIUM")
@@ -292,6 +310,23 @@ public class TicketService {
 			throw new IllegalArgumentException("O chamado só pode ser enviado para empresas que respondem chamados.");
 		}
 		String initialDescription = resolveWhatsappInboundMessage(request.description(), incomingAttachments);
+		// #region debug-point C:ticket-service-create-whatsapp-validated
+		reportDebugEvent(
+			"C",
+			"TicketService.createFromWhatsapp",
+			"[DEBUG] WhatsApp ticket request validated before save",
+			debugData(
+				"traceId", debugTraceId,
+				"effectiveCompanyOwnerId", effectiveCompanyOwnerId,
+				"sectorOwnerId", sector.getCreatedBy() == null ? null : sector.getCreatedBy().getId(),
+				"sectorCompanyType", sector.getCreatedBy() == null || sector.getCreatedBy().getCompanyType() == null
+					? null
+					: sector.getCreatedBy().getCompanyType().name(),
+				"resolvedDescriptionPreview", initialDescription.length() <= 120 ? initialDescription : initialDescription.substring(0, 120),
+				"resolvedAssigneeId", request.assignedToUserId()
+			)
+		);
+		// #endregion
 
 		Ticket ticket = new Ticket();
 		ticket.setTitle(buildAutoTicketTitle(initialDescription));
@@ -305,8 +340,34 @@ public class TicketService {
 		ticket.setCopyEmail(normalizeOptionalEmail(requester.getEmail()));
 
 		Ticket savedTicket = saveTicketWithUniqueProtocol(ticket);
+		// #region debug-point D:ticket-service-create-whatsapp-saved
+		reportDebugEvent(
+			"D",
+			"TicketService.createFromWhatsapp",
+			"[DEBUG] WhatsApp ticket persisted",
+			debugData(
+				"traceId", debugTraceId,
+				"ticketId", savedTicket == null ? null : savedTicket.getId(),
+				"ticketProtocol", savedTicket == null ? null : savedTicket.getProtocol(),
+				"assignedToId", savedTicket == null || savedTicket.getAssignedTo() == null ? null : savedTicket.getAssignedTo().getId()
+			)
+		);
+		// #endregion
 		createAssignmentNotification(savedTicket);
 		TicketMessage initialMessage = ensureInitialMessage(savedTicket);
+		// #region debug-point E:ticket-service-create-whatsapp-message
+		reportDebugEvent(
+			"E",
+			"TicketService.createFromWhatsapp",
+			"[DEBUG] Initial WhatsApp ticket message ensured",
+			debugData(
+				"traceId", debugTraceId,
+				"ticketId", savedTicket == null ? null : savedTicket.getId(),
+				"messageId", initialMessage == null ? null : initialMessage.getId(),
+				"attachmentCount", incomingAttachments.size()
+			)
+		);
+		// #endregion
 		saveIncomingAttachments(savedTicket, initialMessage, requester, incomingAttachments);
 
 		return savedTicket;
@@ -1544,6 +1605,40 @@ public class TicketService {
 		}
 
 		return "";
+	}
+
+	private void reportDebugEvent(String hypothesisId, String location, String message, java.util.Map<String, Object> data) {
+		try {
+			java.util.Map<String, Object> event = new java.util.LinkedHashMap<>();
+			event.put("sessionId", "whatsapp-ticket-create");
+			event.put("runId", "pre-fix");
+			event.put("hypothesisId", hypothesisId);
+			event.put("location", location);
+			event.put("msg", message);
+			event.put("data", data == null ? java.util.Map.of() : data);
+			event.put("ts", System.currentTimeMillis());
+			String payload = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(event);
+			java.net.http.HttpClient.newHttpClient().send(
+				java.net.http.HttpRequest.newBuilder(java.net.URI.create("http://127.0.0.1:7777/event"))
+					.header("Content-Type", "application/json")
+					.POST(java.net.http.HttpRequest.BodyPublishers.ofString(payload))
+					.build(),
+				java.net.http.HttpResponse.BodyHandlers.discarding()
+			);
+		} catch (Exception ignored) {
+			// Keep production flow unchanged when debug reporting is unavailable.
+		}
+	}
+
+	private java.util.Map<String, Object> debugData(Object... keyValues) {
+		java.util.Map<String, Object> data = new java.util.LinkedHashMap<>();
+		if (keyValues == null) {
+			return data;
+		}
+		for (int index = 0; index + 1 < keyValues.length; index += 2) {
+			data.put(String.valueOf(keyValues[index]), keyValues[index + 1]);
+		}
+		return data;
 	}
 
 	private List<String> normalizeStatusCodes(String status) {
