@@ -1,10 +1,7 @@
 package com.helpdesk.helpdesk.service;
 
 import java.time.OffsetDateTime;
-import java.util.HashMap;
 import java.util.Locale;
-import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -23,8 +20,6 @@ import jakarta.servlet.http.HttpSession;
 public class AppSessionService {
 
 	private static final String APP_SESSION_KEY = "helpdesk.appUserId";
-	private static final String APP_SESSION_BY_SCOPE_KEY = "helpdesk.appUserIdByScope";
-	private static final String MAIN_HOST_SCOPE = "__main_host__";
 	private static final int SESSION_TTL_SECONDS = 60 * 60 * 12;
 
 	private final UserRepository userRepository;
@@ -48,10 +43,7 @@ public class AppSessionService {
 	public AuthResponse login(User user, HttpSession session) {
 		User persistedUser = requireActiveUser(user.getId());
 		persistedUser.setLastLoginAt(OffsetDateTime.now());
-		Map<String, String> sessionsByScope = getSessionsByScope(session);
-		sessionsByScope.put(resolveCurrentScopeKey(), persistedUser.getId().toString());
-		session.setAttribute(APP_SESSION_BY_SCOPE_KEY, sessionsByScope);
-		session.removeAttribute(APP_SESSION_KEY);
+		session.setAttribute(APP_SESSION_KEY, persistedUser.getId().toString());
 		session.setMaxInactiveInterval(SESSION_TTL_SECONDS);
 		auditTrailService.recordUserAction("APP_LOGIN", persistedUser, "user-session", persistedUser.getId());
 		return userMapper.toAuthResponse(persistedUser);
@@ -64,9 +56,8 @@ public class AppSessionService {
 
 	@Transactional(readOnly = true)
 	public User requireUser(HttpSession session) {
-		String rawValue = resolveCurrentSessionUserId(session)
-			.orElseThrow(() -> new UnauthorizedException("Faça login para continuar."));
-		if (rawValue.isBlank()) {
+		Object rawUserId = session.getAttribute(APP_SESSION_KEY);
+		if (!(rawUserId instanceof String rawValue) || rawValue.isBlank()) {
 			throw new UnauthorizedException("Faça login para continuar.");
 		}
 
@@ -103,55 +94,10 @@ public class AppSessionService {
 		} catch (RuntimeException ignored) {
 			// Ignora quando a sessao já não está válida.
 		}
-		Map<String, String> sessionsByScope = getSessionsByScope(session);
-		sessionsByScope.remove(resolveCurrentScopeKey());
-		session.removeAttribute(APP_SESSION_KEY);
-		if (sessionsByScope.isEmpty()) {
-			session.invalidate();
-		} else {
-			session.setAttribute(APP_SESSION_BY_SCOPE_KEY, sessionsByScope);
-		}
+		session.invalidate();
 		if (currentUser != null) {
 			auditTrailService.recordUserAction("APP_LOGOUT", currentUser, "user-session", currentUser.getId());
 		}
-	}
-
-	private Optional<String> resolveCurrentSessionUserId(HttpSession session) {
-		Map<String, String> sessionsByScope = getSessionsByScope(session);
-		String scopedUserId = sessionsByScope.get(resolveCurrentScopeKey());
-		if (scopedUserId != null && !scopedUserId.isBlank()) {
-			return Optional.of(scopedUserId);
-		}
-
-		Object legacyRawUserId = session.getAttribute(APP_SESSION_KEY);
-		if (legacyRawUserId instanceof String legacyUserId && !legacyUserId.isBlank()) {
-			sessionsByScope.put(resolveCurrentScopeKey(), legacyUserId);
-			session.setAttribute(APP_SESSION_BY_SCOPE_KEY, sessionsByScope);
-			session.removeAttribute(APP_SESSION_KEY);
-			return Optional.of(legacyUserId);
-		}
-
-		return Optional.empty();
-	}
-
-	private Map<String, String> getSessionsByScope(HttpSession session) {
-		Object rawValue = session.getAttribute(APP_SESSION_BY_SCOPE_KEY);
-		if (rawValue instanceof Map<?, ?> rawMap) {
-			Map<String, String> sessionsByScope = new HashMap<>();
-			rawMap.forEach((key, value) -> {
-				if (key instanceof String scopeKey && value instanceof String userId && !scopeKey.isBlank() && !userId.isBlank()) {
-					sessionsByScope.put(scopeKey, userId);
-				}
-			});
-			return sessionsByScope;
-		}
-		return new HashMap<>();
-	}
-
-	private String resolveCurrentScopeKey() {
-		return tenantAccessService.getCurrentTenantOwnerUserId()
-			.map(UUID::toString)
-			.orElse(MAIN_HOST_SCOPE);
 	}
 
 	private User requireActiveUser(UUID userId) {
