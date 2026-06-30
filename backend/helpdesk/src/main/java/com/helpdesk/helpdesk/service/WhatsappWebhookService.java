@@ -201,7 +201,7 @@ public class WhatsappWebhookService {
 
 		conversation.setCompanyOwner(companyOwner);
 		conversation.setPhoneNumber(normalizedPhone);
-		conversation.setWhatsappTransportId(whatsappTransportId);
+		conversation.setWhatsappTransportId(blankToNull(whatsappTransportId));
 		OffsetDateTime previousInboundMessageAt = conversation.getLastInboundMessageAt();
 		OffsetDateTime previousOutboundMessageAt = conversation.getLastOutboundMessageAt();
 		conversation.setLastInboundMessageAt(OffsetDateTime.now());
@@ -1511,9 +1511,10 @@ public class WhatsappWebhookService {
 		String fullName,
 		String email
 	) {
+		String normalizedTransportId = firstNonBlank(whatsappTransportId, "");
 		emailDomainValidationService.ensurePublicEmailDomainExists(email);
 		java.util.Optional<User> requesterByEmail = scopedUserLookupService.findUniqueByEmailInCurrentTenant(email);
-		java.util.Optional<User> requesterByContact = resolveExistingRequester(normalizedPhone, whatsappTransportId);
+		java.util.Optional<User> requesterByContact = resolveExistingRequester(normalizedPhone, normalizedTransportId);
 		if (requesterByEmail.filter(this::isResponderSideUser).isPresent()) {
 			requesterByEmail = java.util.Optional.empty();
 		}
@@ -1549,15 +1550,15 @@ public class WhatsappWebhookService {
 			if (looksLikeHumanPhoneNumber(normalizedPhone)) {
 				requester.setPhoneNumber(normalizedPhone);
 			}
-			if (!whatsappTransportId.isBlank()) {
-				requester.setWhatsappTransportId(whatsappTransportId);
+			if (!normalizedTransportId.isBlank()) {
+				requester.setWhatsappTransportId(normalizedTransportId);
 			}
 		} else {
 			logger.info(
 				"Solicitante por email reutilizado sem sobrescrever contato do WhatsApp: requesterId={}, phone={}, transportId={}",
 				requester.getId(),
 				normalizedPhone,
-				whatsappTransportId
+				normalizedTransportId
 			);
 		}
 
@@ -1565,9 +1566,10 @@ public class WhatsappWebhookService {
 	}
 
 	private java.util.Optional<User> resolveExistingRequester(String normalizedPhone, String whatsappTransportId) {
-		if (!whatsappTransportId.isBlank()) {
+		String normalizedTransportId = firstNonBlank(whatsappTransportId, "");
+		if (!normalizedTransportId.isBlank()) {
 			java.util.Optional<User> byTransportId = scopedUserLookupService
-				.findUniqueByWhatsappTransportIdInCurrentTenant(whatsappTransportId);
+				.findUniqueByWhatsappTransportIdInCurrentTenant(normalizedTransportId);
 			if (byTransportId.isPresent()) {
 				return byTransportId;
 			}
@@ -1958,19 +1960,132 @@ public class WhatsappWebhookService {
 		String normalizedPhone,
 		String whatsappTransportId
 	) {
+		java.util.Optional<WhatsappConversation> byTransportId = java.util.Optional.empty();
 		if (!whatsappTransportId.isBlank()) {
-			java.util.Optional<WhatsappConversation> byTransportId =
-				whatsappConversationRepository.findByCompanyOwnerIdAndWhatsappTransportId(companyOwnerId, whatsappTransportId);
-			if (byTransportId.isPresent()) {
-				return byTransportId;
-			}
+			byTransportId = whatsappConversationRepository.findByCompanyOwnerIdAndWhatsappTransportId(companyOwnerId, whatsappTransportId);
 		}
 
+		java.util.Optional<WhatsappConversation> byPhone = java.util.Optional.empty();
 		if (!normalizedPhone.isBlank()) {
-			return whatsappConversationRepository.findByCompanyOwnerIdAndPhoneNumber(companyOwnerId, normalizedPhone);
+			byPhone = whatsappConversationRepository.findByCompanyOwnerIdAndPhoneNumber(companyOwnerId, normalizedPhone);
+		}
+
+		if (byTransportId.isPresent() && byPhone.isPresent()) {
+			WhatsappConversation transportConversation = byTransportId.get();
+			WhatsappConversation phoneConversation = byPhone.get();
+			if (transportConversation.getId() != null && transportConversation.getId().equals(phoneConversation.getId())) {
+				return java.util.Optional.of(transportConversation);
+			}
+
+			WhatsappConversation canonicalConversation = selectCanonicalConversation(
+				phoneConversation,
+				transportConversation,
+				normalizedPhone
+			);
+			WhatsappConversation staleConversation = canonicalConversation == phoneConversation
+				? transportConversation
+				: phoneConversation;
+			mergeConversationIdentifiers(canonicalConversation, staleConversation, normalizedPhone, whatsappTransportId);
+			whatsappConversationRepository.delete(staleConversation);
+			return java.util.Optional.of(canonicalConversation);
+		}
+
+		if (byTransportId.isPresent()) {
+			return byTransportId;
+		}
+		if (byPhone.isPresent()) {
+			return byPhone;
 		}
 
 		return java.util.Optional.empty();
+	}
+
+	private WhatsappConversation selectCanonicalConversation(
+		WhatsappConversation phoneConversation,
+		WhatsappConversation transportConversation,
+		String normalizedPhone
+	) {
+		int phoneScore = scoreConversation(phoneConversation, normalizedPhone);
+		int transportScore = scoreConversation(transportConversation, normalizedPhone);
+		if (phoneScore != transportScore) {
+			return phoneScore > transportScore ? phoneConversation : transportConversation;
+		}
+
+		OffsetDateTime phoneUpdatedAt = phoneConversation.getUpdatedAt();
+		OffsetDateTime transportUpdatedAt = transportConversation.getUpdatedAt();
+		if (phoneUpdatedAt != null && transportUpdatedAt != null && !phoneUpdatedAt.isEqual(transportUpdatedAt)) {
+			return phoneUpdatedAt.isAfter(transportUpdatedAt) ? phoneConversation : transportConversation;
+		}
+
+		return phoneConversation;
+	}
+
+	private int scoreConversation(WhatsappConversation conversation, String normalizedPhone) {
+		if (conversation == null) {
+			return Integer.MIN_VALUE;
+		}
+
+		int score = 0;
+		if (hasActiveOpenTicket(conversation)) {
+			score += 1000;
+		} else if (conversation.getActiveTicket() != null) {
+			score += 700;
+		}
+
+		WhatsappConversationStep step = conversation.getCurrentStep();
+		if (step != null) {
+			score += switch (step) {
+				case ACTIVE_TICKET -> 600;
+				case ASK_ACTIVE_TICKET_SELECTION -> 500;
+				case ASK_INACTIVITY_MESSAGE_DESTINATION -> 450;
+				case NORMAL_CONVERSATION_ACTIVE -> 400;
+				case ASK_DESCRIPTION -> 350;
+				case ASK_DOCUMENT, ASK_SUBJECT, ASK_EMAIL -> 300;
+				case ASK_NAME -> 250;
+				case ASK_ASSIGNEE -> 200;
+				case ASK_SECTOR -> 150;
+				case ASK_REUSE_REQUESTER_DATA -> 120;
+				case ASK_INITIAL_MODE -> 100;
+				case NORMAL_CONVERSATION_CLOSED -> 50;
+			};
+		}
+
+		if (conversation.getSector() != null) {
+			score += 40;
+		}
+		if (!firstNonBlank(conversation.getPendingName(), "").isBlank()) {
+			score += 20;
+		}
+		if (!firstNonBlank(conversation.getPendingEmail(), "").isBlank()) {
+			score += 20;
+		}
+		if (!firstNonBlank(conversation.getPendingMessage(), "").isBlank()) {
+			score += 10;
+		}
+		if (!normalizedPhone.isBlank() && normalizedPhone.equals(firstNonBlank(conversation.getPhoneNumber(), ""))) {
+			score += 5;
+		}
+
+		return score;
+	}
+
+	private void mergeConversationIdentifiers(
+		WhatsappConversation targetConversation,
+		WhatsappConversation sourceConversation,
+		String normalizedPhone,
+		String whatsappTransportId
+	) {
+		if (!normalizedPhone.isBlank()) {
+			targetConversation.setPhoneNumber(normalizedPhone);
+		} else if (targetConversation.getPhoneNumber() == null || targetConversation.getPhoneNumber().isBlank()) {
+			targetConversation.setPhoneNumber(sourceConversation.getPhoneNumber());
+		}
+
+		if (!whatsappTransportId.isBlank()) {
+			targetConversation.setWhatsappTransportId(whatsappTransportId);
+		} else if (targetConversation.getWhatsappTransportId() == null || targetConversation.getWhatsappTransportId().isBlank()) {
+			targetConversation.setWhatsappTransportId(blankToNull(sourceConversation.getWhatsappTransportId()));
+		}
 	}
 
 	private String resolveSessionName(JsonNode payload) {
@@ -2389,6 +2504,10 @@ public class WhatsappWebhookService {
 	private String normalizeWhatsappTransportId(String phone) {
 		String normalized = normalizeWhatsappAddress(phone);
 		return normalized.contains("@") ? normalized : "";
+	}
+
+	private String blankToNull(String value) {
+		return value == null || value.isBlank() ? null : value;
 	}
 
 	private String resolveReplyTarget(WhatsappConversation conversation, String normalizedPhone) {
