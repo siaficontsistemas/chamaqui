@@ -1020,6 +1020,7 @@ public class WhatsappWebhookService {
 		}
 
 		builder.append("\n\nResponda com o número ou protocolo do chamado.");
+		builder.append("\nSe quiser conversar pelo WhatsApp sem usar nenhum chamado aberto, envie *conversa normal*.");
 		builder.append("\nSe quiser trocar depois, envie *trocar chamado*.");
 		return builder.toString();
 	}
@@ -1512,6 +1513,7 @@ public class WhatsappWebhookService {
 
 				Como você possui mais de um chamado em aberto, as próximas mensagens que você enviar serão para o último chamado que você criou.
 				Se quiser trocar de chamado, envie *trocar chamado*.
+				Se quiser conversar pelo WhatsApp sem usar nenhum chamado aberto, envie *conversa normal*.
 				""".trim();
 			}
 		} catch (RuntimeException exception) {
