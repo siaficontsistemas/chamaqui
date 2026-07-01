@@ -115,6 +115,24 @@ const dashboardPageComponents = {
 const AUTO_REFRESH_INTERVAL_MS = 5000
 const DEFAULT_DOCUMENT_TITLE = 'ChamAqui Helpdesk'
 
+// #region debug-point C:app-helper
+function reportTenantLoginBounceDebug(hypothesisId, msg, data = {}) {
+  fetch('http://127.0.0.1:7777/event', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      sessionId: 'tenant-login-bounce',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'frontend/src/App.jsx',
+      msg: `[DEBUG] ${msg}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).catch(() => {})
+}
+// #endregion
+
 function normalizeSector(sector) {
   return {
     id: sector.id,
@@ -787,8 +805,20 @@ function App() {
 
     async function bootstrapSession() {
       const storedAuthToken = getStoredAppAuthToken()
+      // #region debug-point C:bootstrap-start
+      reportTenantLoginBounceDebug('C', 'Bootstrap de sessao iniciado', {
+        host: window.location?.host || '',
+        hasStoredToken: Boolean(storedAuthToken),
+        tokenLength: storedAuthToken.length,
+      })
+      // #endregion
       if (!storedAuthToken) {
         if (!isCancelled) {
+          // #region debug-point C:bootstrap-no-token
+          reportTenantLoginBounceDebug('C', 'Bootstrap encerrou por falta de token', {
+            host: window.location?.host || '',
+          })
+          // #endregion
           setAuthUser(null)
           setProfile(null)
           setCurrentUserRole('user')
@@ -802,11 +832,22 @@ function App() {
         if (isCancelled) {
           return
         }
+        // #region debug-point C:bootstrap-success
+        reportTenantLoginBounceDebug('C', 'Bootstrap restaurou sessao com sucesso', {
+          host: window.location?.host || '',
+          userEmail: currentSessionUser?.email || '',
+        })
+        // #endregion
         const normalizedUser = normalizeCurrentUser(currentSessionUser)
         setAuthUser(normalizedUser)
         setCurrentUserRole(getPrimaryRole(normalizedUser?.roles))
       } catch {
         if (!isCancelled) {
+          // #region debug-point C:bootstrap-failure
+          reportTenantLoginBounceDebug('C', 'Bootstrap falhou e limpou sessao local', {
+            host: window.location?.host || '',
+          })
+          // #endregion
           clearStoredAppAuthToken()
           setAuthUser(null)
           setProfile(null)
@@ -884,6 +925,12 @@ function App() {
         }
 
         if (error?.status === 401) {
+          // #region debug-point E:dashboard-load-401
+          reportTenantLoginBounceDebug('E', 'Dashboard inicial recebeu 401', {
+            host: window.location?.host || '',
+            authUserEmail: authUser?.email || '',
+          })
+          // #endregion
           handleNavigateLogin({ invalidateServerSession: false })
           return
         }
@@ -924,6 +971,12 @@ function App() {
         applyDashboardBundle(bundle)
       } catch (error) {
         if (error?.status === 401) {
+          // #region debug-point E:silent-refresh-401
+          reportTenantLoginBounceDebug('E', 'Atualizacao silenciosa recebeu 401', {
+            host: window.location?.host || '',
+            authUserEmail: authUser?.email || '',
+          })
+          // #endregion
           handleNavigateLogin({ invalidateServerSession: false })
         }
         // Mantem os dados atuais quando a atualizacao silenciosa falha.
@@ -953,6 +1006,13 @@ function App() {
 
   function handleAuthenticatedUser(user) {
     const normalizedUser = normalizeCurrentUser(user)
+    // #region debug-point C:handle-authenticated-user
+    reportTenantLoginBounceDebug('C', 'handleAuthenticatedUser recebeu usuario autenticado', {
+      host: window.location?.host || '',
+      userEmail: normalizedUser?.email || '',
+      hasAuthToken: Boolean(user?.authToken),
+    })
+    // #endregion
     setIsSessionBootstrapping(false)
     setAuthUser(normalizedUser)
     setProfile(normalizedUser)
@@ -963,6 +1023,14 @@ function App() {
   }
 
   function handleNavigateLogin({ invalidateServerSession = true } = {}) {
+    // #region debug-point E:navigate-login
+    reportTenantLoginBounceDebug('E', 'handleNavigateLogin foi acionado', {
+      host: window.location?.host || '',
+      invalidateServerSession,
+      authUserEmail: authUser?.email || '',
+      currentPath: window.location?.pathname || '',
+    })
+    // #endregion
     if (invalidateServerSession) {
       void logoutCurrentUser().catch(() => {})
     }

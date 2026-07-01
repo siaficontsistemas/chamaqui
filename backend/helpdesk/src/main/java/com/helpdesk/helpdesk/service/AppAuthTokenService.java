@@ -7,6 +7,9 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.Locale;
 import java.util.UUID;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -51,6 +54,15 @@ public class AppAuthTokenService {
 		long expiresAtEpochSecond = Instant.now().plusSeconds(TOKEN_TTL_SECONDS).getEpochSecond();
 		String payload = user.getId() + "|" + tenantScope + "|" + expiresAtEpochSecond;
 		byte[] signature = sign(payload);
+		// #region debug-point B:token-issued
+		reportTenantLoginBounceDebug("B", "Token emitido para usuario autenticado", """
+			{"userId":"%s","tenantScope":"%s","expiresAt":%d}
+			""".formatted(
+			user.getId() == null ? "" : user.getId().toString(),
+			sanitizeForJson(tenantScope),
+			expiresAtEpochSecond
+		));
+		// #endregion
 
 		return BASE64_URL_ENCODER.encodeToString(payload.getBytes(StandardCharsets.UTF_8))
 			+ "."
@@ -85,9 +97,27 @@ public class AppAuthTokenService {
 		long expiresAtEpochSecond = parseExpiration(payloadParts[2]);
 
 		if (expiresAtEpochSecond <= Instant.now().getEpochSecond()) {
+			// #region debug-point B:token-expired
+			reportTenantLoginBounceDebug("B", "Token rejeitado por expiracao", """
+				{"userId":"%s","tenantScope":"%s","expiresAt":%d}
+				""".formatted(
+				userId.toString(),
+				sanitizeForJson(tokenTenantScope),
+				expiresAtEpochSecond
+			));
+			// #endregion
 			throw unauthorized();
 		}
 		if (!tokenTenantScope.equals(resolveTenantScope())) {
+			// #region debug-point B:token-tenant-mismatch
+			reportTenantLoginBounceDebug("B", "Token rejeitado por tenantScope diferente", """
+				{"userId":"%s","tokenTenantScope":"%s","currentTenantScope":"%s"}
+				""".formatted(
+				userId.toString(),
+				sanitizeForJson(tokenTenantScope),
+				sanitizeForJson(resolveTenantScope())
+			));
+			// #endregion
 			throw unauthorized();
 		}
 
@@ -96,8 +126,24 @@ public class AppAuthTokenService {
 			throw unauthorized();
 		}
 		if (!tenantAccessService.belongsToCurrentTenant(user)) {
+			// #region debug-point B:token-user-not-in-tenant
+			reportTenantLoginBounceDebug("B", "Token rejeitado porque usuario nao pertence ao tenant atual", """
+				{"userId":"%s","tenantScope":"%s"}
+				""".formatted(
+				userId.toString(),
+				sanitizeForJson(tokenTenantScope)
+			));
+			// #endregion
 			throw unauthorized();
 		}
+		// #region debug-point B:token-accepted
+		reportTenantLoginBounceDebug("B", "Token autenticado com sucesso", """
+			{"userId":"%s","tenantScope":"%s"}
+			""".formatted(
+			userId.toString(),
+			sanitizeForJson(tokenTenantScope)
+		));
+		// #endregion
 
 		return user;
 	}
@@ -159,4 +205,27 @@ public class AppAuthTokenService {
 	private UnauthorizedException unauthorized() {
 		return new UnauthorizedException("Faça login para continuar.");
 	}
+
+	// #region debug-point B:token-helper
+	private void reportTenantLoginBounceDebug(String hypothesisId, String msg, String dataJson) {
+		HttpRequest request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:7777/event"))
+			.header("Content-Type", "application/json")
+			.POST(HttpRequest.BodyPublishers.ofString("""
+				{"sessionId":"tenant-login-bounce","runId":"pre-fix","hypothesisId":"%s","location":"backend/AppAuthTokenService.java","msg":"[DEBUG] %s","data":%s}
+				""".formatted(
+				sanitizeForJson(hypothesisId),
+				sanitizeForJson(msg),
+				dataJson
+			)))
+			.build();
+		HttpClient.newHttpClient().sendAsync(request, java.net.http.HttpResponse.BodyHandlers.discarding());
+	}
+
+	private String sanitizeForJson(String value) {
+		if (value == null) {
+			return "";
+		}
+		return value.replace("\\", "\\\\").replace("\"", "\\\"");
+	}
+	// #endregion
 }
