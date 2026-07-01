@@ -1,6 +1,9 @@
 package com.helpdesk.helpdesk.service;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
 import java.text.Normalizer;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -208,6 +211,25 @@ public class WhatsappWebhookService {
 		if (conversation.getCurrentStep() == null) {
 			conversation.setCurrentStep(WhatsappConversationStep.ASK_INITIAL_MODE);
 		}
+		// #region debug-point A:incoming-message-context
+		reportWhatsappTicketSwitchDebug("A", "Mensagem recebida e conversa resolvida", """
+			{"companyOwnerId":"%s","body":"%s","normalizedPhone":"%s","transportId":"%s","conversationId":"%s","currentStep":"%s","normalConversationActive":%s,"activeTicketId":"%s","activeTicketRequesterId":"%s"}
+			""".formatted(
+			safeUuid(companyOwner.getId()),
+			sanitizeForJson(normalizedBody),
+			sanitizeForJson(normalizedPhone),
+			sanitizeForJson(whatsappTransportId),
+			safeUuid(conversation.getId()),
+			sanitizeForJson(conversation.getCurrentStep() == null ? "" : conversation.getCurrentStep().name()),
+			Boolean.toString(conversation.isNormalConversationActive()),
+			safeUuid(conversation.getActiveTicket() == null ? null : conversation.getActiveTicket().getId()),
+			safeUuid(
+				conversation.getActiveTicket() == null || conversation.getActiveTicket().getRequester() == null
+					? null
+					: conversation.getActiveTicket().getRequester().getId()
+			)
+		));
+		// #endregion
 
 		String replyTarget = resolveReplyTarget(conversation, normalizedPhone);
 		boolean isNewConversation = conversation.getId() == null;
@@ -732,7 +754,37 @@ public class WhatsappWebhookService {
 		WhatsappConversation conversation,
 		String replyTarget
 	) {
+		// #region debug-point B:switch-ticket-start
+		reportWhatsappTicketSwitchDebug("B", "Comando trocar chamado em conversa normal", """
+			{"conversationId":"%s","currentStep":"%s","normalConversationActive":%s,"activeTicketId":"%s","activeTicketRequesterId":"%s","phone":"%s","transportId":"%s"}
+			""".formatted(
+			safeUuid(conversation.getId()),
+			sanitizeForJson(conversation.getCurrentStep() == null ? "" : conversation.getCurrentStep().name()),
+			Boolean.toString(conversation.isNormalConversationActive()),
+			safeUuid(conversation.getActiveTicket() == null ? null : conversation.getActiveTicket().getId()),
+			safeUuid(
+				conversation.getActiveTicket() == null || conversation.getActiveTicket().getRequester() == null
+					? null
+					: conversation.getActiveTicket().getRequester().getId()
+			),
+			sanitizeForJson(conversation.getPhoneNumber()),
+			sanitizeForJson(conversation.getWhatsappTransportId())
+		));
+		// #endregion
 		List<Ticket> openTickets = loadOpenTicketsForConversation(companyOwner, conversation);
+		// #region debug-point B:switch-ticket-result
+		reportWhatsappTicketSwitchDebug("B", "Resultado da busca de chamados abertos ao trocar chamado", """
+			{"conversationId":"%s","openTicketsCount":%d,"ticketIds":"%s"}
+			""".formatted(
+			safeUuid(conversation.getId()),
+			openTickets.size(),
+			sanitizeForJson(
+				openTickets.stream()
+					.map(ticket -> ticket.getId() == null ? "" : ticket.getId().toString())
+					.collect(java.util.stream.Collectors.joining(","))
+			)
+		));
+		// #endregion
 		if (openTickets.isEmpty()) {
 			replyWithMessage(
 				companyOwner,
@@ -788,6 +840,16 @@ public class WhatsappWebhookService {
 		String prefix
 	) {
 		Ticket lastActiveTicket = conversation.getActiveTicket();
+		// #region debug-point C:normal-conversation-start
+		reportWhatsappTicketSwitchDebug("C", "Entrando em conversa normal", """
+			{"conversationId":"%s","previousStep":"%s","previousActiveTicketId":"%s","previousActiveTicketRequesterId":"%s"}
+			""".formatted(
+			safeUuid(conversation.getId()),
+			sanitizeForJson(conversation.getCurrentStep() == null ? "" : conversation.getCurrentStep().name()),
+			safeUuid(lastActiveTicket == null ? null : lastActiveTicket.getId()),
+			safeUuid(lastActiveTicket == null || lastActiveTicket.getRequester() == null ? null : lastActiveTicket.getRequester().getId())
+		));
+		// #endregion
 		conversation.setNormalConversationActive(true);
 		conversation.setCurrentStep(WhatsappConversationStep.NORMAL_CONVERSATION_ACTIVE);
 		conversation.setSector(null);
@@ -866,8 +928,23 @@ public class WhatsappWebhookService {
 			requesterByEmail == null ? null : requesterByEmail.getEmail(),
 			pendingEmail
 		);
-
-		return ticketRepository.findOpenWhatsappTicketsForRouting(
+		// #region debug-point D:load-open-tickets-params
+		reportWhatsappTicketSwitchDebug("D", "Parâmetros usados para buscar chamados abertos", """
+			{"conversationId":"%s","companyOwnerId":"%s","requesterFromActiveTicketId":"%s","requesterByPhoneId":"%s","requesterByEmailId":"%s","requesterId":"%s","email":"%s","phone":"%s","transportId":"%s","activeTicketId":"%s"}
+			""".formatted(
+			safeUuid(conversation.getId()),
+			safeUuid(companyOwner.getId()),
+			safeUuid(requesterFromActiveTicket == null ? null : requesterFromActiveTicket.getId()),
+			safeUuid(requesterByPhone == null ? null : requesterByPhone.getId()),
+			safeUuid(requesterByEmail == null ? null : requesterByEmail.getId()),
+			safeUuid(requesterId),
+			sanitizeForJson(email),
+			sanitizeForJson(normalizePhone(conversation.getPhoneNumber())),
+			sanitizeForJson(normalizeWhatsappTransportId(conversation.getWhatsappTransportId())),
+			safeUuid(conversation.getActiveTicket() == null ? null : conversation.getActiveTicket().getId())
+		));
+		// #endregion
+		List<Ticket> openTickets = ticketRepository.findOpenWhatsappTicketsForRouting(
 			companyOwner.getId(),
 			requesterId,
 			email,
@@ -876,6 +953,20 @@ public class WhatsappWebhookService {
 		).stream()
 			.sorted(Comparator.comparing(Ticket::getCreatedAt).reversed())
 			.toList();
+		// #region debug-point D:load-open-tickets-result
+		reportWhatsappTicketSwitchDebug("D", "Busca de chamados abertos concluída", """
+			{"conversationId":"%s","openTicketsCount":%d,"protocols":"%s"}
+			""".formatted(
+			safeUuid(conversation.getId()),
+			openTickets.size(),
+			sanitizeForJson(
+				openTickets.stream()
+					.map(ticket -> firstNonBlank(ticket.getProtocol(), ""))
+					.collect(java.util.stream.Collectors.joining(","))
+			)
+		));
+		// #endregion
+		return openTickets;
 	}
 
 	private Ticket resolveSelectedOpenTicket(WhatsappConversation conversation, List<Ticket> openTickets) {
@@ -1967,6 +2058,17 @@ public class WhatsappWebhookService {
 		java.util.Optional<WhatsappConversation> byPhone = normalizedPhone.isBlank()
 			? java.util.Optional.empty()
 			: whatsappConversationRepository.findByCompanyOwnerIdAndPhoneNumber(companyOwnerId, normalizedPhone);
+		// #region debug-point E:resolve-conversation-input
+		reportWhatsappTicketSwitchDebug("E", "Resolvendo conversa por telefone e transportId", """
+			{"companyOwnerId":"%s","normalizedPhone":"%s","transportId":"%s","byPhoneId":"%s","byTransportId":"%s"}
+			""".formatted(
+			safeUuid(companyOwnerId),
+			sanitizeForJson(normalizedPhone),
+			sanitizeForJson(whatsappTransportId),
+			safeUuid(byPhone.map(WhatsappConversation::getId).orElse(null)),
+			safeUuid(byTransportId.map(WhatsappConversation::getId).orElse(null))
+		));
+		// #endregion
 
 		if (byTransportId.isEmpty()) {
 			return byPhone;
@@ -1988,6 +2090,15 @@ public class WhatsappWebhookService {
 
 		mergeConversationState(canonicalConversation, staleConversation);
 		whatsappConversationRepository.delete(staleConversation);
+		// #region debug-point E:resolve-conversation-merge
+		reportWhatsappTicketSwitchDebug("E", "Conversas duplicadas foram consolidadas", """
+			{"canonicalConversationId":"%s","staleConversationId":"%s","canonicalActiveTicketId":"%s"}
+			""".formatted(
+			safeUuid(canonicalConversation.getId()),
+			safeUuid(staleConversation.getId()),
+			safeUuid(canonicalConversation.getActiveTicket() == null ? null : canonicalConversation.getActiveTicket().getId())
+		));
+		// #endregion
 		return java.util.Optional.of(canonicalConversation);
 	}
 
@@ -2595,6 +2706,33 @@ public class WhatsappWebhookService {
 			&& !normalizedEvent.contains("revoked")
 			&& !normalizedEvent.contains("poll");
 	}
+
+	// #region debug-point Z:debug-helper
+	private void reportWhatsappTicketSwitchDebug(String hypothesisId, String msg, String dataJson) {
+		HttpRequest request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:7778/event"))
+			.header("Content-Type", "application/json")
+			.POST(HttpRequest.BodyPublishers.ofString("""
+				{"sessionId":"whatsapp-ticket-switch","runId":"pre-fix","hypothesisId":"%s","location":"backend/WhatsappWebhookService.java","msg":"[DEBUG] %s","data":%s}
+				""".formatted(
+				sanitizeForJson(hypothesisId),
+				sanitizeForJson(msg),
+				dataJson
+			)))
+			.build();
+		HttpClient.newHttpClient().sendAsync(request, java.net.http.HttpResponse.BodyHandlers.discarding());
+	}
+
+	private String safeUuid(UUID value) {
+		return value == null ? "" : value.toString();
+	}
+
+	private String sanitizeForJson(String value) {
+		if (value == null) {
+			return "";
+		}
+		return value.replace("\\", "\\\\").replace("\"", "\\\"");
+	}
+	// #endregion
 
 	private record AssigneeSelection(UUID assignedToUserId, boolean valid) {
 	}
