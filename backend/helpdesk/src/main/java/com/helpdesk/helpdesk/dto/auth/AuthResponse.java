@@ -10,6 +10,7 @@ public record AuthResponse(
 	String companyName,
 	String companyType,
 	String status,
-	List<String> roles
+	List<String> roles,
+	String authToken
 ) {
 }
