@@ -245,6 +245,65 @@ class WhatsappWebhookServiceTest {
 	}
 
 	@Test
+	void shouldSelectSecondOpenTicketWhenReplyIsTwoDuringTicketSelection() {
+		User companyOwner = companyOwner();
+		User requester = new User();
+		setField(requester, "id", UUID.randomUUID());
+		requester.setEmail("cliente@empresa.com");
+
+		Ticket ticketOne = new Ticket();
+		setField(ticketOne, "id", UUID.randomUUID());
+		setField(ticketOne, "createdAt", OffsetDateTime.parse("2026-07-01T15:00:00Z"));
+		ticketOne.setRequester(requester);
+		ticketOne.setProtocol("CA-2026-0063");
+		ticketOne.setTitle("Primeiro chamado");
+
+		Ticket ticketTwo = new Ticket();
+		setField(ticketTwo, "id", UUID.randomUUID());
+		setField(ticketTwo, "createdAt", OffsetDateTime.parse("2026-07-01T14:00:00Z"));
+		ticketTwo.setRequester(requester);
+		ticketTwo.setProtocol("CA-2026-0062");
+		ticketTwo.setTitle("Segundo chamado");
+
+		Ticket ticketThree = new Ticket();
+		setField(ticketThree, "id", UUID.randomUUID());
+		setField(ticketThree, "createdAt", OffsetDateTime.parse("2026-07-01T13:00:00Z"));
+		ticketThree.setRequester(requester);
+		ticketThree.setProtocol("CA-2026-0061");
+		ticketThree.setTitle("Terceiro chamado");
+
+		com.helpdesk.helpdesk.domain.TicketStatus status = new com.helpdesk.helpdesk.domain.TicketStatus();
+		setField(status, "id", UUID.randomUUID());
+		setField(status, "code", "OPEN");
+		ticketOne.setStatus(status);
+		ticketTwo.setStatus(status);
+		ticketThree.setStatus(status);
+
+		WhatsappConversation conversation = conversation(companyOwner, WhatsappConversationStep.NORMAL_CONVERSATION_ACTIVE);
+		conversation.setNormalConversationActive(true);
+		conversation.setActiveTicket(ticketOne);
+
+		when(whatsappConversationRepository.findByCompanyOwnerIdAndPhoneNumber(companyOwner.getId(), "5511999999999"))
+			.thenReturn(Optional.of(conversation));
+		when(scopedUserLookupService.findAllByPhoneNumberInCurrentTenant("5511999999999"))
+			.thenReturn(List.of());
+		when(ticketRepository.findOpenWhatsappTicketsForRouting(
+			eq(companyOwner.getId()),
+			eq(requester.getId()),
+			eq("cliente@empresa.com"),
+			eq("5511999999999"),
+			eq("")
+		)).thenReturn(List.of(ticketOne, ticketTwo, ticketThree));
+
+		service.handleIncomingMessage(companyOwner, "5511999999999", "", "trocar chamado", List.of());
+		service.handleIncomingMessage(companyOwner, "5511999999999", "", "2", List.of());
+
+		verify(whatsappService).sendMessage(eq(companyOwner), eq("5511999999999"), contains("Vou usar o chamado *CA-2026-0062*"));
+		verify(whatsappConversationRepository, atLeastOnce()).save(conversationCaptor.capture());
+		assertSame(ticketTwo, conversationCaptor.getAllValues().get(conversationCaptor.getAllValues().size() - 1).getActiveTicket());
+	}
+
+	@Test
 	void shouldRestartFlowAfterClosedNormalConversationReceivesNewMessage() {
 		User companyOwner = companyOwner();
 		WhatsappConversation conversation = conversation(companyOwner, WhatsappConversationStep.NORMAL_CONVERSATION_CLOSED);
