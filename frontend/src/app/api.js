@@ -4,6 +4,24 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:420
 )
 const APP_AUTH_TOKEN_STORAGE_KEY = 'helpdesk.app.auth-token'
 
+// #region debug-point A:frontend-api-helper
+function reportTenantLoginBounceDebug(hypothesisId, msg, data = {}) {
+  fetch('http://127.0.0.1:7777/event', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      sessionId: 'tenant-login-bounce',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'frontend/src/app/api.js',
+      msg: `[DEBUG] ${msg}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).catch(() => {})
+}
+// #endregion
+
 function isPlatformAdminRequest(path) {
   return path.startsWith('/api/v1/platform-admin/')
 }
@@ -14,7 +32,15 @@ export function getStoredAppAuthToken() {
   }
 
   try {
-    return window.localStorage.getItem(APP_AUTH_TOKEN_STORAGE_KEY) || ''
+    const storedValue = window.localStorage.getItem(APP_AUTH_TOKEN_STORAGE_KEY) || ''
+    // #region debug-point D:token-read
+    reportTenantLoginBounceDebug('D', 'Token lido do localStorage', {
+      host: window.location?.host || '',
+      hasToken: Boolean(storedValue),
+      tokenLength: storedValue.length,
+    })
+    // #endregion
+    return storedValue
   } catch {
     return ''
   }
@@ -28,9 +54,20 @@ export function storeAppAuthToken(token) {
   try {
     if (!token) {
       window.localStorage.removeItem(APP_AUTH_TOKEN_STORAGE_KEY)
+      // #region debug-point D:token-clear
+      reportTenantLoginBounceDebug('D', 'Token removido do localStorage', {
+        host: window.location?.host || '',
+      })
+      // #endregion
       return
     }
     window.localStorage.setItem(APP_AUTH_TOKEN_STORAGE_KEY, token)
+    // #region debug-point D:token-write
+    reportTenantLoginBounceDebug('D', 'Token salvo no localStorage', {
+      host: window.location?.host || '',
+      tokenLength: token.length,
+    })
+    // #endregion
   } catch {
     // Ignora falhas de armazenamento local e segue com a resposta em memória.
   }
@@ -68,6 +105,14 @@ async function apiRequest(path, options = {}) {
     ...(appAuthToken ? { Authorization: `Bearer ${appAuthToken}` } : {}),
     ...customHeaders,
   }
+  // #region debug-point A:request-start
+  reportTenantLoginBounceDebug('A', 'Inicio de requisicao da API', {
+    path,
+    tenantHost,
+    hasAuthorization: Boolean(headers.Authorization),
+    credentialsMode: credentials || (isPlatformAdminRequest(path) ? 'include' : 'omit'),
+  })
+  // #endregion
   const response = await fetch(`${API_BASE_URL}${path}`, {
     credentials: credentials || (isPlatformAdminRequest(path) ? 'include' : 'omit'),
     headers,
@@ -75,6 +120,14 @@ async function apiRequest(path, options = {}) {
   })
 
   if (!response.ok) {
+    // #region debug-point E:request-unauthorized
+    reportTenantLoginBounceDebug('E', 'Resposta nao OK da API', {
+      path,
+      tenantHost,
+      status: response.status,
+      hasAuthorization: Boolean(headers.Authorization),
+    })
+    // #endregion
     const errorMessage = await extractErrorMessage(response)
     const error = new Error(errorMessage)
     error.status = response.status
@@ -94,6 +147,13 @@ async function apiRequest(path, options = {}) {
   const data = JSON.parse(responseText)
 
   if (!isPlatformAdminRequest(path) && typeof data?.authToken === 'string' && data.authToken.trim()) {
+    // #region debug-point A:login-response-token
+    reportTenantLoginBounceDebug('A', 'Resposta autenticada trouxe authToken', {
+      path,
+      tenantHost,
+      tokenLength: data.authToken.trim().length,
+    })
+    // #endregion
     storeAppAuthToken(data.authToken.trim())
   }
 
