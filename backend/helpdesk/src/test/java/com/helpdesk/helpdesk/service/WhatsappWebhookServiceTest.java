@@ -196,6 +196,55 @@ class WhatsappWebhookServiceTest {
 	}
 
 	@Test
+	void shouldKeepRequesterContextWhenSwitchingToNormalConversationAndBackToOpenTicket() {
+		User companyOwner = companyOwner();
+		User requester = new User();
+		setField(requester, "id", UUID.randomUUID());
+		requester.setEmail("cliente@empresa.com");
+		Ticket openTicket = new Ticket();
+		setField(openTicket, "id", UUID.randomUUID());
+		openTicket.setRequester(requester);
+		openTicket.setProtocol("CA-2026-0061");
+		openTicket.setTitle("Chamado já aberto");
+		com.helpdesk.helpdesk.domain.TicketStatus status = new com.helpdesk.helpdesk.domain.TicketStatus();
+		setField(status, "id", UUID.randomUUID());
+		setField(status, "code", "OPEN");
+		openTicket.setStatus(status);
+
+		WhatsappConversation conversation = conversation(companyOwner, WhatsappConversationStep.ACTIVE_TICKET);
+		conversation.setNormalConversationActive(true);
+		conversation.setActiveTicket(openTicket);
+		conversation.setPendingEmail(null);
+		conversation.setWhatsappTransportId(null);
+
+		when(whatsappConversationRepository.findByCompanyOwnerIdAndPhoneNumber(companyOwner.getId(), "5511999999999"))
+			.thenReturn(Optional.of(conversation));
+		when(scopedUserLookupService.findAllByPhoneNumberInCurrentTenant("5511999999999"))
+			.thenReturn(List.of());
+		when(ticketRepository.findOpenWhatsappTicketsForRouting(
+			eq(companyOwner.getId()),
+			eq(requester.getId()),
+			eq("cliente@empresa.com"),
+			eq("5511999999999"),
+			eq("")
+		)).thenReturn(List.of(openTicket));
+
+		service.handleIncomingMessage(companyOwner, "5511999999999", "", "conversa normal", List.of());
+		service.handleIncomingMessage(companyOwner, "5511999999999", "", "trocar chamado", List.of());
+
+		verify(ticketRepository).findOpenWhatsappTicketsForRouting(
+			eq(companyOwner.getId()),
+			eq(requester.getId()),
+			eq("cliente@empresa.com"),
+			eq("5511999999999"),
+			eq("")
+		);
+		verify(whatsappService).sendMessage(eq(companyOwner), eq("5511999999999"), contains("Vou usar o chamado *CA-2026-0061*"));
+		verify(whatsappConversationRepository, atLeastOnce()).save(conversationCaptor.capture());
+		assertSame(openTicket, conversationCaptor.getAllValues().get(conversationCaptor.getAllValues().size() - 1).getActiveTicket());
+	}
+
+	@Test
 	void shouldRestartFlowAfterClosedNormalConversationReceivesNewMessage() {
 		User companyOwner = companyOwner();
 		WhatsappConversation conversation = conversation(companyOwner, WhatsappConversationStep.NORMAL_CONVERSATION_CLOSED);
