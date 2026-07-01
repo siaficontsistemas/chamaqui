@@ -211,7 +211,7 @@ public class AppAuthTokenService {
 		HttpRequest request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:7777/event"))
 			.header("Content-Type", "application/json")
 			.POST(HttpRequest.BodyPublishers.ofString("""
-				{"sessionId":"tenant-login-bounce","runId":"pre-fix","hypothesisId":"%s","location":"backend/AppAuthTokenService.java","msg":"[DEBUG] %s","data":%s}
+				{"sessionId":"tenant-login-bounce","runId":"post-fix","hypothesisId":"%s","location":"backend/AppAuthTokenService.java","msg":"[DEBUG] %s","data":%s}
 				""".formatted(
 				sanitizeForJson(hypothesisId),
 				sanitizeForJson(msg),
