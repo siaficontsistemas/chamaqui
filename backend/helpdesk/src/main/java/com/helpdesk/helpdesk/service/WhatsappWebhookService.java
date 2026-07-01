@@ -741,7 +741,7 @@ public class WhatsappWebhookService {
 			return;
 		}
 
-		if (isNormalConversationSelection(body)) {
+		if (isInitialNormalConversationSelection(body)) {
 			startNormalConversation(companyOwner, conversation, replyTarget);
 			return;
 		}
@@ -1914,10 +1914,14 @@ public class WhatsappWebhookService {
 			|| isOpenNewTicketCommand(body);
 	}
 
+	private boolean isInitialNormalConversationSelection(String body) {
+		String normalizedBody = normalizeComparable(body);
+		return normalizedBody.equals("2") || isNormalConversationSelection(body);
+	}
+
 	private boolean isNormalConversationSelection(String body) {
 		String normalizedBody = normalizeComparable(body);
-		return normalizedBody.equals("2")
-			|| normalizedBody.equals("conversa normal")
+		return normalizedBody.equals("conversa normal")
 			|| normalizedBody.equals("normal")
 			|| normalizedBody.equals("sem chamado")
 			|| normalizedBody.equals("conversa sem chamado");
