@@ -1,3 +1,5 @@
+import { getTicketAttachmentPath } from './routes'
+
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:4200').replace(
   /\/$/,
   ''
@@ -58,11 +60,14 @@ export function resolveApiAssetUrl(assetUrl) {
   return `${API_BASE_URL}/${assetUrl}`
 }
 
+function getCurrentTenantHost() {
+  return typeof window !== 'undefined' && window.location?.host ? window.location.host : ''
+}
+
 async function apiRequest(path, options = {}) {
   const { headers: customHeaders = {}, credentials, ...requestOptions } = options
   const isFormData = requestOptions.body instanceof FormData
-  const tenantHost =
-    typeof window !== 'undefined' && window.location?.host ? window.location.host : ''
+  const tenantHost = getCurrentTenantHost()
   const appAuthToken = isPlatformAdminRequest(path) ? '' : getStoredAppAuthToken()
   const headers = {
     ...(tenantHost ? { 'X-Tenant-Host': tenantHost } : {}),
@@ -377,9 +382,8 @@ function createMultipartRequest(path, payload) {
   })
 }
 
-export function getTicketAttachmentDownloadUrl(ticketId, attachmentId) {
-  const tenantHost =
-    typeof window !== 'undefined' && window.location?.host ? window.location.host : ''
+export function getPublicTicketAttachmentApiUrl(ticketId, attachmentId) {
+  const tenantHost = getCurrentTenantHost()
   const searchParams = new URLSearchParams()
 
   if (tenantHost) {
@@ -390,6 +394,10 @@ export function getTicketAttachmentDownloadUrl(ticketId, attachmentId) {
   return `${API_BASE_URL}/api/v1/public/tickets/${ticketId}/attachments/${attachmentId}${
     queryString ? `?${queryString}` : ''
   }`
+}
+
+export function getTicketAttachmentDownloadUrl(ticketId, attachmentId) {
+  return getTicketAttachmentPath(ticketId, attachmentId)
 }
 
 export function closeTicket(ticketId, payload) {

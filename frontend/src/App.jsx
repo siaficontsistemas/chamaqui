@@ -96,6 +96,7 @@ import Register from './app/pages/Register/Register'
 import Reports from './app/pages/Reports/Reports'
 import Sector from './app/pages/Sector/Sector'
 import Team from './app/pages/Team/Team'
+import TicketAttachmentViewer from './app/pages/TicketAttachmentViewer/TicketAttachmentViewer'
 import TicketConversation from './app/pages/TicketConversation/TicketConversation'
 
 const dashboardPageComponents = {
@@ -1702,6 +1703,7 @@ function App() {
               )
             }
           />
+          <Route path="/tickets/:ticketId/attachments/:attachmentId" element={<TicketAttachmentViewer />} />
           <Route
             path={SECTION_ROUTE_PATHS.tickets}
             element={
