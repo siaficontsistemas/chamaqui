@@ -6,6 +6,7 @@ import {
   acceptCompanyPartnership,
   acceptTicketTransferNotification,
   acceptTeamInvite,
+  clearStoredAppAuthToken,
   changePassword as changePasswordRequest,
   closeTicket,
   createClientCompany,
@@ -870,7 +871,7 @@ function App() {
         }
 
         if (error?.status === 401) {
-          handleNavigateLogin()
+          handleNavigateLogin({ invalidateServerSession: false })
           return
         }
 
@@ -910,7 +911,7 @@ function App() {
         applyDashboardBundle(bundle)
       } catch (error) {
         if (error?.status === 401) {
-          handleNavigateLogin()
+          handleNavigateLogin({ invalidateServerSession: false })
         }
         // Mantem os dados atuais quando a atualizacao silenciosa falha.
       }
@@ -948,8 +949,11 @@ function App() {
     navigate(SECTION_ROUTE_PATHS.tickets, { replace: true })
   }
 
-  function handleNavigateLogin() {
-    void logoutCurrentUser().catch(() => {})
+  function handleNavigateLogin({ invalidateServerSession = true } = {}) {
+    if (invalidateServerSession) {
+      void logoutCurrentUser().catch(() => {})
+    }
+    clearStoredAppAuthToken()
     setAuthUser(null)
     setProfile(null)
     setProfileError('')

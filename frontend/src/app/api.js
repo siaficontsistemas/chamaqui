@@ -2,6 +2,43 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:420
   /\/$/,
   ''
 )
+const APP_AUTH_TOKEN_STORAGE_KEY = 'helpdesk.app.auth-token'
+
+function isPlatformAdminRequest(path) {
+  return path.startsWith('/api/v1/platform-admin/')
+}
+
+export function getStoredAppAuthToken() {
+  if (typeof window === 'undefined') {
+    return ''
+  }
+
+  try {
+    return window.localStorage.getItem(APP_AUTH_TOKEN_STORAGE_KEY) || ''
+  } catch {
+    return ''
+  }
+}
+
+export function storeAppAuthToken(token) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  try {
+    if (!token) {
+      window.localStorage.removeItem(APP_AUTH_TOKEN_STORAGE_KEY)
+      return
+    }
+    window.localStorage.setItem(APP_AUTH_TOKEN_STORAGE_KEY, token)
+  } catch {
+    // Ignora falhas de armazenamento local e segue com a resposta em memória.
+  }
+}
+
+export function clearStoredAppAuthToken() {
+  storeAppAuthToken('')
+}
 
 export function resolveApiAssetUrl(assetUrl) {
   if (!assetUrl) {
@@ -20,17 +57,21 @@ export function resolveApiAssetUrl(assetUrl) {
 }
 
 async function apiRequest(path, options = {}) {
-  const isFormData = options.body instanceof FormData
+  const { headers: customHeaders = {}, credentials, ...requestOptions } = options
+  const isFormData = requestOptions.body instanceof FormData
   const tenantHost =
     typeof window !== 'undefined' && window.location?.host ? window.location.host : ''
+  const appAuthToken = isPlatformAdminRequest(path) ? '' : getStoredAppAuthToken()
+  const headers = {
+    ...(tenantHost ? { 'X-Tenant-Host': tenantHost } : {}),
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+    ...(appAuthToken ? { Authorization: `Bearer ${appAuthToken}` } : {}),
+    ...customHeaders,
+  }
   const response = await fetch(`${API_BASE_URL}${path}`, {
-    credentials: options.credentials || 'include',
-    headers: {
-      ...(tenantHost ? { 'X-Tenant-Host': tenantHost } : {}),
-      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
-      ...(options.headers || {}),
-    },
-    ...options,
+    credentials: credentials || (isPlatformAdminRequest(path) ? 'include' : 'omit'),
+    headers,
+    ...requestOptions,
   })
 
   if (!response.ok) {
@@ -50,7 +91,13 @@ async function apiRequest(path, options = {}) {
     return null
   }
 
-  return JSON.parse(responseText)
+  const data = JSON.parse(responseText)
+
+  if (!isPlatformAdminRequest(path) && typeof data?.authToken === 'string' && data.authToken.trim()) {
+    storeAppAuthToken(data.authToken.trim())
+  }
+
+  return data
 }
 
 async function extractErrorMessage(response) {

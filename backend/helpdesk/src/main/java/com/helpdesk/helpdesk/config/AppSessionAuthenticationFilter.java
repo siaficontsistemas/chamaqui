@@ -8,6 +8,8 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+import com.helpdesk.helpdesk.domain.User;
+import com.helpdesk.helpdesk.service.AppAuthTokenService;
 import com.helpdesk.helpdesk.service.AppSessionService;
 
 import jakarta.servlet.FilterChain;
@@ -34,9 +36,14 @@ public class AppSessionAuthenticationFilter extends OncePerRequestFilter {
 	);
 
 	private final AppSessionService appSessionService;
+	private final AppAuthTokenService appAuthTokenService;
 
-	public AppSessionAuthenticationFilter(AppSessionService appSessionService) {
+	public AppSessionAuthenticationFilter(
+		AppSessionService appSessionService,
+		AppAuthTokenService appAuthTokenService
+	) {
 		this.appSessionService = appSessionService;
+		this.appAuthTokenService = appAuthTokenService;
 	}
 
 	@Override
@@ -50,11 +57,22 @@ public class AppSessionAuthenticationFilter extends OncePerRequestFilter {
 			return;
 		}
 
+		String bearerToken = extractBearerToken(request);
+		if (bearerToken != null) {
+			try {
+				User authenticatedUser = appAuthTokenService.authenticate(bearerToken);
+				request.setAttribute(AppSessionService.AUTHENTICATED_REQUEST_USER_ATTRIBUTE, authenticatedUser);
+				filterChain.doFilter(request, response);
+				return;
+			} catch (RuntimeException exception) {
+				writeUnauthorizedResponse(response);
+				return;
+			}
+		}
+
 		HttpSession session = request.getSession(false);
 		if (session == null || !appSessionService.hasAuthenticatedUser(session)) {
-			response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-			response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-			response.getWriter().write("{\"message\":\"Faça login para continuar.\"}");
+			writeUnauthorizedResponse(response);
 			return;
 		}
 
@@ -73,5 +91,25 @@ public class AppSessionAuthenticationFilter extends OncePerRequestFilter {
 			return true;
 		}
 		return PUBLIC_PATH_PREFIXES.stream().anyMatch(path::startsWith);
+	}
+
+	private String extractBearerToken(HttpServletRequest request) {
+		String authorizationHeader = request.getHeader("Authorization");
+		if (authorizationHeader == null || authorizationHeader.isBlank()) {
+			return null;
+		}
+
+		if (!authorizationHeader.regionMatches(true, 0, "Bearer ", 0, "Bearer ".length())) {
+			return null;
+		}
+
+		String token = authorizationHeader.substring("Bearer ".length()).trim();
+		return token.isBlank() ? null : token;
+	}
+
+	private void writeUnauthorizedResponse(HttpServletResponse response) throws IOException {
+		response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+		response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+		response.getWriter().write("{\"message\":\"Faça login para continuar.\"}");
 	}
 }

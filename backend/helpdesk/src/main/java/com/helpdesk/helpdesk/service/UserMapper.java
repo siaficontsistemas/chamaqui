@@ -13,6 +13,10 @@ import com.helpdesk.helpdesk.dto.profile.ProfileResponse;
 public class UserMapper {
 
 	public AuthResponse toAuthResponse(User user) {
+		return toAuthResponse(user, null);
+	}
+
+	public AuthResponse toAuthResponse(User user, String authToken) {
 		return new AuthResponse(
 			user.getId(),
 			user.getFullName(),
@@ -20,7 +24,8 @@ public class UserMapper {
 			resolveCompanyName(user),
 			resolveCompanyType(user),
 			user.getStatus().name(),
-			roleCodes(user)
+			roleCodes(user),
+			authToken
 		);
 	}
 
