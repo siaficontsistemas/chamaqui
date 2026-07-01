@@ -252,7 +252,7 @@ function TicketConversation({
       attachments: Array.isArray(message.attachments)
         ? message.attachments.map((attachment) => ({
             ...attachment,
-            downloadUrl: getTicketAttachmentDownloadUrl(ticket.id, attachment.id, currentUser?.email || ''),
+            downloadUrl: getTicketAttachmentDownloadUrl(ticket.id, attachment.id),
           }))
         : [],
     }))
@@ -271,7 +271,7 @@ function TicketConversation({
     }
 
     return nextMessages
-  }, [currentUser?.email, messages, ticket?.closedAt, ticket?.id, ticket?.requesterEmail])
+  }, [messages, ticket?.closedAt, ticket?.id, ticket?.requesterEmail])
   const displayStatusName = useMemo(() => {
     if (!ticket) {
       return 'Não informado'

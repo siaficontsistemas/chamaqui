@@ -47,6 +47,13 @@ export function getTicketPath(ticketId) {
   return generatePath('/tickets/:ticketId', { ticketId })
 }
 
+export function getTicketAttachmentPath(ticketId, attachmentId) {
+  return generatePath('/tickets/:ticketId/attachments/:attachmentId', {
+    ticketId,
+    attachmentId,
+  })
+}
+
 export function getSectionIdFromPathname(pathname) {
   for (const [sectionId, pattern] of SECTION_MATCHERS) {
     if (matchPath({ path: pattern, end: true }, pathname)) {
@@ -61,6 +68,14 @@ export function getSectionIdFromPathname(pathname) {
 
   const ticketMatch = matchPath({ path: '/tickets/:ticketId', end: true }, pathname)
   if (ticketMatch?.params?.ticketId) {
+    return 'tickets'
+  }
+
+  const attachmentMatch = matchPath(
+    { path: '/tickets/:ticketId/attachments/:attachmentId', end: true },
+    pathname
+  )
+  if (attachmentMatch?.params?.ticketId && attachmentMatch?.params?.attachmentId) {
     return 'tickets'
   }
 
