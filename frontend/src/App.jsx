@@ -33,6 +33,7 @@ import {
   deleteTickets,
   declineTicketTransferNotification,
   declineTeamInvite,
+  getStoredAppAuthToken,
   getCompanyPartnershipTicketTargets,
   getAuthMe,
   getProfile,
@@ -785,6 +786,17 @@ function App() {
     let isCancelled = false
 
     async function bootstrapSession() {
+      const storedAuthToken = getStoredAppAuthToken()
+      if (!storedAuthToken) {
+        if (!isCancelled) {
+          setAuthUser(null)
+          setProfile(null)
+          setCurrentUserRole('user')
+          setIsSessionBootstrapping(false)
+        }
+        return
+      }
+
       try {
         const currentSessionUser = await getAuthMe()
         if (isCancelled) {
@@ -795,6 +807,7 @@ function App() {
         setCurrentUserRole(getPrimaryRole(normalizedUser?.roles))
       } catch {
         if (!isCancelled) {
+          clearStoredAppAuthToken()
           setAuthUser(null)
           setProfile(null)
           setCurrentUserRole('user')
