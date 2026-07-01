@@ -787,6 +787,7 @@ public class WhatsappWebhookService {
 		String replyTarget,
 		String prefix
 	) {
+		Ticket lastActiveTicket = conversation.getActiveTicket();
 		conversation.setNormalConversationActive(true);
 		conversation.setCurrentStep(WhatsappConversationStep.NORMAL_CONVERSATION_ACTIVE);
 		conversation.setSector(null);
@@ -797,7 +798,7 @@ public class WhatsappWebhookService {
 		conversation.setPendingDocument(null);
 		conversation.setPendingAssignedUserId(null);
 		clearPendingResumeState(conversation);
-		conversation.setActiveTicket(null);
+		conversation.setActiveTicket(lastActiveTicket);
 		conversation.setLastTicketSelectionPromptAt(null);
 		whatsappConversationRepository.save(conversation);
 		String baseMessage = """
