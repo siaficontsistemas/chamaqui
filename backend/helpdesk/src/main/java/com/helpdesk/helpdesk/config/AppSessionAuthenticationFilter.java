@@ -1,9 +1,6 @@
 package com.helpdesk.helpdesk.config;
 
 import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
 import java.util.List;
 
 import org.springframework.http.HttpMethod;
@@ -55,15 +52,6 @@ public class AppSessionAuthenticationFilter extends OncePerRequestFilter {
 		HttpServletResponse response,
 		FilterChain filterChain
 	) throws ServletException, IOException {
-		// #region debug-point B:filter-entry
-		reportTenantLoginBounceDebug("B", "Filtro de autenticacao recebeu requisicao", """
-			{"path":"%s","host":"%s","hasAuthorization":%s}
-			""".formatted(
-			sanitizeForJson(request.getRequestURI()),
-			sanitizeForJson(request.getHeader("X-Tenant-Host")),
-			Boolean.toString(request.getHeader("Authorization") != null && !request.getHeader("Authorization").isBlank())
-		));
-		// #endregion
 		if (shouldSkip(request)) {
 			filterChain.doFilter(request, response);
 			return;
@@ -73,26 +61,10 @@ public class AppSessionAuthenticationFilter extends OncePerRequestFilter {
 		if (bearerToken != null) {
 			try {
 				User authenticatedUser = appAuthTokenService.authenticate(bearerToken);
-				// #region debug-point B:bearer-accepted
-				reportTenantLoginBounceDebug("B", "Bearer token aceito pelo filtro", """
-					{"path":"%s","userId":"%s"}
-					""".formatted(
-					sanitizeForJson(request.getRequestURI()),
-					authenticatedUser.getId() == null ? "" : authenticatedUser.getId().toString()
-				));
-				// #endregion
 				request.setAttribute(AppSessionService.AUTHENTICATED_REQUEST_USER_ATTRIBUTE, authenticatedUser);
 				filterChain.doFilter(request, response);
 				return;
 			} catch (RuntimeException exception) {
-				// #region debug-point B:bearer-rejected
-				reportTenantLoginBounceDebug("B", "Bearer token rejeitado pelo filtro", """
-					{"path":"%s","message":"%s"}
-					""".formatted(
-					sanitizeForJson(request.getRequestURI()),
-					sanitizeForJson(exception.getMessage())
-				));
-				// #endregion
 				writeUnauthorizedResponse(response);
 				return;
 			}
@@ -100,14 +72,6 @@ public class AppSessionAuthenticationFilter extends OncePerRequestFilter {
 
 		HttpSession session = request.getSession(false);
 		if (session == null || !appSessionService.hasAuthenticatedUser(session)) {
-			// #region debug-point B:unauthorized-without-bearer
-			reportTenantLoginBounceDebug("B", "Requisicao caiu em 401 sem bearer valido", """
-				{"path":"%s","hasSession":%s}
-				""".formatted(
-				sanitizeForJson(request.getRequestURI()),
-				Boolean.toString(session != null)
-			));
-			// #endregion
 			writeUnauthorizedResponse(response);
 			return;
 		}
@@ -149,26 +113,4 @@ public class AppSessionAuthenticationFilter extends OncePerRequestFilter {
 		response.getWriter().write("{\"message\":\"Faça login para continuar.\"}");
 	}
 
-	// #region debug-point B:filter-helper
-	private void reportTenantLoginBounceDebug(String hypothesisId, String msg, String dataJson) {
-		HttpRequest request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:7777/event"))
-			.header("Content-Type", "application/json")
-			.POST(HttpRequest.BodyPublishers.ofString("""
-				{"sessionId":"tenant-login-bounce","runId":"post-fix","hypothesisId":"%s","location":"backend/AppSessionAuthenticationFilter.java","msg":"[DEBUG] %s","data":%s}
-				""".formatted(
-				sanitizeForJson(hypothesisId),
-				sanitizeForJson(msg),
-				dataJson
-			)))
-			.build();
-		HttpClient.newHttpClient().sendAsync(request, java.net.http.HttpResponse.BodyHandlers.discarding());
-	}
-
-	private String sanitizeForJson(String value) {
-		if (value == null) {
-			return "";
-		}
-		return value.replace("\\", "\\\\").replace("\"", "\\\"");
-	}
-	// #endregion
 }

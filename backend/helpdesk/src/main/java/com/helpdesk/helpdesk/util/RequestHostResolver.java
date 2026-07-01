@@ -15,6 +15,7 @@ public final class RequestHostResolver {
 		}
 
 		return firstNonBlank(
+			request.getParameter("tenantHost"),
 			request.getHeader("X-Tenant-Host"),
 			extractHost(request.getHeader("Origin")),
 			extractHost(request.getHeader("Referer")),

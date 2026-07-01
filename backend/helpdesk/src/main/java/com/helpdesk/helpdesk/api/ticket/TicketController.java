@@ -1,12 +1,9 @@
 package com.helpdesk.helpdesk.api.ticket;
 
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 
 import org.springframework.core.io.Resource;
-import org.springframework.http.ContentDisposition;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -22,6 +19,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.helpdesk.helpdesk.api.publicapi.PublicTicketAttachmentController;
 import com.helpdesk.helpdesk.dto.ticket.CloseTicketRequest;
 import com.helpdesk.helpdesk.dto.ticket.CreateTicketMessageRequest;
 import com.helpdesk.helpdesk.dto.ticket.CreateTicketRequest;
@@ -128,23 +126,11 @@ public class TicketController {
 		@PathVariable UUID attachmentId,
 		HttpSession session
 	) {
-		TicketService.AttachmentDownload attachment = ticketService.downloadAttachment(
+		return PublicTicketAttachmentController.buildAttachmentResponse(ticketService.downloadAttachment(
 			ticketId,
 			attachmentId,
 			appSessionService.requireCurrentEmail(session)
-		);
-
-		return ResponseEntity.ok()
-			.contentType(MediaType.parseMediaType(attachment.contentType()))
-			.contentLength(attachment.sizeBytes())
-			.header(
-				HttpHeaders.CONTENT_DISPOSITION,
-				ContentDisposition.attachment()
-					.filename(attachment.originalFileName(), StandardCharsets.UTF_8)
-					.build()
-					.toString()
-			)
-			.body(attachment.resource());
+		));
 	}
 
 	@PostMapping("/{ticketId}/close")
