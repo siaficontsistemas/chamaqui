@@ -22,7 +22,28 @@
 4. Só então aplicar a correção mínima baseada nos logs.
 
 ## Evidências
-- Pendente.
+- `trae-debug-log-tenant-login-bounce.ndjson:1-3`: o bootstrap inicial começa sem token e encerra corretamente, sem limpar sessão válida.
+- `trae-debug-log-tenant-login-bounce.ndjson:5-9`: o login em `lopesconsultoria.chamaqui.app.br` retorna sucesso, traz `authToken`, salva o token e chama `handleAuthenticatedUser`.
+- `trae-debug-log-tenant-login-bounce.ndjson:11-13`: as primeiras chamadas autenticadas para `/api/v1/profile` e `/api/v1/tickets` saem com `Authorization: Bearer ...`.
+- `trae-debug-log-tenant-login-bounce.ndjson:14-18`: mesmo com bearer token presente, `/api/v1/profile` recebe `401`, o dashboard chama `handleNavigateLogin()` e a sessão local é removida.
+
+## Verificação de Hipóteses
+| ID | Hipótese | Status | Evidência |
+|----|----------|--------|-----------|
+| A | Requisição sai sem `Authorization` | ❌ Rejeitada | Linhas 11-13 mostram `hasAuthorization: true` para `/api/v1/profile` e `/api/v1/tickets`. |
+| B | Backend rejeita o token recém-emitido no primeiro endpoint protegido | ✅ Confirmada | Linhas 5-9 mostram token emitido e salvo; linhas 14-18 mostram `401` imediato no primeiro endpoint protegido. |
+| C | `bootstrapSession()` ou `handleAuthenticatedUser()` apaga o estado autenticado por disputa interna | ❌ Rejeitada | Linhas 7-9 mostram login concluído e navegação correta; a limpeza só ocorre após o `401` da API. |
+| D | Token salvo/lido no host errado | ❌ Rejeitada | Linhas 1, 4, 8, 10 e 17 mostram leitura e escrita consistentes no mesmo host. |
+| E | O primeiro bundle autenticado recebe `401` e força logout | ✅ Confirmada | Linhas 14-18 mostram exatamente essa sequência. |
+
+## Causa Raiz Confirmada
+- A evidência de runtime confirma que o problema não está no login do frontend nem no armazenamento local do token.
+- A causa raiz está no backend: o `AppSessionAuthenticationFilter` valida o bearer token antes de o `TenantResolutionFilter` popular o `TenantContext`.
+- Como o token é assinado com escopo de tenant, a validação sem `TenantContext` rejeita o token recém-emitido e responde `401` já na primeira chamada protegida.
+
+## Próximo Passo
+- Ajustar a ordem dos filtros em `SecurityConfig` para garantir que o tenant seja resolvido antes da autenticação do app.
+- Manter a instrumentação atual para comprovar o comportamento `post-fix`.
 
 ## Próximo Passo
 - Adicionar instrumentação de debug no frontend e backend para capturar:
