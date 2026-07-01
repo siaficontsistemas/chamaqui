@@ -623,8 +623,7 @@ public class TicketService {
 	public AttachmentDownload downloadAttachment(UUID ticketId, UUID attachmentId, String email) {
 		User viewer = loadCurrentUserByEmail(email, "Usuário responsável pelo download não encontrado.");
 		Ticket ticket = loadDetailedAccessibleTicket(ticketId, viewer.getEmail());
-		TicketAttachment attachment = ticketAttachmentRepository.findByIdAndTicketId(attachmentId, ticket.getId())
-			.orElseThrow(() -> new NotFoundException("Anexo não encontrado para este chamado."));
+		TicketAttachment attachment = loadAttachment(ticket.getId(), attachmentId);
 		Resource resource = ticketAttachmentStorageService.loadAsResource(attachment.getStorageKey());
 		auditTrailService.recordUserAction("TICKET_ATTACHMENT_DOWNLOADED", viewer, "ticket-attachment", attachment.getId());
 
@@ -634,6 +633,24 @@ public class TicketService {
 			attachment.getContentType(),
 			attachment.getSizeBytes()
 		);
+	}
+
+	@Transactional(readOnly = true)
+	public AttachmentDownload downloadPublicAttachment(UUID ticketId, UUID attachmentId) {
+		TicketAttachment attachment = loadAttachment(ticketId, attachmentId);
+		Resource resource = ticketAttachmentStorageService.loadAsResource(attachment.getStorageKey());
+
+		return new AttachmentDownload(
+			resource,
+			attachment.getOriginalFileName(),
+			attachment.getContentType(),
+			attachment.getSizeBytes()
+		);
+	}
+
+	private TicketAttachment loadAttachment(UUID ticketId, UUID attachmentId) {
+		return ticketAttachmentRepository.findByIdAndTicketId(attachmentId, ticketId)
+			.orElseThrow(() -> new NotFoundException("Anexo não encontrado para este chamado."));
 	}
 
 	private Ticket saveTicketWithUniqueProtocol(Ticket ticket) {

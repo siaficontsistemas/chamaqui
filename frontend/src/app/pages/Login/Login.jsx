@@ -12,23 +12,6 @@ const formFields = [
   { id: 'password', label: 'Senha', type: 'password', icon: LockIcon },
 ]
 
-// #region debug-point C:login-page-helper
-function reportTenantLoginBounceDebug(hypothesisId, msg, data = {}) {
-  fetch('http://127.0.0.1:7777/event', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      sessionId: 'tenant-login-bounce',
-      runId: 'pre-fix',
-      hypothesisId,
-      location: 'frontend/src/app/pages/Login/Login.jsx',
-      msg: `[DEBUG] ${msg}`,
-      data,
-      ts: Date.now(),
-    }),
-  }).catch(() => {})
-}
-// #endregion
 
 function Login({ onNavigateHome, onNavigateRegister, onRequestPasswordReset, onResetPassword }) {
   const location = useLocation()
@@ -85,24 +68,8 @@ function Login({ onNavigateHome, onNavigateRegister, onRequestPasswordReset, onR
         email: credentials.email.trim(),
         password: credentials.password,
       })
-      // #region debug-point C:login-submit-success
-      reportTenantLoginBounceDebug('C', 'Login retornou sucesso e vai navegar para home', {
-        host: window.location?.host || '',
-        email: credentials.email.trim(),
-        userEmail: user?.email || '',
-        hasAuthToken: Boolean(user?.authToken),
-      })
-      // #endregion
       onNavigateHome(user)
     } catch (error) {
-      // #region debug-point C:login-submit-error
-      reportTenantLoginBounceDebug('C', 'Login falhou no submit', {
-        host: window.location?.host || '',
-        email: credentials.email.trim(),
-        message: error?.message || 'erro-sem-mensagem',
-        status: error?.status || null,
-      })
-      // #endregion
       setErrorMessage(error.message)
     } finally {
       setIsSubmitting(false)
