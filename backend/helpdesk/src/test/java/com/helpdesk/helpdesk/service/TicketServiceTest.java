@@ -11,17 +11,18 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
-import org.springframework.data.domain.Sort;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Sort;
 
 import com.helpdesk.helpdesk.domain.CompanyType;
 import com.helpdesk.helpdesk.domain.Role;
 import com.helpdesk.helpdesk.domain.Sector;
+import com.helpdesk.helpdesk.domain.SectorMember;
 import com.helpdesk.helpdesk.domain.Ticket;
 import com.helpdesk.helpdesk.domain.TicketChannel;
 import com.helpdesk.helpdesk.domain.TicketMessage;
@@ -31,6 +32,7 @@ import com.helpdesk.helpdesk.domain.TicketStatus;
 import com.helpdesk.helpdesk.domain.User;
 import com.helpdesk.helpdesk.domain.UserStatus;
 import com.helpdesk.helpdesk.dto.ticket.CreateTicketMessageRequest;
+import com.helpdesk.helpdesk.dto.ticket.CreateTicketRequest;
 import com.helpdesk.helpdesk.dto.ticket.TicketMessageResponse;
 import com.helpdesk.helpdesk.dto.ticket.TicketResponse;
 import com.helpdesk.helpdesk.repository.CompanyPartnershipRepository;
@@ -113,6 +115,201 @@ class TicketServiceTest {
 
 	@InjectMocks
 	private TicketService ticketService;
+
+	@Test
+	void shouldNotifyAssignedEmployeeWhenPortalTicketIsCreated() {
+		User responderAdmin = user("admin@empresa.com", "Empresa Admin", "ADMIN", null);
+		responderAdmin.setStatus(UserStatus.ACTIVE);
+		responderAdmin.setCompanyName("Empresa Admin");
+		responderAdmin.setCompanyType(CompanyType.RESPONDER);
+
+		User assignee = user("funcionario@empresa.com", "Funcionario", "EMPLOYEE", responderAdmin);
+		assignee.setStatus(UserStatus.ACTIVE);
+		assignee.setWhatsappTransportId("5511999999999@c.us");
+
+		User requesterCompany = user("solicitante-admin@cliente.com", "Cliente LTDA", "ADMIN", null);
+		requesterCompany.setCompanyName("Cliente LTDA");
+		requesterCompany.setCompanyDocument("12345678000190");
+		requesterCompany.setStatus(UserStatus.ACTIVE);
+
+		User requester = user("cliente@cliente.com", "Cliente", "USER", requesterCompany);
+		requester.setStatus(UserStatus.ACTIVE);
+
+		Sector sector = new Sector();
+		UUID sectorId = UUID.randomUUID();
+		setField(sector, "id", sectorId);
+		sector.setName("Financeiro");
+		sector.setSlug("financeiro");
+		sector.setCreatedBy(responderAdmin);
+
+		TicketStatus openStatus = ticketStatus("OPEN");
+		TicketPriority highPriority = ticketPriority("HIGH");
+
+		when(scopedUserLookupService.findUniqueByEmailInCurrentTenant("cliente@cliente.com"))
+			.thenReturn(Optional.of(requester));
+		when(ticketStatusRepository.findByCode("OPEN")).thenReturn(Optional.of(openStatus));
+		when(ticketPriorityRepository.findByCode("HIGH")).thenReturn(Optional.of(highPriority));
+		when(sectorRepository.findById(sectorId)).thenReturn(Optional.of(sector));
+		when(tenantAccessService.getCurrentTenantOwnerUserId()).thenReturn(Optional.of(responderAdmin.getId()));
+		when(companyPartnershipRepository.existsByCompanyPairAndStatus(
+			requesterCompany.getId(),
+			responderAdmin.getId(),
+			com.helpdesk.helpdesk.domain.CompanyPartnershipStatus.ACCEPTED
+		)).thenReturn(true);
+		when(sectorMemberRepository.findBySectorIdOrderByAssignedAtAsc(sectorId))
+			.thenReturn(List.of(sectorMember(sector, assignee, responderAdmin)));
+		when(ticketRepository.saveAndFlush(any(Ticket.class))).thenAnswer(invocation -> {
+			Ticket savedTicket = invocation.getArgument(0);
+			setField(savedTicket, "id", UUID.randomUUID());
+			return savedTicket;
+		});
+		when(ticketMessageRepository.existsByTicketId(any(UUID.class))).thenReturn(false);
+		when(ticketMessageRepository.save(any(TicketMessage.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		TicketResponse response = ticketService.create(
+			new CreateTicketRequest(
+				"Preciso de ajuda com o faturamento mensal.",
+				responderAdmin.getId(),
+				sectorId,
+				assignee.getId(),
+				"HIGH",
+				"cliente@cliente.com",
+				null
+			),
+			List.of()
+		);
+
+		verify(whatsappService).sendMessage(
+			eq(responderAdmin),
+			eq("5511999999999@c.us"),
+			argThat(message ->
+				message.contains("Voce recebeu um novo chamado no ChamaQui da empresa Empresa Admin.")
+					&& message.contains("Protocolo: " + response.protocol())
+					&& message.contains("Solicitante: Cliente")
+					&& message.contains("Titulo: Preciso de ajuda com o faturam...")
+			)
+		);
+	}
+
+	@Test
+	void shouldNotifyAssignedEmployeeWhenWhatsappTicketIsCreated() {
+		User responderAdmin = user("admin@empresa.com", "Empresa Admin", "ADMIN", null);
+		responderAdmin.setStatus(UserStatus.ACTIVE);
+		responderAdmin.setCompanyName("Empresa Admin");
+		responderAdmin.setCompanyType(CompanyType.RESPONDER);
+
+		User assignee = user("funcionario@empresa.com", "Funcionario", "EMPLOYEE", responderAdmin);
+		assignee.setStatus(UserStatus.ACTIVE);
+		assignee.setPhoneNumber("+55 (11) 98888-7777");
+
+		User requester = user("cliente@gmail.com", "Cliente Externo", "USER", null);
+		requester.setStatus(UserStatus.ACTIVE);
+
+		Sector sector = new Sector();
+		UUID sectorId = UUID.randomUUID();
+		setField(sector, "id", sectorId);
+		sector.setName("Administrativo");
+		sector.setSlug("administrativo");
+		sector.setCreatedBy(responderAdmin);
+
+		TicketStatus openStatus = ticketStatus("OPEN");
+		TicketPriority mediumPriority = ticketPriority("MEDIUM");
+
+		when(ticketStatusRepository.findByCode("OPEN")).thenReturn(Optional.of(openStatus));
+		when(ticketPriorityRepository.findByCode("MEDIUM")).thenReturn(Optional.of(mediumPriority));
+		when(sectorRepository.findById(sectorId)).thenReturn(Optional.of(sector));
+		when(tenantAccessService.getCurrentTenantOwnerUserId()).thenReturn(Optional.of(responderAdmin.getId()));
+		when(ticketRepository.saveAndFlush(any(Ticket.class))).thenAnswer(invocation -> {
+			Ticket savedTicket = invocation.getArgument(0);
+			setField(savedTicket, "id", UUID.randomUUID());
+			return savedTicket;
+		});
+		when(ticketMessageRepository.existsByTicketId(any(UUID.class))).thenReturn(false);
+		when(ticketMessageRepository.save(any(TicketMessage.class))).thenAnswer(invocation -> invocation.getArgument(0));
+		when(sectorMemberRepository.findBySectorIdOrderByAssignedAtAsc(sectorId))
+			.thenReturn(List.of(sectorMember(sector, assignee, responderAdmin)));
+
+		Ticket createdTicket = ticketService.createFromWhatsapp(
+			new TicketService.CreateWhatsappTicketRequest(
+				requester,
+				"5511999999999",
+				"5511999999999@c.us",
+				responderAdmin.getId(),
+				sectorId,
+				assignee.getId(),
+				"Mensagem inicial do chamado via WhatsApp",
+				List.of()
+			)
+		);
+
+		verify(whatsappService).sendMessage(
+			eq(responderAdmin),
+			eq("5511988887777"),
+			argThat(message ->
+				message.contains("Voce recebeu um novo chamado no ChamaQui da empresa Empresa Admin.")
+					&& message.contains("Protocolo: " + createdTicket.getProtocol())
+					&& message.contains("Solicitante: Cliente Externo")
+					&& message.contains("Titulo: Mensagem inicial do chamado vi...")
+			)
+		);
+	}
+
+	@Test
+	void shouldNotNotifyAssignedEmployeeWhenWhatsappRecipientIsMissing() {
+		User responderAdmin = user("admin@empresa.com", "Empresa Admin", "ADMIN", null);
+		responderAdmin.setStatus(UserStatus.ACTIVE);
+		responderAdmin.setCompanyName("Empresa Admin");
+		responderAdmin.setCompanyType(CompanyType.RESPONDER);
+
+		User assignee = user("funcionario@empresa.com", "Funcionario", "EMPLOYEE", responderAdmin);
+		assignee.setStatus(UserStatus.ACTIVE);
+
+		User requester = user("cliente@gmail.com", "Cliente Externo", "USER", null);
+		requester.setStatus(UserStatus.ACTIVE);
+
+		Sector sector = new Sector();
+		UUID sectorId = UUID.randomUUID();
+		setField(sector, "id", sectorId);
+		sector.setName("Administrativo");
+		sector.setSlug("administrativo");
+		sector.setCreatedBy(responderAdmin);
+
+		TicketStatus openStatus = ticketStatus("OPEN");
+		TicketPriority mediumPriority = ticketPriority("MEDIUM");
+
+		when(ticketStatusRepository.findByCode("OPEN")).thenReturn(Optional.of(openStatus));
+		when(ticketPriorityRepository.findByCode("MEDIUM")).thenReturn(Optional.of(mediumPriority));
+		when(sectorRepository.findById(sectorId)).thenReturn(Optional.of(sector));
+		when(tenantAccessService.getCurrentTenantOwnerUserId()).thenReturn(Optional.of(responderAdmin.getId()));
+		when(ticketRepository.saveAndFlush(any(Ticket.class))).thenAnswer(invocation -> {
+			Ticket savedTicket = invocation.getArgument(0);
+			setField(savedTicket, "id", UUID.randomUUID());
+			return savedTicket;
+		});
+		when(ticketMessageRepository.existsByTicketId(any(UUID.class))).thenReturn(false);
+		when(ticketMessageRepository.save(any(TicketMessage.class))).thenAnswer(invocation -> invocation.getArgument(0));
+		when(sectorMemberRepository.findBySectorIdOrderByAssignedAtAsc(sectorId))
+			.thenReturn(List.of(sectorMember(sector, assignee, responderAdmin)));
+
+		ticketService.createFromWhatsapp(
+			new TicketService.CreateWhatsappTicketRequest(
+				requester,
+				"5511999999999",
+				"5511999999999@c.us",
+				responderAdmin.getId(),
+				sectorId,
+				assignee.getId(),
+				"Mensagem inicial do chamado via WhatsApp",
+				List.of()
+			)
+		);
+
+		verify(whatsappService, never()).sendMessage(
+			eq(responderAdmin),
+			any(String.class),
+			any(String.class)
+		);
+	}
 
 	@Test
 	void shouldMirrorEmployeeMessageToWhatsappForResponderCompany() {
@@ -378,6 +575,15 @@ class TicketServiceTest {
 		setField(priority, "code", code);
 		setField(priority, "name", code);
 		return priority;
+	}
+
+	private SectorMember sectorMember(Sector sector, User user, User assignedBy) {
+		SectorMember sectorMember = new SectorMember();
+		setField(sectorMember, "id", UUID.randomUUID());
+		sectorMember.setSector(sector);
+		sectorMember.setUser(user);
+		sectorMember.setAssignedBy(assignedBy);
+		return sectorMember;
 	}
 
 	private com.helpdesk.helpdesk.domain.WhatsappConversation conversation(User companyOwner, Ticket ticket) {
