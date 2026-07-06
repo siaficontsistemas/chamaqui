@@ -2,16 +2,31 @@ import { useEffect, useMemo, useState } from 'react'
 import { getWhatsappQrCode, getWhatsappSessionStatus } from '../../api'
 
 function toQrCodeImageSource(qrCodeResponse) {
-  const imageData = qrCodeResponse?.data || qrCodeResponse?.qrCode || ''
-  if (!imageData) {
+  const primaryImage = (qrCodeResponse?.qrCode || '').trim()
+  if (primaryImage) {
+    if (primaryImage.startsWith('data:')) {
+      return primaryImage
+    }
+
+    if (/^[A-Za-z0-9+/=\s]+$/.test(primaryImage)) {
+      return `data:image/png;base64,${primaryImage}`
+    }
+  }
+
+  const fallbackImage = (qrCodeResponse?.data || '').trim()
+  if (!fallbackImage || fallbackImage.startsWith('{') || fallbackImage.startsWith('[')) {
     return ''
   }
 
-  if (imageData.startsWith('data:')) {
-    return imageData
+  if (fallbackImage.startsWith('data:')) {
+    return fallbackImage
   }
 
-  return `data:image/png;base64,${imageData}`
+  if (/^[A-Za-z0-9+/=\s]+$/.test(fallbackImage)) {
+    return `data:image/png;base64,${fallbackImage}`
+  }
+
+  return ''
 }
 
 export default function WhatsappQrCodePage() {
