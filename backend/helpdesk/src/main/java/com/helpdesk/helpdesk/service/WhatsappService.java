@@ -460,7 +460,20 @@ public class WhatsappService {
 		if (digitsOnly.isBlank()) {
 			throw new IllegalArgumentException("Informe um telefone de destino valido.");
 		}
-		return digitsOnly + "@s.whatsapp.net";
+		return normalizeRecipientDigits(digitsOnly) + "@s.whatsapp.net";
+	}
+
+	private String normalizeRecipientDigits(String digitsOnly) {
+		if (digitsOnly == null || digitsOnly.isBlank()) {
+			throw new IllegalArgumentException("Informe um telefone de destino valido.");
+		}
+
+		// Assume Brasil quando o cadastro vier apenas com DDD + numero local.
+		if (digitsOnly.length() == 10 || digitsOnly.length() == 11) {
+			return "55" + digitsOnly;
+		}
+
+		return digitsOnly;
 	}
 
 	private String normalizeOptionalMessage(String message) {

@@ -1,6 +1,13 @@
 package com.helpdesk.helpdesk.service;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.OffsetDateTime;
 import java.time.Year;
 import java.util.Arrays;
@@ -257,6 +264,16 @@ public class TicketService {
 
 		Ticket savedTicket = saveTicketWithUniqueProtocol(ticket);
 		createAssignmentNotification(savedTicket);
+		// #region debug-point D:portal-create
+		reportDebugEvent(
+			"D",
+			"TicketService.create",
+			"[DEBUG] Fluxo portal acionou notificacao de novo chamado",
+			"{\"ticketId\":\"" + safeJson(savedTicket.getId()) + "\",\"protocol\":\"" + safeJson(savedTicket.getProtocol())
+				+ "\",\"assigneeId\":\"" + safeJson(savedTicket.getAssignedTo() == null ? null : savedTicket.getAssignedTo().getId())
+				+ "\",\"channel\":\"" + safeJson(resolveChannel(savedTicket).name()) + "\"}"
+		);
+		// #endregion
 		notifyAssigneeAboutNewTicket(savedTicket);
 		TicketMessage initialMessage = ensureInitialMessage(savedTicket);
 		saveAttachments(savedTicket, initialMessage, requester, files);
@@ -302,6 +319,16 @@ public class TicketService {
 
 		Ticket savedTicket = saveTicketWithUniqueProtocol(ticket);
 		createAssignmentNotification(savedTicket);
+		// #region debug-point D:whatsapp-create
+		reportDebugEvent(
+			"D",
+			"TicketService.createFromWhatsapp",
+			"[DEBUG] Fluxo WhatsApp acionou notificacao de novo chamado",
+			"{\"ticketId\":\"" + safeJson(savedTicket.getId()) + "\",\"protocol\":\"" + safeJson(savedTicket.getProtocol())
+				+ "\",\"assigneeId\":\"" + safeJson(savedTicket.getAssignedTo() == null ? null : savedTicket.getAssignedTo().getId())
+				+ "\",\"channel\":\"" + safeJson(resolveChannel(savedTicket).name()) + "\"}"
+		);
+		// #endregion
 		notifyAssigneeAboutNewTicket(savedTicket);
 		TicketMessage initialMessage = ensureInitialMessage(savedTicket);
 		saveIncomingAttachments(savedTicket, initialMessage, requester, incomingAttachments);
@@ -980,6 +1007,17 @@ public class TicketService {
 	}
 
 	private void notifyAssigneeAboutNewTicket(Ticket ticket) {
+		// #region debug-point A:notify-entry
+		reportDebugEvent(
+			"A",
+			"TicketService.notifyAssigneeAboutNewTicket",
+			"[DEBUG] Entrou na notificacao de novo chamado para responsavel",
+			"{\"ticketId\":\"" + safeJson(ticket == null ? null : ticket.getId()) + "\",\"protocol\":\""
+				+ safeJson(ticket == null ? null : ticket.getProtocol()) + "\",\"assigneeId\":\""
+				+ safeJson(ticket == null || ticket.getAssignedTo() == null ? null : ticket.getAssignedTo().getId()) + "\",\"requesterId\":\""
+				+ safeJson(ticket == null || ticket.getRequester() == null ? null : ticket.getRequester().getId()) + "\"}"
+		);
+		// #endregion
 		if (ticket == null || ticket.getAssignedTo() == null || ticket.getRequester() == null) {
 			return;
 		}
@@ -990,19 +1028,62 @@ public class TicketService {
 		}
 
 		String whatsappRecipient = resolveUserWhatsappRecipientOrBlank(assignee);
+		// #region debug-point B:recipient-resolution
+		reportDebugEvent(
+			"B",
+			"TicketService.notifyAssigneeAboutNewTicket",
+			"[DEBUG] Destinatario do responsavel resolvido",
+			"{\"ticketId\":\"" + safeJson(ticket.getId()) + "\",\"assigneeId\":\"" + safeJson(assignee.getId())
+				+ "\",\"assigneeEmail\":\"" + safeJson(assignee.getEmail()) + "\",\"hasPhone\":"
+				+ (assignee.getPhoneNumber() != null && !assignee.getPhoneNumber().isBlank()) + ",\"hasTransportId\":"
+				+ (assignee.getWhatsappTransportId() != null && !assignee.getWhatsappTransportId().isBlank()) + ",\"recipient\":\""
+				+ safeJson(whatsappRecipient) + "\"}"
+		);
+		// #endregion
 		if (whatsappRecipient.isBlank()) {
 			return;
 		}
 
 		String notificationMessage = buildAssigneeNewTicketWhatsappText(ticket);
+		User companyOwner = resolveWhatsappCompanyOwnerForAssigneeNotification(ticket);
+		// #region debug-point C:send-attempt
+		reportDebugEvent(
+			"C",
+			"TicketService.notifyAssigneeAboutNewTicket",
+			"[DEBUG] Tentando enviar mensagem de novo chamado para responsavel",
+			"{\"ticketId\":\"" + safeJson(ticket.getId()) + "\",\"protocol\":\"" + safeJson(ticket.getProtocol())
+				+ "\",\"companyOwnerId\":\"" + safeJson(companyOwner == null ? null : companyOwner.getId()) + "\",\"companyOwnerEmail\":\""
+				+ safeJson(companyOwner == null ? null : companyOwner.getEmail()) + "\",\"recipient\":\""
+				+ safeJson(whatsappRecipient) + "\",\"messagePreview\":\"" + safeJson(notificationMessage) + "\"}"
+		);
+		// #endregion
 
 		try {
 			whatsappService.sendMessage(
-				resolveWhatsappCompanyOwnerForAssigneeNotification(ticket),
+				companyOwner,
 				whatsappRecipient,
 				notificationMessage
 			);
+			// #region debug-point C:send-success
+			reportDebugEvent(
+				"C",
+				"TicketService.notifyAssigneeAboutNewTicket",
+				"[DEBUG] Envio de mensagem de novo chamado concluido sem excecao",
+				"{\"ticketId\":\"" + safeJson(ticket.getId()) + "\",\"protocol\":\"" + safeJson(ticket.getProtocol())
+					+ "\",\"recipient\":\"" + safeJson(whatsappRecipient) + "\"}"
+			);
+			// #endregion
 		} catch (RuntimeException exception) {
+			// #region debug-point E:send-error
+			reportDebugEvent(
+				"E",
+				"TicketService.notifyAssigneeAboutNewTicket",
+				"[DEBUG] Envio de mensagem de novo chamado falhou com excecao",
+				"{\"ticketId\":\"" + safeJson(ticket.getId()) + "\",\"protocol\":\"" + safeJson(ticket.getProtocol())
+					+ "\",\"recipient\":\"" + safeJson(whatsappRecipient) + "\",\"errorType\":\""
+					+ safeJson(exception.getClass().getName()) + "\",\"errorMessage\":\"" + safeJson(exception.getMessage()) + "\"}"
+			);
+			// #endregion
 			logger.warn(
 				"Falha ao enviar mensagem de novo chamado para o responsável: ticketId={}, protocol={}, assigneeId={}, recipient={}",
 				ticket.getId(),
@@ -1563,12 +1644,31 @@ public class TicketService {
 
 	private String resolveUserWhatsappRecipientOrBlank(User user) {
 		if (!hasWhatsappRecipient(user)) {
+			// #region debug-point B:missing-recipient
+			reportDebugEvent(
+				"B",
+				"TicketService.resolveUserWhatsappRecipientOrBlank",
+				"[DEBUG] Usuario responsavel sem phoneNumber e whatsappTransportId validos",
+				"{\"userId\":\"" + safeJson(user == null ? null : user.getId()) + "\",\"email\":\""
+					+ safeJson(user == null ? null : user.getEmail()) + "\"}"
+			);
+			// #endregion
 			return "";
 		}
 
 		try {
 			return resolveWhatsappRecipient(user);
 		} catch (IllegalArgumentException exception) {
+			// #region debug-point C:recipient-invalid
+			reportDebugEvent(
+				"C",
+				"TicketService.resolveUserWhatsappRecipientOrBlank",
+				"[DEBUG] Usuario responsavel possui configuracao de WhatsApp invalida",
+				"{\"userId\":\"" + safeJson(user == null ? null : user.getId()) + "\",\"email\":\""
+					+ safeJson(user == null ? null : user.getEmail()) + "\",\"errorMessage\":\""
+					+ safeJson(exception.getMessage()) + "\"}"
+			);
+			// #endregion
 			logger.warn(
 				"Usuario configurado sem destinatario valido para WhatsApp: userId={}, email={}",
 				user == null ? null : user.getId(),
@@ -1682,6 +1782,49 @@ public class TicketService {
 
 		return "";
 	}
+
+	// #region debug-point shared:reporting
+	private void reportDebugEvent(String hypothesisId, String location, String message, String dataJson) {
+		try {
+			String debugServerUrl = "http://127.0.0.1:7777/event";
+			String debugSessionId = "assignee-whatsapp-notify";
+			Path envPath = Path.of(".dbg", "assignee-whatsapp-notify.env");
+			if (Files.exists(envPath)) {
+				for (String line : Files.readAllLines(envPath, StandardCharsets.UTF_8)) {
+					if (line.startsWith("DEBUG_SERVER_URL=")) {
+						debugServerUrl = line.substring("DEBUG_SERVER_URL=".length()).trim();
+					} else if (line.startsWith("DEBUG_SESSION_ID=")) {
+						debugSessionId = line.substring("DEBUG_SESSION_ID=".length()).trim();
+					}
+				}
+			}
+
+			String payload = "{\"sessionId\":\"" + safeJson(debugSessionId) + "\",\"runId\":\"pre-fix\",\"hypothesisId\":\""
+				+ safeJson(hypothesisId) + "\",\"location\":\"" + safeJson(location) + "\",\"msg\":\"" + safeJson(message)
+				+ "\",\"data\":" + (dataJson == null || dataJson.isBlank() ? "{}" : dataJson) + ",\"ts\":" + System.currentTimeMillis() + "}";
+
+			HttpClient.newHttpClient().send(
+				HttpRequest.newBuilder(URI.create(debugServerUrl))
+					.header("Content-Type", "application/json")
+					.POST(HttpRequest.BodyPublishers.ofString(payload, StandardCharsets.UTF_8))
+					.build(),
+				HttpResponse.BodyHandlers.discarding()
+			);
+		} catch (Exception ignored) {
+		}
+	}
+
+	private String safeJson(Object value) {
+		if (value == null) {
+			return "";
+		}
+		return value.toString()
+			.replace("\\", "\\\\")
+			.replace("\"", "\\\"")
+			.replace("\r", "\\r")
+			.replace("\n", "\\n");
+	}
+	// #endregion
 
 	private List<String> normalizeStatusCodes(String status) {
 		if (status == null || status.isBlank()) {
