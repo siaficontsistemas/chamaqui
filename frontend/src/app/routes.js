@@ -54,6 +54,10 @@ export function getTicketAttachmentPath(ticketId, attachmentId) {
   })
 }
 
+export function getWhatsappQrCodePath() {
+  return '/my-data/whatsapp/qrcode'
+}
+
 export function getSectionIdFromPathname(pathname) {
   for (const [sectionId, pattern] of SECTION_MATCHERS) {
     if (matchPath({ path: pattern, end: true }, pathname)) {

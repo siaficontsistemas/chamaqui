@@ -3,6 +3,7 @@ import ConfirmActionModal from '../../components/confirm-action-modal/ConfirmAct
 import Header from '../../components/header/Header'
 import Sidebar from '../../components/sidebar/Sidebar'
 import {
+  getWhatsappQrCode,
   getWhatsappQrCodeViewUrl,
   getWhatsappSessionStatus,
   startWhatsappSession,
@@ -252,7 +253,17 @@ function MyData({
         return
       }
 
-      window.open(getWhatsappQrCodeViewUrl(currentUser.email), '_blank', 'noopener,noreferrer')
+      try {
+        await getWhatsappQrCode()
+        window.open(getWhatsappQrCodeViewUrl(), '_blank', 'noopener,noreferrer')
+      } catch (qrCodeError) {
+        const normalizedQrCodeError = (qrCodeError?.message || '').toLowerCase()
+        if (normalizedQrCodeError.includes('qrcode')) {
+          setWhatsappFeedback(qrCodeError.message || 'O QR Code ainda não está disponível.')
+          return
+        }
+        throw qrCodeError
+      }
       setWhatsappFeedback(
         nextStatus.message || 'Sessão iniciada. Escaneie o QR Code na nova aba para conectar o número da empresa.'
       )
