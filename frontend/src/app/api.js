@@ -1,4 +1,4 @@
-import { getTicketAttachmentPath } from './routes'
+import { getTicketAttachmentPath, getWhatsappQrCodePath } from './routes'
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:4200').replace(
   /\/$/,
@@ -755,6 +755,10 @@ export function getWhatsappSessionStatus() {
   return apiRequest('/api/v1/whatsapp/session/status')
 }
 
+export function getWhatsappQrCode() {
+  return apiRequest('/api/v1/whatsapp/session/qrcode')
+}
+
 export function getWhatsappQrCodeViewUrl() {
-  return `${API_BASE_URL}/api/v1/whatsapp/session/qrcode/view`
+  return getWhatsappQrCodePath()
 }

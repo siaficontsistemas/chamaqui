@@ -98,6 +98,7 @@ import Sector from './app/pages/Sector/Sector'
 import Team from './app/pages/Team/Team'
 import TicketAttachmentViewer from './app/pages/TicketAttachmentViewer/TicketAttachmentViewer'
 import TicketConversation from './app/pages/TicketConversation/TicketConversation'
+import WhatsappQrCodePage from './app/pages/WhatsappQrCodePage/WhatsappQrCodePage'
 
 const dashboardPageComponents = {
   tickets: Home,
@@ -1701,6 +1702,12 @@ function App() {
                   onNavigateLogin={() => navigate(PUBLIC_ROUTE_PATHS.login)}
                 />
               )
+            }
+          />
+          <Route
+            path="/my-data/whatsapp/qrcode"
+            element={
+              authUser ? <WhatsappQrCodePage /> : <Navigate replace to={PUBLIC_ROUTE_PATHS.login} />
             }
           />
           <Route path="/tickets/:ticketId/attachments/:attachmentId" element={<TicketAttachmentViewer />} />
