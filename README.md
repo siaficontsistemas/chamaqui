@@ -289,6 +289,14 @@ Os serviços centrais incluem:
 4. O serviço de WhatsApp recebe eventos e se comunica com o backend via webhook.
 5. O backend dispara notificações, salva anexos e mantém o histórico dos atendimentos.
 
+## Automacoes de WhatsApp
+
+- Quando um novo chamado e aberto e existe um funcionario responsavel com `whatsappTransportId` ou `phoneNumber` configurado, o backend envia automaticamente uma mensagem de WhatsApp para esse responsavel.
+- A automacao vale para chamados abertos pelo portal e tambem para chamados abertos a partir do fluxo de WhatsApp.
+- A mensagem informa empresa, protocolo, solicitante e titulo do chamado, orientando o responsavel a entrar no ChamaQui da empresa para responder.
+- Se o responsavel nao tiver destino valido de WhatsApp configurado, o chamado continua sendo criado normalmente e a notificacao automatica e ignorada.
+- Se houver falha no envio da mensagem, a abertura do chamado nao e cancelada; a falha fica restrita ao envio do WhatsApp.
+
 ## Boas Práticas para Ambiente de Produção
 
 - Definir variáveis de ambiente explicitamente.

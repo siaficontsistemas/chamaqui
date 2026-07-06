@@ -257,6 +257,7 @@ public class TicketService {
 
 		Ticket savedTicket = saveTicketWithUniqueProtocol(ticket);
 		createAssignmentNotification(savedTicket);
+		notifyAssigneeAboutNewTicket(savedTicket);
 		TicketMessage initialMessage = ensureInitialMessage(savedTicket);
 		saveAttachments(savedTicket, initialMessage, requester, files);
 
@@ -301,6 +302,7 @@ public class TicketService {
 
 		Ticket savedTicket = saveTicketWithUniqueProtocol(ticket);
 		createAssignmentNotification(savedTicket);
+		notifyAssigneeAboutNewTicket(savedTicket);
 		TicketMessage initialMessage = ensureInitialMessage(savedTicket);
 		saveIncomingAttachments(savedTicket, initialMessage, requester, incomingAttachments);
 
@@ -977,6 +979,41 @@ public class TicketService {
 		}
 	}
 
+	private void notifyAssigneeAboutNewTicket(Ticket ticket) {
+		if (ticket == null || ticket.getAssignedTo() == null || ticket.getRequester() == null) {
+			return;
+		}
+
+		User assignee = ticket.getAssignedTo();
+		if (assignee.getId() != null && assignee.getId().equals(ticket.getRequester().getId())) {
+			return;
+		}
+
+		String whatsappRecipient = resolveUserWhatsappRecipientOrBlank(assignee);
+		if (whatsappRecipient.isBlank()) {
+			return;
+		}
+
+		String notificationMessage = buildAssigneeNewTicketWhatsappText(ticket);
+
+		try {
+			whatsappService.sendMessage(
+				resolveWhatsappCompanyOwnerForAssigneeNotification(ticket),
+				whatsappRecipient,
+				notificationMessage
+			);
+		} catch (RuntimeException exception) {
+			logger.warn(
+				"Falha ao enviar mensagem de novo chamado para o responsável: ticketId={}, protocol={}, assigneeId={}, recipient={}",
+				ticket.getId(),
+				ticket.getProtocol(),
+				assignee.getId(),
+				whatsappRecipient,
+				exception
+			);
+		}
+	}
+
 	private void createReplyNotification(Ticket ticket, TicketMessage message, User author) {
 		if (ticket == null || message == null || author == null || ticket.getAssignedTo() == null) {
 			return;
@@ -1381,6 +1418,29 @@ public class TicketService {
 			|| (requester.getPhoneNumber() != null && !requester.getPhoneNumber().isBlank());
 	}
 
+	private String buildAssigneeNewTicketWhatsappText(Ticket ticket) {
+		String protocol = ticket == null || ticket.getProtocol() == null || ticket.getProtocol().isBlank()
+			? "nao informado"
+			: ticket.getProtocol().trim();
+		String companyName = resolveTicketResponderCompanyName(ticket);
+		String requesterName = ticket == null || ticket.getRequester() == null || ticket.getRequester().getFullName() == null
+			|| ticket.getRequester().getFullName().isBlank()
+				? "um solicitante"
+				: ticket.getRequester().getFullName().trim();
+		String title = ticket == null || ticket.getTitle() == null || ticket.getTitle().isBlank()
+			? "Chamado sem titulo"
+			: ticket.getTitle().trim();
+
+		return """
+			Voce recebeu um novo chamado no ChamaQui da empresa %s.
+			Protocolo: %s
+			Solicitante: %s
+			Titulo: %s
+
+			Acesse o ChamaQui da empresa e responda o chamado assim que possivel.
+			""".formatted(companyName, protocol, requesterName, title).trim();
+	}
+
 	private String buildWhatsappOutboundText(
 		String protocol,
 		String authorName,
@@ -1467,6 +1527,14 @@ public class TicketService {
 		return resolveWhatsappTicketRecipient(ticket);
 	}
 
+	private User resolveWhatsappCompanyOwnerForAssigneeNotification(Ticket ticket) {
+		User companyAdmin = resolveTicketCompanyAdmin(ticket);
+		if (companyAdmin != null) {
+			return companyAdmin;
+		}
+		return resolveWhatsappCompanyOwner(ticket);
+	}
+
 	private String resolveWhatsappTicketRecipient(Ticket ticket) {
 		if (ticket == null || ticket.getId() == null) {
 			return "";
@@ -1493,6 +1561,24 @@ public class TicketService {
 		return firstNonBlank(conversationRecipient, requesterRecipient);
 	}
 
+	private String resolveUserWhatsappRecipientOrBlank(User user) {
+		if (!hasWhatsappRecipient(user)) {
+			return "";
+		}
+
+		try {
+			return resolveWhatsappRecipient(user);
+		} catch (IllegalArgumentException exception) {
+			logger.warn(
+				"Usuario configurado sem destinatario valido para WhatsApp: userId={}, email={}",
+				user == null ? null : user.getId(),
+				user == null ? null : user.getEmail(),
+				exception
+			);
+			return "";
+		}
+	}
+
 	private String normalizeTitle(String title) {
 		String normalizedTitle = normalizeTitleSource(title);
 		if (normalizedTitle.length() > 180) {
@@ -1514,6 +1600,14 @@ public class TicketService {
 			throw new IllegalArgumentException("O chamado do WhatsApp não possui uma empresa responsável configurada.");
 		}
 		return ticket.getSector().getCreatedBy();
+	}
+
+	private String resolveTicketResponderCompanyName(Ticket ticket) {
+		User companyOwner = resolveWhatsappCompanyOwnerForAssigneeNotification(ticket);
+		if (companyOwner == null) {
+			return "nao informada";
+		}
+		return resolveCompanyName(companyOwner);
 	}
 
 	private TicketChannel resolveChannel(Ticket ticket) {
