@@ -418,9 +418,8 @@ public class TicketService {
 
 		if (shouldMirrorMessageToWhatsapp(ticket, author)) {
 			List<WhatsappService.OutboundAttachment> outboundAttachments = loadWhatsappOutboundAttachments(savedMessage.getId());
-			whatsappService.sendMessage(
-				resolveWhatsappCompanyOwner(ticket),
-				resolveWhatsappTicketRecipient(ticket),
+			sendWhatsappTicketMessage(
+				ticket,
 				buildWhatsappOutboundText(ticket.getProtocol(), author.getFullName(), savedMessage.getMessage(), outboundAttachments),
 				outboundAttachments
 			);
@@ -446,6 +445,38 @@ public class TicketService {
 		createReplyNotification(ticket, savedMessage, author);
 
 		return toMessageResponse(savedMessage, attachments);
+	}
+
+	private void sendWhatsappTicketMessage(
+		Ticket ticket,
+		String message,
+		List<WhatsappService.OutboundAttachment> attachments
+	) {
+		RuntimeException lastException = null;
+		for (String recipient : resolveWhatsappTicketRecipients(ticket)) {
+			try {
+				whatsappService.sendMessage(
+					resolveWhatsappCompanyOwner(ticket),
+					recipient,
+					message,
+					attachments
+				);
+				return;
+			} catch (RuntimeException exception) {
+				lastException = exception;
+				logger.warn(
+					"Falha ao enviar mensagem do chamado pelo WhatsApp; tentando próximo destinatário: ticketId={}, recipient={}",
+					ticket == null ? null : ticket.getId(),
+					recipient,
+					exception
+				);
+			}
+		}
+
+		if (lastException != null) {
+			throw lastException;
+		}
+		throw new IllegalArgumentException("O chamado do WhatsApp não possui um destinatário válido para resposta.");
 	}
 
 	@Transactional
@@ -1600,11 +1631,7 @@ public class TicketService {
 			""".formatted(ticket.getProtocol(), closedByName).trim();
 
 		try {
-			whatsappService.sendMessage(
-				resolveWhatsappCompanyOwner(ticket),
-				closureRecipient,
-				closureMessage
-			);
+			sendWhatsappTicketMessage(ticket, closureMessage, List.of());
 		} catch (RuntimeException exception) {
 			logger.warn(
 				"Falha ao enviar mensagem de fechamento no WhatsApp: ticketId={}, protocol={}, recipient={}",
@@ -1629,29 +1656,42 @@ public class TicketService {
 	}
 
 	private String resolveWhatsappTicketRecipient(Ticket ticket) {
+		return resolveWhatsappTicketRecipients(ticket).stream().findFirst().orElse("");
+	}
+
+	private List<String> resolveWhatsappTicketRecipients(Ticket ticket) {
 		if (ticket == null || ticket.getId() == null) {
-			return "";
+			return List.of();
 		}
 
-		String requesterRecipient = hasWhatsappRecipient(ticket.getRequester())
-			? resolveWhatsappRecipient(ticket.getRequester())
-			: "";
+		User requester = ticket.getRequester();
 		User companyOwner = resolveWhatsappCompanyOwner(ticket);
+		List<String> recipients = new java.util.ArrayList<>();
 
-		String conversationRecipient = whatsappConversationRepository.findByActiveTicketId(ticket.getId())
-			.map(conversation -> firstNonBlank(conversation.getWhatsappTransportId(), conversation.getPhoneNumber()))
-			.filter(value -> value != null && !value.isBlank())
-			.orElseGet(() -> {
-				if (!requesterRecipient.isBlank()) {
-					return whatsappConversationRepository.findByCompanyOwnerIdAndWhatsappTransportId(companyOwner.getId(), requesterRecipient)
-						.map(conversation -> firstNonBlank(conversation.getWhatsappTransportId(), conversation.getPhoneNumber()))
-						.filter(value -> value != null && !value.isBlank())
-						.orElse("");
-				}
-				return "";
-			});
+		whatsappConversationRepository.findByActiveTicketId(ticket.getId())
+			.ifPresent(conversation -> addWhatsappRecipientCandidates(recipients,
+				conversation.getWhatsappTransportId(), conversation.getPhoneNumber()));
 
-		return firstNonBlank(conversationRecipient, requesterRecipient);
+		if (requester != null) {
+			addWhatsappRecipientCandidates(recipients, requester.getWhatsappTransportId(), requester.getPhoneNumber());
+		}
+
+		if (recipients.isEmpty() && requester != null && hasWhatsappRecipient(requester)) {
+			String requesterRecipient = resolveWhatsappRecipient(requester);
+			whatsappConversationRepository.findByCompanyOwnerIdAndWhatsappTransportId(companyOwner.getId(), requesterRecipient)
+				.ifPresent(conversation -> addWhatsappRecipientCandidates(recipients,
+					conversation.getWhatsappTransportId(), conversation.getPhoneNumber()));
+		}
+
+		return recipients;
+	}
+
+	private void addWhatsappRecipientCandidates(List<String> recipients, String... candidates) {
+		for (String candidate : candidates) {
+			if (candidate != null && !candidate.isBlank() && !recipients.contains(candidate.trim())) {
+				recipients.add(candidate.trim());
+			}
+		}
 	}
 
 	private String resolveUserWhatsappRecipientOrBlank(User user) {
