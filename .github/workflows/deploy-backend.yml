@@ -29,7 +29,7 @@ env:
   BAILEYS_APP_DIR: ${{ vars.BAILEYS_APP_DIR || '/home/ec2-user/baileys-service' }}
   PM2_BACKEND_APP_NAME: ${{ vars.PM2_BACKEND_APP_NAME || 'chamaqui-backend' }}
   PM2_BAILEYS_APP_NAME: ${{ vars.PM2_BAILEYS_APP_NAME || 'chamaqui-baileys' }}
-  RESTART_BAILEYS: ${{ vars.RESTART_BAILEYS || 'false' }}
+  RESTART_BAILEYS: ${{ vars.RESTART_BAILEYS || 'true' }}
 
 jobs:
   deploy:
