@@ -22,6 +22,13 @@
 - Evidencia de producao:
   - `Envio WhatsApp executado ... recipient=77997006654@s.whatsapp.net, bodyPreview=Voce recebeu um novo chamado no ChamaQui da empresa Siaficont Sistemas.`
   - O envio do menu normal do solicitante usa `recipient=209607456719099@lid`, enquanto a notificacao do responsavel saiu por telefone puro sem DDI.
+- Evidencia de producao apos deploy:
+  - O fluxo mais recente ficou em `bodyPreview=Chamado para *KAUAN RUBEM FAUSTO MATOS*.` e nao mostrou `Chamado aberto.` nem `Voce recebeu um novo chamado...`.
+  - Isso indica que a reproducao mais recente nao chegou ate a conclusao da abertura do chamado, entao nao houve tentativa de notificacao ao responsavel nesse ciclo.
+- Evidencia de producao apos nova reproducao completa:
+  - O webhook registrou `phone=5577997006654@s.whatsapp.net`, `transportId=5577997006654@s.whatsapp.net` e `fromMe=true`.
+  - O `rawPayloadPreview` mostrou o texto completo: `Voce recebeu um novo chamado no ChamaQui da empresa Siaficont Sistemas...`.
+  - Isso comprova que, apos a correcao, a integracao passou a montar o destinatario com DDI `55` e o Baileys registrou a mensagem automatica saindo para o responsavel.
 - Evidencia local apos correcao:
   - `WhatsappServiceTest` confirmou que `77997006654` agora sai como `5577997006654@s.whatsapp.net`.
   - `WhatsappServiceTest` confirmou que destinatarios `@lid` continuam intactos.
@@ -32,3 +39,4 @@
 - Hipotese C: confirmada. O destinatario foi normalizado sem DDI `55`.
 - Hipotese D: rejeitada. O fluxo real em producao chegou ao envio.
 - Hipotese E: rejeitada. Nao houve excecao no backend; o problema estava no destinatario montado.
+- Validacao pos-correcao: confirmada em runtime. A mensagem automatica passou a sair com o destinatario corrigido.

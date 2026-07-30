@@ -1478,7 +1478,19 @@ public class TicketService {
 	}
 
 	private boolean isResponderSideAuthor(Ticket ticket, User author) {
-		if (ticket == null || author == null || ticket.getSector() == null || ticket.getSector().getCreatedBy() == null) {
+		if (ticket == null || author == null) {
+			return false;
+		}
+
+		// O responsavel direto sempre pertence ao lado que responde. Isso evita
+		// depender do carregamento de companyOwner do usuario autenticado.
+		if (ticket.getAssignedTo() != null
+			&& ticket.getAssignedTo().getId() != null
+			&& ticket.getAssignedTo().getId().equals(author.getId())) {
+			return true;
+		}
+
+		if (ticket.getSector() == null || ticket.getSector().getCreatedBy() == null) {
 			return false;
 		}
 

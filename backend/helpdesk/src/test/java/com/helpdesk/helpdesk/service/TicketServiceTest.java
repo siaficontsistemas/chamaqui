@@ -383,6 +383,66 @@ class TicketServiceTest {
 	}
 
 	@Test
+	void shouldMirrorAssignedEmployeeMessageEvenWhenCompanyOwnerIsNotLoaded() {
+		User responderAdmin = user("admin@empresa.com", "Empresa Admin", "ADMIN", null);
+		User employee = user("funcionario@empresa.com", "Funcionario", "EMPLOYEE", null);
+		User requester = user("cliente@cliente.com", "Cliente", "USER", null);
+
+		Sector sector = new Sector();
+		sector.setName("Financeiro");
+		sector.setSlug("financeiro");
+		sector.setCreatedBy(responderAdmin);
+
+		TicketStatus openStatus = ticketStatus("OPEN");
+		TicketStatus inProgressStatus = ticketStatus("IN_PROGRESS");
+		Ticket ticket = new Ticket();
+		UUID ticketId = UUID.randomUUID();
+		setField(ticket, "id", ticketId);
+		ticket.setProtocol("CA-2026-0009");
+		ticket.setTitle("Chamado WhatsApp");
+		ticket.setDescription("Mensagem inicial");
+		ticket.setRequester(requester);
+		ticket.setAssignedTo(employee);
+		ticket.setSector(sector);
+		ticket.setStatus(openStatus);
+		ticket.setChannel(TicketChannel.WHATSAPP);
+
+		TicketMessage initialMessage = new TicketMessage();
+		setField(initialMessage, "id", UUID.randomUUID());
+		initialMessage.setTicket(ticket);
+		initialMessage.setAuthor(requester);
+		initialMessage.setMessage("Mensagem inicial");
+		initialMessage.setInternal(false);
+		initialMessage.setCreatedAt(OffsetDateTime.now().minusMinutes(5));
+		TicketMessage savedMessage = new TicketMessage();
+		setField(savedMessage, "id", UUID.randomUUID());
+		savedMessage.setTicket(ticket);
+		savedMessage.setAuthor(employee);
+		savedMessage.setMessage("Retorno do funcionario");
+		savedMessage.setInternal(false);
+		savedMessage.setCreatedAt(OffsetDateTime.now());
+
+		when(scopedUserLookupService.findUniqueByEmailInCurrentTenant(employee.getEmail())).thenReturn(Optional.of(employee));
+		when(ticketRepository.findDetailedVisibleByIdAndEmail(ticketId, employee.getEmail())).thenReturn(Optional.of(ticket));
+		when(ticketMessageRepository.existsByTicketId(ticketId)).thenReturn(true);
+		when(ticketMessageRepository.findFirstByTicketIdOrderByCreatedAtAsc(ticketId)).thenReturn(Optional.of(initialMessage));
+		when(ticketMessageRepository.save(any(TicketMessage.class))).thenReturn(savedMessage);
+		when(ticketAttachmentRepository.findByMessageIdOrderByCreatedAtAsc(savedMessage.getId())).thenReturn(List.of());
+		when(ticketStatusRepository.findByCode("IN_PROGRESS")).thenReturn(Optional.of(inProgressStatus));
+		when(ticketRepository.save(any(Ticket.class))).thenAnswer(invocation -> invocation.getArgument(0));
+		when(whatsappConversationRepository.findByActiveTicketId(ticketId)).thenReturn(Optional.of(conversation(responderAdmin, ticket)));
+
+		ticketService.addMessage(ticketId, new CreateTicketMessageRequest(employee.getEmail(), "Retorno do funcionario"), List.of());
+
+		verify(whatsappService).sendMessage(
+			eq(responderAdmin),
+			eq("5511999999999@c.us"),
+			eq("*Funcionario diz para o protocolo CA-2026-0009:* Retorno do funcionario"),
+			eq(List.of())
+		);
+	}
+
+	@Test
 	void shouldHideReplyNotificationWhenResponderAdminRepliesEvenIfRequesterBelongsToSameCompany() {
 		User responderAdmin = user("admin@empresa.com", "Empresa Admin", "ADMIN", null);
 		User requesterEmployee = user("cliente@empresa.com", "Cliente", "EMPLOYEE", responderAdmin);
