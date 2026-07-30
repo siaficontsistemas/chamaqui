@@ -153,19 +153,6 @@ function resolveRemoteJid(message) {
   );
 }
 
-// Em conversas com LID, o WhatsApp pode enviar o identificador de transporte
-// em key.remoteJid e o telefone real em key.remoteJidAlt. O backend precisa
-// receber os dois valores separadamente: o primeiro para localizar a sessão
-// e o segundo para persistir/enviar ao contato.
-function resolvePhoneJid(message, remoteJid) {
-  const alternateJid = String(message?.key?.remoteJidAlt || '').trim();
-  if (alternateJid && !alternateJid.endsWith('@lid')) {
-    return alternateJid;
-  }
-
-  return remoteJid;
-}
-
 function inferMediaMimeType(messageType, mediaMessage) {
   if (mediaMessage?.mimetype) {
     return mediaMessage.mimetype;
@@ -399,9 +386,8 @@ async function postWebhook(session, payload) {
 
 async function forwardMessageEvent(session, sock, message, source, type = '') {
   const remoteJid = resolveRemoteJid(message);
-  const phoneJid = resolvePhoneJid(message, remoteJid);
   const fromMe = Boolean(message?.key?.fromMe);
-  if (!remoteJid || remoteJid.endsWith('@g.us')) {
+  if (!remoteJid || fromMe || remoteJid.endsWith('@g.us')) {
     return;
   }
 
@@ -412,9 +398,8 @@ async function forwardMessageEvent(session, sock, message, source, type = '') {
       session: session.name,
       source,
       type,
-      fromMe,
+      fromMe: false,
       remoteJid,
-      phoneJid,
       bodyPreview: body.slice(0, 120),
       attachmentCount: attachments.length,
     },
@@ -426,7 +411,7 @@ async function forwardMessageEvent(session, sock, message, source, type = '') {
     session: session.name,
     fromMe,
     isGroup: false,
-    phone: phoneJid,
+    phone: remoteJid,
     transportId: remoteJid,
     from: remoteJid,
     chatId: remoteJid,
@@ -515,18 +500,6 @@ async function openSocket(session) {
     }
   });
 
-  sock.ev.on('messages.update', async (updates) => {
-    for (const entry of updates || []) {
-      const message = {
-        key: entry?.key || {},
-        message: entry?.update?.message || null,
-      };
-      if (!message.message) {
-        continue;
-      }
-      await forwardMessageEvent(session, sock, message, 'messages.update');
-    }
-  });
 }
 
 async function waitForSessionReadiness(session, timeoutMs = 15000) {
