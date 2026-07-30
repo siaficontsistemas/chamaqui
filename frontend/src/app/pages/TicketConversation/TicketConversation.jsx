@@ -129,34 +129,51 @@ function TicketConversation({
 
     loadMessages()
 
-    let pollTimer = null
-    if (isWhatsappTicket) {
-      pollTimer = window.setInterval(async () => {
+    let isSyncingMessages = false
+
+    async function syncMessages() {
+      if (isCancelled || isSyncingMessages) {
+        return
+      }
+
+      isSyncingMessages = true
+
+      try {
+        const response = await getTicketMessages(ticket.id, currentUser.email)
+
         if (isCancelled) {
           return
         }
 
-        try {
-          const response = await getTicketMessages(ticket.id, currentUser.email)
-
-          if (isCancelled) {
-            return
-          }
-
-          setMessages(Array.isArray(response) ? response : [])
-        } catch {
-          // Keep the current history visible if the background sync fails temporarily.
-        }
-      }, 10000)
+        setMessages(Array.isArray(response) ? response : [])
+      } catch {
+        // Keep the current history visible if the background sync fails temporarily.
+      } finally {
+        isSyncingMessages = false
+      }
     }
+
+    // Keep the open conversation synchronized for both requester and employee
+    // messages. This is intentionally independent of the ticket channel because
+    // messages can be created by the system, through WhatsApp, or from the UI.
+    const pollTimer = window.setInterval(syncMessages, 5000)
+    const handleWindowFocus = () => syncMessages()
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        syncMessages()
+      }
+    }
+
+    window.addEventListener('focus', handleWindowFocus)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
 
     return () => {
       isCancelled = true
-      if (pollTimer) {
-        window.clearInterval(pollTimer)
-      }
+      window.clearInterval(pollTimer)
+      window.removeEventListener('focus', handleWindowFocus)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [currentUser?.email, isWhatsappTicket, ticket?.id])
+  }, [currentUser?.email, ticket?.id])
 
   const isTicketClosed = ticket?.statusCode === 'CLOSED' || Boolean(ticket?.closedAt)
 
