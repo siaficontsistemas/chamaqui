@@ -153,6 +153,19 @@ function resolveRemoteJid(message) {
   );
 }
 
+// Em conversas com LID, o WhatsApp pode enviar o identificador de transporte
+// em key.remoteJid e o telefone real em key.remoteJidAlt. O backend precisa
+// receber os dois valores separadamente: o primeiro para localizar a sessão
+// e o segundo para persistir/enviar ao contato.
+function resolvePhoneJid(message, remoteJid) {
+  const alternateJid = String(message?.key?.remoteJidAlt || '').trim();
+  if (alternateJid && !alternateJid.endsWith('@lid')) {
+    return alternateJid;
+  }
+
+  return remoteJid;
+}
+
 function inferMediaMimeType(messageType, mediaMessage) {
   if (mediaMessage?.mimetype) {
     return mediaMessage.mimetype;
@@ -386,6 +399,7 @@ async function postWebhook(session, payload) {
 
 async function forwardMessageEvent(session, sock, message, source, type = '') {
   const remoteJid = resolveRemoteJid(message);
+  const phoneJid = resolvePhoneJid(message, remoteJid);
   const fromMe = Boolean(message?.key?.fromMe);
   if (!remoteJid || remoteJid.endsWith('@g.us')) {
     return;
@@ -400,6 +414,7 @@ async function forwardMessageEvent(session, sock, message, source, type = '') {
       type,
       fromMe,
       remoteJid,
+      phoneJid,
       bodyPreview: body.slice(0, 120),
       attachmentCount: attachments.length,
     },
@@ -411,7 +426,7 @@ async function forwardMessageEvent(session, sock, message, source, type = '') {
     session: session.name,
     fromMe,
     isGroup: false,
-    phone: remoteJid,
+    phone: phoneJid,
     transportId: remoteJid,
     from: remoteJid,
     chatId: remoteJid,
