@@ -1917,14 +1917,24 @@
 .ticket-list__head,
 .ticket-list__row {
   display: grid;
-  grid-template-columns: 1.05fr 1.85fr 1.55fr 0.95fr 0.95fr;
+  grid-template-columns: 1.05fr 1.65fr 1.35fr 1.25fr 0.95fr 0.95fr;
   align-items: center;
   column-gap: 28px;
 }
 
+.ticket-list__head--external span:nth-child(3),
+.ticket-list__row--external span:nth-child(3) {
+  display: none;
+}
+
+.ticket-list__head--external,
+.ticket-list__row--external {
+  grid-template-columns: 1.05fr 1.85fr 1.55fr 0.95fr 0.95fr;
+}
+
 .ticket-list__head--with-select,
 .ticket-list__row--with-select {
-  grid-template-columns: 44px 1.05fr 1.85fr 1.55fr 0.95fr 0.95fr;
+  grid-template-columns: 44px 1.05fr 1.65fr 1.35fr 1.25fr 0.95fr 0.95fr;
 }
 
 .ticket-list__head {

@@ -24,6 +24,48 @@ import org.springframework.web.multipart.MultipartFile;
 public class TicketAttachmentStorageService {
 
 	private static final Logger logger = LoggerFactory.getLogger(TicketAttachmentStorageService.class);
+<<<<<<< feature/adjusting_notification
+=======
+	private static final Map<String, String> CONTENT_TYPES_BY_EXTENSION = Map.ofEntries(
+		Map.entry("pdf", "application/pdf"),
+		Map.entry("png", "image/png"),
+		Map.entry("jpg", "image/jpeg"),
+		Map.entry("jpeg", "image/jpeg"),
+		Map.entry("webp", "image/webp"),
+		Map.entry("gif", "image/gif"),
+		Map.entry("txt", "text/plain"),
+		Map.entry("csv", "text/csv"),
+		Map.entry("doc", "application/msword"),
+		Map.entry(
+			"docx",
+			"application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+		),
+		Map.entry("xls", "application/vnd.ms-excel"),
+		Map.entry(
+			"xlsx",
+			"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+		),
+		Map.entry("mp4", "video/mp4"),
+		Map.entry("m4v", "video/x-m4v"),
+		Map.entry("mov", "video/quicktime"),
+		Map.entry("webm", "video/webm"),
+		Map.entry("ogv", "video/ogg"),
+		Map.entry("avi", "video/x-msvideo"),
+		Map.entry("mkv", "video/x-matroska"),
+		Map.entry("mpeg", "video/mpeg"),
+		Map.entry("mpg", "video/mpeg"),
+		Map.entry("3gp", "video/3gpp"),
+		Map.entry("3g2", "video/3gpp2"),
+		Map.entry("wmv", "video/x-ms-wmv"),
+		Map.entry("flv", "video/x-flv"),
+		Map.entry("ts", "video/mp2t"),
+		Map.entry("mts", "video/mp2t"),
+		Map.entry("m2ts", "video/mp2t"),
+		Map.entry("mp3", "audio/mpeg"),
+		Map.entry("ogg", "audio/ogg")
+	);
+	private static final Set<String> ALLOWED_CONTENT_TYPES = Set.copyOf(CONTENT_TYPES_BY_EXTENSION.values());
+>>>>>>> local
 
 	private final Path rootDirectory;
 	private final List<Path> readableDirectories;
@@ -158,6 +200,45 @@ public class TicketAttachmentStorageService {
 		return sanitizedValue;
 	}
 
+<<<<<<< feature/adjusting_notification
+=======
+	private void validate(String originalFileName, String contentType, long sizeBytes) {
+		if (!ALLOWED_CONTENT_TYPES.contains(contentType) && !contentType.startsWith("video/")) {
+			throw new IllegalArgumentException(
+				"Tipo de anexo não permitido. Envie PDF, imagem, texto, planilha, documento Office, áudio MP3/OGG ou qualquer formato de vídeo."
+			);
+		}
+		if (sizeBytes <= 0) {
+			throw new IllegalArgumentException("Os anexos enviados devem conter conteúdo.");
+		}
+		if (sizeBytes > maxFileSizeBytes) {
+			throw new IllegalArgumentException("O anexo excede o limite permitido de 100 MB.");
+		}
+		if (extractExtension(originalFileName).isEmpty()) {
+			throw new IllegalArgumentException("O anexo precisa ter uma extensão válida.");
+		}
+	}
+
+	private String normalizeContentType(String originalFileName, String contentType) {
+		String normalizedContentType = Objects.requireNonNullElse(contentType, "").trim().toLowerCase(Locale.ROOT);
+		if (!normalizedContentType.isBlank()
+			&& (ALLOWED_CONTENT_TYPES.contains(normalizedContentType) || normalizedContentType.startsWith("video/"))) {
+			return normalizedContentType;
+		}
+
+		return CONTENT_TYPES_BY_EXTENSION.getOrDefault(extractExtension(originalFileName), normalizedContentType);
+	}
+
+	private String extractExtension(String originalFileName) {
+		String fileName = originalFileName == null ? "" : originalFileName.trim().toLowerCase(Locale.ROOT);
+		int extensionIndex = fileName.lastIndexOf('.');
+		if (extensionIndex < 0 || extensionIndex == fileName.length() - 1) {
+			return "";
+		}
+		return fileName.substring(extensionIndex + 1);
+	}
+
+>>>>>>> local
 	public record StoredAttachment(
 		String originalFileName,
 		String storageKey,

@@ -60,6 +60,7 @@ function TicketConversation({
   onLoadTransferCandidates,
   onRequestTicketTransfer,
   onUpdateTicketTitle,
+  onUpdateTicketClassification,
   ticket,
   userRole,
 }) {
@@ -76,6 +77,9 @@ function TicketConversation({
   const [titleDraft, setTitleDraft] = useState('')
   const [isEditingTitle, setIsEditingTitle] = useState(false)
   const [isSavingTitle, setIsSavingTitle] = useState(false)
+  const [classificationDraft, setClassificationDraft] = useState('')
+  const [systemErrorTypeDraft, setSystemErrorTypeDraft] = useState('')
+  const [isSavingClassification, setIsSavingClassification] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [isTransferConfirmationOpen, setIsTransferConfirmationOpen] = useState(false)
   const [isConfirmingTransfer, setIsConfirmingTransfer] = useState(false)
@@ -172,8 +176,10 @@ function TicketConversation({
 
   useEffect(() => {
     setTitleDraft(ticket?.title || '')
+    setClassificationDraft(ticket?.categoryCode || '')
+    setSystemErrorTypeDraft(ticket?.systemErrorTypeCode || '')
     setIsEditingTitle(false)
-  }, [ticket?.id, ticket?.title])
+  }, [ticket?.categoryCode, ticket?.id, ticket?.systemErrorTypeCode, ticket?.title])
 
   useEffect(() => {
     if (!isEditingTitle) {
@@ -479,6 +485,27 @@ function TicketConversation({
     setIsEditingTitle(true)
   }
 
+  async function handleSaveClassification() {
+    if (!canEditTitle || !classificationDraft || !onUpdateTicketClassification) return
+    if (classificationDraft === 'SYSTEM_ERROR' && !systemErrorTypeDraft) {
+      setErrorMessage('Selecione o tipo de erro do sistema.')
+      return
+    }
+    setIsSavingClassification(true)
+    setErrorMessage('')
+    try {
+      await onUpdateTicketClassification(
+        ticket.id,
+        classificationDraft,
+        classificationDraft === 'SYSTEM_ERROR' ? systemErrorTypeDraft : ''
+      )
+    } catch (error) {
+      setErrorMessage(error.message)
+    } finally {
+      setIsSavingClassification(false)
+    }
+  }
+
   function handleTitleInputKeyDown(event) {
     if (event.key === 'Escape') {
       event.preventDefault()
@@ -772,6 +799,39 @@ function TicketConversation({
                     <dt>Setor</dt>
                     <dd>{ticket.sectorName || 'Não informado'}</dd>
                   </div>
+                  {canEditTitle || ticket.categoryName ? <div>
+                    <dt>Tipo</dt>
+                    <dd>
+                      {canEditTitle ? (
+                        <div className="ticket-chat__classification-editor">
+                          <select value={classificationDraft} onChange={(event) => {
+                            setClassificationDraft(event.target.value)
+                            if (event.target.value !== 'SYSTEM_ERROR') setSystemErrorTypeDraft('')
+                          }} disabled={isSavingClassification}>
+                            <option value="">Selecione...</option>
+                            <option value="QUESTION">Dúvida</option>
+                            <option value="CLIENT_ERROR">Erro do Cliente</option>
+                            <option value="SYSTEM_ERROR">Erro do Sistema</option>
+                            <option value="DOCUMENTATION_ERROR">Erro de Documentação</option>
+                            <option value="IMPLEMENTATION">Implementação</option>
+                          </select>
+                          {classificationDraft === 'SYSTEM_ERROR' ? (
+                            <select value={systemErrorTypeDraft} onChange={(event) => setSystemErrorTypeDraft(event.target.value)} disabled={isSavingClassification}>
+                              <option value="">Tipo...</option>
+                              <option value="DATABASE">Banco de dados</option>
+                              <option value="APPLICATION">Aplicação</option>
+                              <option value="REPORT">Relatório</option>
+                            </select>
+                          ) : null}
+                          <button type="button" onClick={handleSaveClassification} disabled={isSavingClassification || !classificationDraft}>
+                            {isSavingClassification ? 'Salvando...' : 'Salvar'}
+                          </button>
+                        </div>
+                      ) : (
+                        <>{ticket.categoryName || 'Não informado'}{ticket.systemErrorTypeName ? ` - ${ticket.systemErrorTypeName}` : ''}</>
+                      )}
+                    </dd>
+                  </div> : null}
                   <div>
                     <dt>Prioridade</dt>
                     <dd>{ticket.priorityName || 'Não informado'}</dd>

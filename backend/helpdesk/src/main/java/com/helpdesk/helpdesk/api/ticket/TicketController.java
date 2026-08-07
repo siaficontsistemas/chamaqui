@@ -32,6 +32,11 @@ import com.helpdesk.helpdesk.dto.ticket.TicketResponse;
 import com.helpdesk.helpdesk.dto.ticket.TicketSummaryResponse;
 import com.helpdesk.helpdesk.dto.ticket.TicketTransferCandidateResponse;
 import com.helpdesk.helpdesk.dto.ticket.UpdateTicketTitleRequest;
+<<<<<<< feature/adjusting_notification
+=======
+import com.helpdesk.helpdesk.dto.ticket.UpdateTicketClassificationRequest;
+import com.helpdesk.helpdesk.service.AppSessionService;
+>>>>>>> local
 import com.helpdesk.helpdesk.service.TicketService;
 
 import jakarta.validation.Valid;
@@ -114,6 +119,15 @@ public class TicketController {
 		return ticketService.updateTitle(ticketId, request);
 	}
 
+	@PutMapping("/{ticketId}/classification")
+	public TicketResponse updateClassification(
+		@PathVariable UUID ticketId,
+		@Valid @RequestBody UpdateTicketClassificationRequest request,
+		HttpSession session
+	) {
+		return ticketService.updateClassification(ticketId, withAuthorClassification(request, session));
+	}
+
 	@GetMapping("/{ticketId}/attachments/{attachmentId}")
 	public ResponseEntity<Resource> downloadAttachment(
 		@PathVariable UUID ticketId,
@@ -164,7 +178,55 @@ public class TicketController {
 	@PostMapping("/{ticketId}/transfer")
 	public TicketResponse requestTransfer(
 		@PathVariable UUID ticketId,
+<<<<<<< feature/adjusting_notification
 		@Valid @RequestBody RequestTicketTransferRequest request
+=======
+		@Valid @RequestBody RequestTicketTransferRequest request,
+		HttpSession session
+	) {
+		return ticketService.requestTransfer(ticketId, withAuthorEmail(request, session));
+	}
+
+	private CreateTicketRequest withRequesterEmail(CreateTicketRequest request, HttpSession session) {
+		return new CreateTicketRequest(
+			request.description(),
+			request.companyOwnerId(),
+			request.sectorId(),
+			request.assignedToUserId(),
+			request.priorityCode(),
+			appSessionService.requireCurrentEmail(session),
+			request.copyEmail(),
+			request.categoryCode(),
+			request.systemErrorTypeCode()
+		);
+	}
+
+	private CreateTicketMessageRequest withAuthorEmail(CreateTicketMessageRequest request, HttpSession session) {
+		return new CreateTicketMessageRequest(appSessionService.requireCurrentEmail(session), request.message());
+	}
+
+	private UpdateTicketTitleRequest withAuthorEmail(UpdateTicketTitleRequest request, HttpSession session) {
+		return new UpdateTicketTitleRequest(request.title(), appSessionService.requireCurrentEmail(session));
+	}
+
+	private UpdateTicketClassificationRequest withAuthorClassification(UpdateTicketClassificationRequest request, HttpSession session) {
+		return new UpdateTicketClassificationRequest(
+			request.categoryCode(), request.systemErrorTypeCode(), appSessionService.requireCurrentEmail(session)
+		);
+	}
+
+	private CloseTicketRequest withAuthorEmail(HttpSession session) {
+		return new CloseTicketRequest(appSessionService.requireCurrentEmail(session));
+	}
+
+	private DeleteTicketsRequest withAuthorEmail(DeleteTicketsRequest request, HttpSession session) {
+		return new DeleteTicketsRequest(request.ticketIds(), appSessionService.requireCurrentEmail(session));
+	}
+
+	private RequestTicketTransferRequest withAuthorEmail(
+		RequestTicketTransferRequest request,
+		HttpSession session
+>>>>>>> local
 	) {
 		return ticketService.requestTransfer(ticketId, request);
 	}

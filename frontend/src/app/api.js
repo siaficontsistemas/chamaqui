@@ -293,6 +293,13 @@ export function updateTicketTitle(ticketId, payload) {
   })
 }
 
+export function updateTicketClassification(ticketId, payload) {
+  return apiRequest(`/api/v1/tickets/${ticketId}/classification`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
 function createMultipartRequest(path, payload) {
   const { files = [], ...data } = payload || {}
 
@@ -524,8 +531,31 @@ export function deleteTeamNotification(inviteId, email) {
   })
 }
 
+<<<<<<< feature/adjusting_notification
 export function getTicketAssignmentNotifications(email) {
   return apiRequest(`/api/v1/notifications/ticket-assignments?email=${encodeURIComponent(email)}`)
+=======
+
+export function getWebPushPublicKey() {
+  return apiRequest('/api/v1/notifications/web-push/public-key')
+}
+
+export function saveWebPushSubscription(subscription) {
+  return apiRequest('/api/v1/notifications/web-push/subscriptions', {
+    method: 'POST',
+    body: JSON.stringify(subscription),
+  })
+}
+
+export function getTicketAssignmentNotifications() {
+  return apiRequest('/api/v1/notifications/ticket-assignments')
+}
+
+export function deleteTicketAssignmentNotification(notificationId) {
+  return apiRequest(`/api/v1/notifications/ticket-assignments/${notificationId}`, {
+    method: 'DELETE',
+  })
+>>>>>>> local
 }
 
 export function deleteTicketAssignmentNotification(notificationId, email) {

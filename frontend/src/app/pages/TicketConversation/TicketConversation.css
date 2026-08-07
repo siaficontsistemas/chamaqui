@@ -443,6 +443,29 @@
   overflow-wrap: anywhere;
 }
 
+.ticket-chat__classification-editor {
+  display: grid;
+  gap: 6px;
+}
+
+.ticket-chat__classification-editor select,
+.ticket-chat__classification-editor button {
+  min-height: 34px;
+  border: 1px solid rgba(24, 38, 50, 0.2);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: #ffffff;
+  color: #182632;
+  font: inherit;
+  font-size: 0.88rem;
+}
+
+.ticket-chat__classification-editor button {
+  cursor: pointer;
+  background: #182632;
+  color: #ffffff;
+}
+
 .ticket-chat__transfer-box {
   display: grid;
   gap: 14px;

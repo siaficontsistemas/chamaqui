@@ -24,7 +24,10 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/helpdesk
       SPRING_DATASOURCE_USERNAME: helpdesk
       SPRING_DATASOURCE_PASSWORD: helpdesk
-      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+      # O banco usa schemas por tenant; o Flyway gerencia a estrutura.
+      # A validação do Hibernate no schema public falha antes de o tenant
+      # ser selecionado para a requisição.
+      SPRING_JPA_HIBERNATE_DDL_AUTO: none
       SPRING_MAIL_HOST: ${SPRING_MAIL_HOST}
       SPRING_MAIL_PORT: ${SPRING_MAIL_PORT}
       SPRING_MAIL_USERNAME: ${SPRING_MAIL_USERNAME}
@@ -41,6 +44,9 @@ services:
       APP_WHATSAPP_BASE_URL: ${APP_WHATSAPP_BASE_URL:-http://baileys:21465}
       APP_WHATSAPP_API_KEY: ${APP_WHATSAPP_API_KEY:-}
       APP_WHATSAPP_WEBHOOK_URL: ${APP_WHATSAPP_WEBHOOK_URL:-http://backend:4200/webhook}
+      APP_WEB_PUSH_PUBLIC_KEY: ${APP_WEB_PUSH_PUBLIC_KEY:-}
+      APP_WEB_PUSH_PRIVATE_KEY: ${APP_WEB_PUSH_PRIVATE_KEY:-}
+      APP_WEB_PUSH_SUBJECT: ${APP_WEB_PUSH_SUBJECT:-mailto:chamaqui@siaficont.com.br}
     ports:
       - "4200:4200"
 

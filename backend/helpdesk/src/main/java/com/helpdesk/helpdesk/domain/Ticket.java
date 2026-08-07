@@ -69,6 +69,14 @@ public class Ticket {
 	@Column(nullable = false, length = 20)
 	private TicketChannel channel = TicketChannel.PORTAL;
 
+	@Enumerated(EnumType.STRING)
+	@Column(name = "category", length = 30)
+	private TicketCategory category;
+
+	@Enumerated(EnumType.STRING)
+	@Column(name = "system_error_type", length = 20)
+	private TicketSystemErrorType systemErrorType;
+
 	@Column(name = "opened_at", nullable = false)
 	private OffsetDateTime openedAt;
 
@@ -210,6 +218,11 @@ public class Ticket {
 	public void setChannel(TicketChannel channel) {
 		this.channel = channel;
 	}
+
+	public TicketCategory getCategory() { return category; }
+	public void setCategory(TicketCategory category) { this.category = category; }
+	public TicketSystemErrorType getSystemErrorType() { return systemErrorType; }
+	public void setSystemErrorType(TicketSystemErrorType systemErrorType) { this.systemErrorType = systemErrorType; }
 
 	public OffsetDateTime getOpenedAt() {
 		return openedAt;

@@ -14,6 +14,12 @@ public record CreateTicketRequest(
 	UUID assignedToUserId,
 	@NotBlank String priorityCode,
 	@NotBlank @Email String requesterEmail,
-	@Email @Size(max = 255) String copyEmail
+	@Email @Size(max = 255) String copyEmail,
+	String categoryCode,
+	String systemErrorTypeCode
 ) {
+	public CreateTicketRequest(String description, UUID companyOwnerId, UUID sectorId, UUID assignedToUserId,
+		String priorityCode, String requesterEmail, String copyEmail) {
+		this(description, companyOwnerId, sectorId, assignedToUserId, priorityCode, requesterEmail, copyEmail, null, null);
+	}
 }

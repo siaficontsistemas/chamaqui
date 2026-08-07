@@ -15,6 +15,7 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.Resource;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +29,8 @@ import com.helpdesk.helpdesk.domain.Ticket;
 import com.helpdesk.helpdesk.domain.TicketAssignmentNotification;
 import com.helpdesk.helpdesk.domain.TicketAttachment;
 import com.helpdesk.helpdesk.domain.TicketChannel;
+import com.helpdesk.helpdesk.domain.TicketCategory;
+import com.helpdesk.helpdesk.domain.TicketSystemErrorType;
 import com.helpdesk.helpdesk.domain.TicketClosureNotification;
 import com.helpdesk.helpdesk.domain.TicketMessage;
 import com.helpdesk.helpdesk.domain.TicketPriority;
@@ -47,6 +50,7 @@ import com.helpdesk.helpdesk.dto.ticket.TicketSummaryResponse;
 import com.helpdesk.helpdesk.dto.ticket.TicketTargetAssigneeResponse;
 import com.helpdesk.helpdesk.dto.ticket.TicketTransferCandidateResponse;
 import com.helpdesk.helpdesk.dto.ticket.UpdateTicketTitleRequest;
+import com.helpdesk.helpdesk.dto.ticket.UpdateTicketClassificationRequest;
 import com.helpdesk.helpdesk.repository.CompanyPartnershipRepository;
 import com.helpdesk.helpdesk.repository.SectorMemberRepository;
 import com.helpdesk.helpdesk.repository.SectorRepository;
@@ -86,6 +90,11 @@ public class TicketService {
 	private final WhatsappConversationRepository whatsappConversationRepository;
 	private final TenantAccessService tenantAccessService;
 	private final ScopedUserLookupService scopedUserLookupService;
+<<<<<<< feature/adjusting_notification
+=======
+	private final AuditTrailService auditTrailService;
+	private final ApplicationEventPublisher eventPublisher;
+>>>>>>> local
 
 	public TicketService(
 		TicketRepository ticketRepository,
@@ -105,7 +114,13 @@ public class TicketService {
 		WhatsappService whatsappService,
 		WhatsappConversationRepository whatsappConversationRepository,
 		TenantAccessService tenantAccessService,
+<<<<<<< feature/adjusting_notification
 		ScopedUserLookupService scopedUserLookupService
+=======
+		ScopedUserLookupService scopedUserLookupService,
+		AuditTrailService auditTrailService,
+		ApplicationEventPublisher eventPublisher
+>>>>>>> local
 	) {
 		this.ticketRepository = ticketRepository;
 		this.userRepository = userRepository;
@@ -125,6 +140,11 @@ public class TicketService {
 		this.whatsappConversationRepository = whatsappConversationRepository;
 		this.tenantAccessService = tenantAccessService;
 		this.scopedUserLookupService = scopedUserLookupService;
+<<<<<<< feature/adjusting_notification
+=======
+		this.auditTrailService = auditTrailService;
+		this.eventPublisher = eventPublisher;
+>>>>>>> local
 	}
 
 	@Transactional(readOnly = true)
@@ -139,13 +159,20 @@ public class TicketService {
 			);
 
 		return tickets.stream()
-			.map(this::toResponse)
+			.map(ticket -> toResponse(ticket, hasRole(viewer, "admin") || hasRole(viewer, "employee")))
 			.toList();
 	}
 
 	@Transactional(readOnly = true)
 	public TicketResponse get(UUID ticketId, String email) {
+<<<<<<< feature/adjusting_notification
 		return toResponse(loadDetailedAccessibleTicket(ticketId, email));
+=======
+		User viewer = loadCurrentUserByEmail(email, "Usuário responsável pela consulta não encontrado.");
+		Ticket ticket = loadDetailedAccessibleTicket(ticketId, viewer);
+		auditTrailService.recordUserAction("TICKET_VIEWED", viewer, "ticket", ticket.getId());
+		return toResponse(ticket, hasRole(viewer, "admin") || hasRole(viewer, "employee"));
+>>>>>>> local
 	}
 
 	@Transactional(readOnly = true)
@@ -245,6 +272,8 @@ public class TicketService {
 		ticket.setStatus(status);
 		ticket.setPriority(priority);
 		ticket.setChannel(TicketChannel.PORTAL);
+		ticket.setCategory(null);
+		ticket.setSystemErrorType(null);
 		ticket.setCopyEmail(normalizeOptionalEmail(request.copyEmail()));
 
 		Ticket savedTicket = saveTicketWithUniqueProtocol(ticket);
@@ -308,6 +337,16 @@ public class TicketService {
 		ensureTitleCanBeUpdated(ticket, author);
 		ticket.setTitle(normalizeTitle(request.title()));
 
+		return toResponse(ticketRepository.save(ticket));
+	}
+
+	@Transactional
+	public TicketResponse updateClassification(UUID ticketId, UpdateTicketClassificationRequest request) {
+		User author = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(request.authorEmail()))
+			.orElseThrow(() -> new NotFoundException("Usuário responsável pela classificação não encontrado."));
+		Ticket ticket = loadDetailedAccessibleTicket(ticketId, author.getEmail());
+		ensureClassificationCanBeUpdated(ticket, author);
+		applyClassification(ticket, request.categoryCode(), request.systemErrorTypeCode());
 		return toResponse(ticketRepository.save(ticket));
 	}
 
@@ -444,7 +483,7 @@ public class TicketService {
 		Ticket ticket = loadDetailedAccessibleTicket(ticketId, author.getEmail());
 
 		ensureTicketCanBeClosed(author);
-		return toResponse(closeTicketInternal(ticket, author, false));
+		return toResponse(closeTicketInternal(ticket, author, true));
 	}
 
 	@Transactional
@@ -503,6 +542,14 @@ public class TicketService {
 		}
 	}
 
+	private void ensureClassificationCanBeUpdated(Ticket ticket, User author) {
+		if (hasRole(author, "admin")) return;
+		if (!hasRole(author, "employee") || ticket.getAssignedTo() == null
+			|| !ticket.getAssignedTo().getId().equals(author.getId())) {
+			throw new IllegalArgumentException("Somente o administrador ou o funcionário responsável podem classificar o chamado.");
+		}
+	}
+
 	private boolean isTicketClosed(Ticket ticket) {
 		return ticket != null
 			&& ticket.getStatus() != null
@@ -552,6 +599,7 @@ public class TicketService {
 		notification.setRecipient(ticket.getRequester());
 		notification.setClosedBy(closedBy);
 		ticketClosureNotificationRepository.save(notification);
+		publishWebPushEvent(WebPushTicketEvent.closure(ticket, ticket.getRequester()));
 	}
 
 	private void hideRelatedTicketNotifications(UUID ticketId) {
@@ -645,6 +693,10 @@ public class TicketService {
 	}
 
 	private TicketResponse toResponse(Ticket ticket) {
+		return toResponse(ticket, true);
+	}
+
+	private TicketResponse toResponse(Ticket ticket, boolean includeInternalClassification) {
 		DisplayStatus displayStatus = resolveDisplayStatus(ticket);
 		User requesterCompany = resolveRequesterCompanyForDisplay(ticket.getRequester());
 		return new TicketResponse(
@@ -665,10 +717,42 @@ public class TicketService {
 			displayStatus.name(),
 			ticket.getPriority().getCode(),
 			ticket.getPriority().getName(),
+			includeInternalClassification && ticket.getCategory() != null ? ticket.getCategory().name() : null,
+			includeInternalClassification && ticket.getCategory() != null ? ticket.getCategory().getLabel() : null,
+			includeInternalClassification && ticket.getSystemErrorType() != null ? ticket.getSystemErrorType().name() : null,
+			includeInternalClassification && ticket.getSystemErrorType() != null ? ticket.getSystemErrorType().getLabel() : null,
 			ticket.getOpenedAt(),
 			ticket.getClosedAt(),
 			ticket.getPendingTransferTo() == null ? null : ticket.getPendingTransferTo().getFullName()
 		);
+	}
+
+	private void applyClassification(Ticket ticket, String categoryCode, String systemErrorTypeCode) {
+		TicketCategory category;
+		try {
+			category = TicketCategory.fromCode(categoryCode);
+		} catch (IllegalArgumentException exception) {
+			throw new IllegalArgumentException("Classificação do chamado inválida.");
+		}
+		if (category == null) {
+			category = TicketCategory.QUESTION;
+		}
+		TicketSystemErrorType errorType = null;
+		if (systemErrorTypeCode != null && !systemErrorTypeCode.isBlank()) {
+			try {
+				errorType = TicketSystemErrorType.fromCode(systemErrorTypeCode);
+			} catch (IllegalArgumentException exception) {
+				throw new IllegalArgumentException("Tipo de erro do sistema inválido.");
+			}
+		}
+		if (category == TicketCategory.SYSTEM_ERROR && errorType == null) {
+			throw new IllegalArgumentException("Selecione o tipo de erro do sistema.");
+		}
+		if (category != TicketCategory.SYSTEM_ERROR && errorType != null) {
+			throw new IllegalArgumentException("O tipo de erro do sistema só pode ser usado nessa classificação.");
+		}
+		ticket.setCategory(category);
+		ticket.setSystemErrorType(errorType);
 	}
 
 	private User resolveRequesterCompanyForDisplay(User requester) {
@@ -853,8 +937,46 @@ public class TicketService {
 		notification.setTicket(ticket);
 		notification.setRecipient(ticket.getAssignedTo());
 		ticketAssignmentNotificationRepository.save(notification);
+		publishWebPushEvent(WebPushTicketEvent.assignment(ticket, recipient));
 	}
 
+<<<<<<< feature/adjusting_notification
+=======
+	private void createReplyNotificationForRecipient(Ticket ticket, TicketMessage message, User recipient) {
+		if (ticket == null || message == null || recipient == null) {
+			return;
+		}
+
+		TicketReplyNotification notification = new TicketReplyNotification();
+		notification.setTicket(ticket);
+		notification.setMessage(message);
+		notification.setRecipient(recipient);
+		ticketReplyNotificationRepository.save(notification);
+		publishWebPushEvent(WebPushTicketEvent.reply(ticket, message, recipient));
+	}
+
+	private void publishWebPushEvent(WebPushTicketEvent event) {
+		if (eventPublisher != null) {
+			eventPublisher.publishEvent(event);
+		}
+	}
+
+	private User resolveTicketCompanyAdmin(Ticket ticket) {
+		User companyAdmin = tenantAccessService.getCurrentTenantOwnerUserId()
+			.flatMap(userRepository::findById)
+			.orElseGet(() -> ticket == null || ticket.getSector() == null ? null : ticket.getSector().getCreatedBy());
+		if (companyAdmin == null || companyAdmin.getStatus() == null) {
+			return null;
+		}
+
+		if (!companyAdmin.getStatus().name().equalsIgnoreCase("ACTIVE") || !hasRole(companyAdmin, "admin")) {
+			return null;
+		}
+
+		return companyAdmin;
+	}
+
+>>>>>>> local
 	private TicketMessage ensureInitialMessage(Ticket ticket) {
 		if (ticketMessageRepository.existsByTicketId(ticket.getId())) {
 			return ticketMessageRepository.findFirstByTicketIdOrderByCreatedAtAsc(ticket.getId())
