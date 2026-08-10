@@ -15,7 +15,6 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.Resource;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -90,11 +89,6 @@ public class TicketService {
 	private final WhatsappConversationRepository whatsappConversationRepository;
 	private final TenantAccessService tenantAccessService;
 	private final ScopedUserLookupService scopedUserLookupService;
-<<<<<<< feature/adjusting_notification
-=======
-	private final AuditTrailService auditTrailService;
-	private final ApplicationEventPublisher eventPublisher;
->>>>>>> local
 
 	public TicketService(
 		TicketRepository ticketRepository,
@@ -114,13 +108,7 @@ public class TicketService {
 		WhatsappService whatsappService,
 		WhatsappConversationRepository whatsappConversationRepository,
 		TenantAccessService tenantAccessService,
-<<<<<<< feature/adjusting_notification
 		ScopedUserLookupService scopedUserLookupService
-=======
-		ScopedUserLookupService scopedUserLookupService,
-		AuditTrailService auditTrailService,
-		ApplicationEventPublisher eventPublisher
->>>>>>> local
 	) {
 		this.ticketRepository = ticketRepository;
 		this.userRepository = userRepository;
@@ -140,16 +128,13 @@ public class TicketService {
 		this.whatsappConversationRepository = whatsappConversationRepository;
 		this.tenantAccessService = tenantAccessService;
 		this.scopedUserLookupService = scopedUserLookupService;
-<<<<<<< feature/adjusting_notification
-=======
-		this.auditTrailService = auditTrailService;
-		this.eventPublisher = eventPublisher;
->>>>>>> local
 	}
 
 	@Transactional(readOnly = true)
 	public List<TicketResponse> list(String email, String status) {
-		String normalizedEmail = normalizeEmail(email);
+		User viewer = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(email))
+			.orElseThrow(() -> new NotFoundException("Usuário responsável pela consulta não encontrado."));
+		String normalizedEmail = viewer.getEmail();
 		List<String> statusCodes = normalizeStatusCodes(status);
 		List<Ticket> tickets = statusCodes.isEmpty()
 			? ticketRepository.findVisibleByEmailOrderByCreatedAtDesc(normalizedEmail)
@@ -165,14 +150,10 @@ public class TicketService {
 
 	@Transactional(readOnly = true)
 	public TicketResponse get(UUID ticketId, String email) {
-<<<<<<< feature/adjusting_notification
-		return toResponse(loadDetailedAccessibleTicket(ticketId, email));
-=======
-		User viewer = loadCurrentUserByEmail(email, "Usuário responsável pela consulta não encontrado.");
-		Ticket ticket = loadDetailedAccessibleTicket(ticketId, viewer);
-		auditTrailService.recordUserAction("TICKET_VIEWED", viewer, "ticket", ticket.getId());
+		User viewer = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(email))
+			.orElseThrow(() -> new NotFoundException("Usuário responsável pela consulta não encontrado."));
+		Ticket ticket = loadDetailedAccessibleTicket(ticketId, viewer.getEmail());
 		return toResponse(ticket, hasRole(viewer, "admin") || hasRole(viewer, "employee"));
->>>>>>> local
 	}
 
 	@Transactional(readOnly = true)
@@ -483,7 +464,7 @@ public class TicketService {
 		Ticket ticket = loadDetailedAccessibleTicket(ticketId, author.getEmail());
 
 		ensureTicketCanBeClosed(author);
-		return toResponse(closeTicketInternal(ticket, author, true));
+		return toResponse(closeTicketInternal(ticket, author, false));
 	}
 
 	@Transactional
@@ -599,7 +580,6 @@ public class TicketService {
 		notification.setRecipient(ticket.getRequester());
 		notification.setClosedBy(closedBy);
 		ticketClosureNotificationRepository.save(notification);
-		publishWebPushEvent(WebPushTicketEvent.closure(ticket, ticket.getRequester()));
 	}
 
 	private void hideRelatedTicketNotifications(UUID ticketId) {
@@ -631,6 +611,20 @@ public class TicketService {
 	public AttachmentDownload downloadAttachment(UUID ticketId, UUID attachmentId, String email) {
 		Ticket ticket = loadDetailedAccessibleTicket(ticketId, email);
 		TicketAttachment attachment = ticketAttachmentRepository.findByIdAndTicketId(attachmentId, ticket.getId())
+			.orElseThrow(() -> new NotFoundException("Anexo não encontrado para este chamado."));
+		Resource resource = ticketAttachmentStorageService.loadAsResource(attachment.getStorageKey());
+
+		return new AttachmentDownload(
+			resource,
+			attachment.getOriginalFileName(),
+			attachment.getContentType(),
+			attachment.getSizeBytes()
+		);
+	}
+
+	@Transactional(readOnly = true)
+	public AttachmentDownload downloadPublicAttachment(UUID ticketId, UUID attachmentId) {
+		TicketAttachment attachment = ticketAttachmentRepository.findByIdAndTicketId(attachmentId, ticketId)
 			.orElseThrow(() -> new NotFoundException("Anexo não encontrado para este chamado."));
 		Resource resource = ticketAttachmentStorageService.loadAsResource(attachment.getStorageKey());
 
@@ -937,46 +931,8 @@ public class TicketService {
 		notification.setTicket(ticket);
 		notification.setRecipient(ticket.getAssignedTo());
 		ticketAssignmentNotificationRepository.save(notification);
-		publishWebPushEvent(WebPushTicketEvent.assignment(ticket, recipient));
 	}
 
-<<<<<<< feature/adjusting_notification
-=======
-	private void createReplyNotificationForRecipient(Ticket ticket, TicketMessage message, User recipient) {
-		if (ticket == null || message == null || recipient == null) {
-			return;
-		}
-
-		TicketReplyNotification notification = new TicketReplyNotification();
-		notification.setTicket(ticket);
-		notification.setMessage(message);
-		notification.setRecipient(recipient);
-		ticketReplyNotificationRepository.save(notification);
-		publishWebPushEvent(WebPushTicketEvent.reply(ticket, message, recipient));
-	}
-
-	private void publishWebPushEvent(WebPushTicketEvent event) {
-		if (eventPublisher != null) {
-			eventPublisher.publishEvent(event);
-		}
-	}
-
-	private User resolveTicketCompanyAdmin(Ticket ticket) {
-		User companyAdmin = tenantAccessService.getCurrentTenantOwnerUserId()
-			.flatMap(userRepository::findById)
-			.orElseGet(() -> ticket == null || ticket.getSector() == null ? null : ticket.getSector().getCreatedBy());
-		if (companyAdmin == null || companyAdmin.getStatus() == null) {
-			return null;
-		}
-
-		if (!companyAdmin.getStatus().name().equalsIgnoreCase("ACTIVE") || !hasRole(companyAdmin, "admin")) {
-			return null;
-		}
-
-		return companyAdmin;
-	}
-
->>>>>>> local
 	private TicketMessage ensureInitialMessage(Ticket ticket) {
 		if (ticketMessageRepository.existsByTicketId(ticket.getId())) {
 			return ticketMessageRepository.findFirstByTicketIdOrderByCreatedAtAsc(ticket.getId())

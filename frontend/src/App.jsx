@@ -1,8 +1,4 @@
-<<<<<<< feature/adjusting_notification
-import { useEffect, useMemo, useState } from 'react'
-=======
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
->>>>>>> local
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   acceptCompanyAccessRequestNotification,
@@ -71,13 +67,6 @@ import { buildNavigationGroups, getVisibleSectors } from './app/dashboardData'
 import Header from './app/components/header/Header'
 import Sidebar from './app/components/sidebar/Sidebar'
 import { useTenantBranding } from './app/context/TenantBrandingContext'
-import {
-  dismissBrowserNotificationOffer,
-  enableBrowserNotifications,
-  shouldOfferBrowserNotifications,
-  showTicketBrowserNotification,
-  restoreBrowserPushSubscription,
-} from './app/browserNotifications'
 import PlatformAdminApp from './admin/PlatformAdminApp'
 import {
   PUBLIC_ROUTE_PATHS,
@@ -604,12 +593,7 @@ function App() {
   const [isTicketSummaryLoading, setIsTicketSummaryLoading] = useState(false)
   const [isTeamDataLoading, setIsTeamDataLoading] = useState(false)
   const [teamDataError, setTeamDataError] = useState('')
-<<<<<<< feature/adjusting_notification
-=======
-  const [showBrowserNotificationOffer, setShowBrowserNotificationOffer] = useState(false)
   const autoViewedNotificationIdsRef = useRef(new Set())
-  const knownTicketNotificationIdsRef = useRef(null)
->>>>>>> local
 
   const currentRouteSection = useMemo(
     () => getSectionIdFromPathname(location.pathname) ?? 'tickets',
@@ -714,15 +698,6 @@ function App() {
   }
 
   function applyDashboardBundle(bundle) {
-    const nextTicketNotifications = bundle.ticketNotifications || []
-    const knownNotificationIds = knownTicketNotificationIdsRef.current
-    if (knownNotificationIds !== null) {
-      nextTicketNotifications.filter((notification) => !knownNotificationIds.has(`${notification.type}:${notification.id}`)).forEach((notification) => {
-        void showTicketBrowserNotification(notification, getPrimaryRole(bundle.profile?.roles)).catch(() => {})
-      })
-    }
-    knownTicketNotificationIdsRef.current = new Set(nextTicketNotifications.map((notification) => `${notification.type}:${notification.id}`))
-
     setProfile(bundle.profile)
     setAuthUser(bundle.profile)
     setCurrentUserRole(getPrimaryRole(bundle.profile.roles))
@@ -733,22 +708,7 @@ function App() {
     setReceivedInvites(bundle.receivedInvites)
     setSentInvites(bundle.sentInvites)
     setCompanyPartnerships(bundle.companyPartnerships)
-    setTicketNotifications(nextTicketNotifications)
-  }
-
-  async function handleEnableBrowserNotifications() {
-    try {
-      const permission = await enableBrowserNotifications()
-      setShowBrowserNotificationOffer(false)
-      if (permission === 'denied') pushAppFeedbackNotification({ title: 'Notificações bloqueadas', description: 'Libere-as nas permissões deste site no navegador.', status: 'CANCELED' })
-    } catch (error) {
-      pushAppFeedbackNotification({ title: 'Não foi possível ativar', description: error.message, status: 'CANCELED' })
-    }
-  }
-
-  function handleDismissBrowserNotificationOffer() {
-    dismissBrowserNotificationOffer()
-    setShowBrowserNotificationOffer(false)
+    setTicketNotifications(bundle.ticketNotifications)
   }
 
   function pushAppFeedbackNotification(notification) {
@@ -773,8 +733,6 @@ function App() {
 
   useEffect(() => {
     if (!authUser?.email) {
-      knownTicketNotificationIdsRef.current = null
-      setShowBrowserNotificationOffer(false)
       setProfile(null)
       setProfileError('')
       setTicketSummary(null)
@@ -791,11 +749,6 @@ function App() {
       setIsTeamDataLoading(false)
       setSelectedTicket(null)
       return
-    }
-
-    setShowBrowserNotificationOffer(shouldOfferBrowserNotifications())
-    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-      void restoreBrowserPushSubscription().catch(() => {})
     }
 
     let isCancelled = false
@@ -1523,15 +1476,6 @@ function App() {
 
   return (
     <div className="app-shell">
-      {authUser && showBrowserNotificationOffer ? (
-        <aside className="browser-notification-offer" role="status">
-          <div><strong>Receba avisos de chamados neste dispositivo</strong><span>Saiba quando um chamado for aberto, respondido ou fechado.</span></div>
-          <div className="browser-notification-offer__actions">
-            <button type="button" onClick={handleEnableBrowserNotifications}>Ativar notificações</button>
-            <button type="button" className="browser-notification-offer__dismiss" onClick={handleDismissBrowserNotificationOffer}>Agora não</button>
-          </div>
-        </aside>
-      ) : null}
       <div className="app-shell__routes">
         <Routes>
           <Route

@@ -116,8 +116,6 @@ a {
   line-height: 1.6;
 }
 
-<<<<<<< feature/adjusting_notification
-=======
 .attachment-viewer {
   min-height: 100vh;
   display: flex;
@@ -305,31 +303,10 @@ a {
   box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12);
 }
 
->>>>>>> local
 @media (max-width: 640px) {
   .app-shell__footer {
     min-height: 16px;
     padding: 2px 8px;
     font-size: 0.62rem;
   }
-}
-
-.browser-notification-offer {
-  position: fixed; z-index: 1000; right: 20px; bottom: 20px;
-  width: min(430px, calc(100vw - 32px)); display: flex; gap: 18px;
-  align-items: center; justify-content: space-between; padding: 16px;
-  border: 1px solid #bfdbfe; border-radius: 14px; background: #fff;
-  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.2); color: #0f172a;
-}
-.browser-notification-offer strong, .browser-notification-offer span { display: block; }
-.browser-notification-offer span { margin-top: 4px; color: #64748b; font-size: .88rem; line-height: 1.35; }
-.browser-notification-offer__actions { display: flex; flex: 0 0 auto; flex-direction: column; gap: 7px; }
-.browser-notification-offer button {
-  padding: 9px 12px; border: 0; border-radius: 8px; background: #2563eb;
-  color: #fff; cursor: pointer; font: inherit; font-size: .82rem; font-weight: 700;
-}
-.browser-notification-offer button.browser-notification-offer__dismiss { background: transparent; color: #64748b; }
-@media (max-width: 560px) {
-  .browser-notification-offer { left: 16px; right: 16px; bottom: 16px; width: auto; align-items: stretch; flex-direction: column; }
-  .browser-notification-offer__actions { flex-direction: row; }
 }

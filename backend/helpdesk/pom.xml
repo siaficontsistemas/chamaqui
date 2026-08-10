@@ -31,7 +31,6 @@
 		<springdoc.version>3.0.2</springdoc.version>
 		<swagger.version>2.2.43</swagger.version>
 		<aws.sdk.version>2.32.3</aws.sdk.version>
-		<web-push.version>5.1.2</web-push.version>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -76,26 +75,6 @@
 			<groupId>io.swagger.core.v3</groupId>
 			<artifactId>swagger-models-jakarta</artifactId>
 			<version>${swagger.version}</version>
-		</dependency>
-		<dependency>
-			<groupId>nl.martijndwars</groupId>
-			<artifactId>web-push</artifactId>
-			<version>${web-push.version}</version>
-		</dependency>
-		<dependency>
-			<groupId>org.apache.httpcomponents</groupId>
-			<artifactId>httpasyncclient</artifactId>
-			<version>4.1.5</version>
-		</dependency>
-		<dependency>
-			<groupId>org.bouncycastle</groupId>
-			<artifactId>bcprov-jdk15on</artifactId>
-			<version>1.70</version>
-		</dependency>
-		<dependency>
-			<groupId>org.bitbucket.b_c</groupId>
-			<artifactId>jose4j</artifactId>
-			<version>0.7.9</version>
 		</dependency>
 		<dependency>
 			<groupId>software.amazon.awssdk</groupId>

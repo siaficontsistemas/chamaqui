@@ -531,31 +531,8 @@ export function deleteTeamNotification(inviteId, email) {
   })
 }
 
-<<<<<<< feature/adjusting_notification
 export function getTicketAssignmentNotifications(email) {
   return apiRequest(`/api/v1/notifications/ticket-assignments?email=${encodeURIComponent(email)}`)
-=======
-
-export function getWebPushPublicKey() {
-  return apiRequest('/api/v1/notifications/web-push/public-key')
-}
-
-export function saveWebPushSubscription(subscription) {
-  return apiRequest('/api/v1/notifications/web-push/subscriptions', {
-    method: 'POST',
-    body: JSON.stringify(subscription),
-  })
-}
-
-export function getTicketAssignmentNotifications() {
-  return apiRequest('/api/v1/notifications/ticket-assignments')
-}
-
-export function deleteTicketAssignmentNotification(notificationId) {
-  return apiRequest(`/api/v1/notifications/ticket-assignments/${notificationId}`, {
-    method: 'DELETE',
-  })
->>>>>>> local
 }
 
 export function deleteTicketAssignmentNotification(notificationId, email) {

@@ -8,6 +8,8 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -24,8 +26,6 @@ import org.springframework.web.multipart.MultipartFile;
 public class TicketAttachmentStorageService {
 
 	private static final Logger logger = LoggerFactory.getLogger(TicketAttachmentStorageService.class);
-<<<<<<< feature/adjusting_notification
-=======
 	private static final Map<String, String> CONTENT_TYPES_BY_EXTENSION = Map.ofEntries(
 		Map.entry("pdf", "application/pdf"),
 		Map.entry("png", "image/png"),
@@ -65,21 +65,25 @@ public class TicketAttachmentStorageService {
 		Map.entry("ogg", "audio/ogg")
 	);
 	private static final Set<String> ALLOWED_CONTENT_TYPES = Set.copyOf(CONTENT_TYPES_BY_EXTENSION.values());
->>>>>>> local
 
 	private final Path rootDirectory;
 	private final List<Path> readableDirectories;
+	private final long maxFileSizeBytes;
 
 	public TicketAttachmentStorageService(
 		@Value("${app.storage.attachments-dir:${user.home}/.helpdesk/uploads/ticket-attachments}") String rootDirectory,
-		@Value("${app.storage.attachments-legacy-dirs:${user.dir}/uploads/ticket-attachments}") String legacyDirectories
+		@Value("${app.storage.attachments-legacy-dirs:${user.dir}/uploads/ticket-attachments}") String legacyDirectories,
+		@Value("${app.storage.attachments-max-file-size-bytes:104857600}") long maxFileSizeBytes
 	) {
 		this.rootDirectory = Paths.get(rootDirectory).toAbsolutePath().normalize();
 		this.readableDirectories = buildReadableDirectories(this.rootDirectory, legacyDirectories);
+		this.maxFileSizeBytes = maxFileSizeBytes;
 	}
 
 	public StoredAttachment store(MultipartFile file) {
 		String originalFileName = sanitizeFileName(file.getOriginalFilename());
+		String normalizedContentType = normalizeContentType(originalFileName, file.getContentType());
+		validate(originalFileName, normalizedContentType, file.getSize());
 		Path targetPath = prepareTargetPath(originalFileName);
 
 		try {
@@ -91,7 +95,7 @@ public class TicketAttachmentStorageService {
 		return new StoredAttachment(
 			originalFileName,
 			targetPath.getFileName().toString(),
-			Objects.requireNonNullElse(file.getContentType(), "application/octet-stream"),
+			normalizedContentType,
 			file.getSize()
 		);
 	}
@@ -102,6 +106,8 @@ public class TicketAttachmentStorageService {
 		}
 
 		String sanitizedFileName = sanitizeFileName(originalFileName);
+		String normalizedContentType = normalizeContentType(sanitizedFileName, contentType);
+		validate(sanitizedFileName, normalizedContentType, content.length);
 		Path targetPath = prepareTargetPath(sanitizedFileName);
 
 		try {
@@ -113,7 +119,7 @@ public class TicketAttachmentStorageService {
 		return new StoredAttachment(
 			sanitizedFileName,
 			targetPath.getFileName().toString(),
-			Objects.requireNonNullElse(contentType, "application/octet-stream"),
+			normalizedContentType,
 			content.length
 		);
 	}
@@ -200,8 +206,6 @@ public class TicketAttachmentStorageService {
 		return sanitizedValue;
 	}
 
-<<<<<<< feature/adjusting_notification
-=======
 	private void validate(String originalFileName, String contentType, long sizeBytes) {
 		if (!ALLOWED_CONTENT_TYPES.contains(contentType) && !contentType.startsWith("video/")) {
 			throw new IllegalArgumentException(
@@ -238,7 +242,6 @@ public class TicketAttachmentStorageService {
 		return fileName.substring(extensionIndex + 1);
 	}
 
->>>>>>> local
 	public record StoredAttachment(
 		String originalFileName,
 		String storageKey,
