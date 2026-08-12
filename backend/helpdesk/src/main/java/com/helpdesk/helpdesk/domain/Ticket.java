@@ -69,12 +69,6 @@ public class Ticket {
 	@Column(nullable = false, length = 20)
 	private TicketChannel channel = TicketChannel.PORTAL;
 
-	@Column(name = "whatsapp_phone_number", length = 30)
-	private String whatsappPhoneNumber;
-
-	@Column(name = "whatsapp_transport_id", length = 80)
-	private String whatsappTransportId;
-
 	@Column(name = "opened_at", nullable = false)
 	private OffsetDateTime openedAt;
 
@@ -211,22 +205,6 @@ public class Ticket {
 
 	public TicketChannel getChannel() {
 		return channel;
-	}
-
-	public String getWhatsappPhoneNumber() {
-		return whatsappPhoneNumber;
-	}
-
-	public void setWhatsappPhoneNumber(String whatsappPhoneNumber) {
-		this.whatsappPhoneNumber = whatsappPhoneNumber;
-	}
-
-	public String getWhatsappTransportId() {
-		return whatsappTransportId;
-	}
-
-	public void setWhatsappTransportId(String whatsappTransportId) {
-		this.whatsappTransportId = whatsappTransportId;
 	}
 
 	public void setChannel(TicketChannel channel) {
