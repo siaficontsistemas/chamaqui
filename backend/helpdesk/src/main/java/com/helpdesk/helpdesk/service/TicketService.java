@@ -1635,23 +1635,23 @@ public class TicketService {
 			return "";
 		}
 
-		String ticketRecipient = firstNonBlank(ticket.getWhatsappPhoneNumber(), ticket.getWhatsappTransportId());
+		String ticketRecipient = firstUsableWhatsappRecipient(ticket.getWhatsappPhoneNumber(), ticket.getWhatsappTransportId());
 		if (ticketRecipient != null && !ticketRecipient.isBlank()) {
 			return ticketRecipient;
 		}
 
-		String requesterRecipient = hasWhatsappRecipient(ticket.getRequester())
-			? resolveWhatsappRecipient(ticket.getRequester())
-			: "";
+		String requesterRecipient = ticket.getRequester() == null
+			? ""
+			: firstUsableWhatsappRecipient(ticket.getRequester().getPhoneNumber(), ticket.getRequester().getWhatsappTransportId());
 		User companyOwner = resolveWhatsappCompanyOwner(ticket);
 
 		String conversationRecipient = whatsappConversationRepository.findByActiveTicketId(ticket.getId())
-			.map(conversation -> firstNonBlank(conversation.getWhatsappTransportId(), conversation.getPhoneNumber()))
+			.map(conversation -> firstUsableWhatsappRecipient(conversation.getWhatsappTransportId(), conversation.getPhoneNumber()))
 			.filter(value -> value != null && !value.isBlank())
 			.orElseGet(() -> {
 				if (!requesterRecipient.isBlank()) {
 					return whatsappConversationRepository.findByCompanyOwnerIdAndWhatsappTransportId(companyOwner.getId(), requesterRecipient)
-						.map(conversation -> firstNonBlank(conversation.getWhatsappTransportId(), conversation.getPhoneNumber()))
+						.map(conversation -> firstUsableWhatsappRecipient(conversation.getWhatsappTransportId(), conversation.getPhoneNumber()))
 						.filter(value -> value != null && !value.isBlank())
 						.orElse("");
 				}
@@ -1669,6 +1669,22 @@ public class TicketService {
 	private String normalizeOptionalWhatsappTransportId(String transportId) {
 		String normalized = transportId == null ? "" : transportId.trim();
 		return normalized.isBlank() ? null : normalized;
+	}
+
+	private String firstUsableWhatsappRecipient(String... candidates) {
+		if (candidates == null) {
+			return "";
+		}
+		for (String candidate : candidates) {
+			String normalized = candidate == null ? "" : candidate.trim();
+			if (normalized.isBlank() || normalized.toLowerCase(Locale.ROOT).endsWith("@lid")) {
+				continue;
+			}
+			if (normalized.contains("@") || normalized.replaceAll("\\D+", "").length() >= 10) {
+				return normalized;
+			}
+		}
+		return "";
 	}
 
 	private String resolveUserWhatsappRecipientOrBlank(User user) {
@@ -1792,10 +1808,15 @@ public class TicketService {
 	}
 
 	private String resolveWhatsappRecipient(User requester) {
-		if (requester != null && requester.getWhatsappTransportId() != null && !requester.getWhatsappTransportId().isBlank()) {
+		if (requester != null && requester.getPhoneNumber() != null && !requester.getPhoneNumber().isBlank()) {
+			return normalizePhone(requester.getPhoneNumber());
+		}
+		if (requester != null && requester.getWhatsappTransportId() != null
+			&& !requester.getWhatsappTransportId().isBlank()
+			&& !requester.getWhatsappTransportId().toLowerCase(Locale.ROOT).endsWith("@lid")) {
 			return requester.getWhatsappTransportId();
 		}
-		return normalizePhone(requester == null ? null : requester.getPhoneNumber());
+		throw new IllegalArgumentException("O chamado do WhatsApp não possui um telefone válido para resposta.");
 	}
 
 	private String firstNonBlank(String... values) {
