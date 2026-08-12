@@ -315,6 +315,8 @@ public class TicketService {
 		ticket.setStatus(status);
 		ticket.setPriority(priority);
 		ticket.setChannel(TicketChannel.WHATSAPP);
+		ticket.setWhatsappPhoneNumber(normalizeOptionalWhatsappPhone(request.phoneNumber()));
+		ticket.setWhatsappTransportId(normalizeOptionalWhatsappTransportId(request.whatsappTransportId()));
 		ticket.setCopyEmail(normalizeOptionalEmail(requester.getEmail()));
 
 		Ticket savedTicket = saveTicketWithUniqueProtocol(ticket);
@@ -1633,6 +1635,11 @@ public class TicketService {
 			return "";
 		}
 
+		String ticketRecipient = firstNonBlank(ticket.getWhatsappPhoneNumber(), ticket.getWhatsappTransportId());
+		if (ticketRecipient != null && !ticketRecipient.isBlank()) {
+			return ticketRecipient;
+		}
+
 		String requesterRecipient = hasWhatsappRecipient(ticket.getRequester())
 			? resolveWhatsappRecipient(ticket.getRequester())
 			: "";
@@ -1652,6 +1659,16 @@ public class TicketService {
 			});
 
 		return firstNonBlank(conversationRecipient, requesterRecipient);
+	}
+
+	private String normalizeOptionalWhatsappPhone(String phoneNumber) {
+		String normalized = phoneNumber == null ? "" : phoneNumber.trim();
+		return normalized.isBlank() ? null : normalized;
+	}
+
+	private String normalizeOptionalWhatsappTransportId(String transportId) {
+		String normalized = transportId == null ? "" : transportId.trim();
+		return normalized.isBlank() ? null : normalized;
 	}
 
 	private String resolveUserWhatsappRecipientOrBlank(User user) {
