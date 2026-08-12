@@ -153,14 +153,6 @@ function resolveRemoteJid(message) {
   );
 }
 
-function resolvePhoneJid(message, remoteJid) {
-  const alternateJid = String(message?.key?.remoteJidAlt || '').trim();
-  if (alternateJid && !alternateJid.endsWith('@lid')) {
-    return alternateJid;
-  }
-  return remoteJid;
-}
-
 function inferMediaMimeType(messageType, mediaMessage) {
   if (mediaMessage?.mimetype) {
     return mediaMessage.mimetype;
@@ -394,7 +386,6 @@ async function postWebhook(session, payload) {
 
 async function forwardMessageEvent(session, sock, message, source, type = '') {
   const remoteJid = resolveRemoteJid(message);
-  const phoneJid = resolvePhoneJid(message, remoteJid);
   const fromMe = Boolean(message?.key?.fromMe);
   if (!remoteJid || fromMe || remoteJid.endsWith('@g.us')) {
     return;
@@ -409,7 +400,6 @@ async function forwardMessageEvent(session, sock, message, source, type = '') {
       type,
       fromMe: false,
       remoteJid,
-      phoneJid,
       bodyPreview: body.slice(0, 120),
       attachmentCount: attachments.length,
     },
@@ -421,9 +411,9 @@ async function forwardMessageEvent(session, sock, message, source, type = '') {
     session: session.name,
     fromMe,
     isGroup: false,
-    phone: phoneJid,
+    phone: remoteJid,
     transportId: remoteJid,
-    from: phoneJid,
+    from: remoteJid,
     chatId: remoteJid,
     body,
     attachments,
