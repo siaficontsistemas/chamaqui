@@ -315,6 +315,7 @@ public class TicketService {
 		ticket.setStatus(status);
 		ticket.setPriority(priority);
 		ticket.setChannel(TicketChannel.WHATSAPP);
+		ticket.setWhatsappPhoneNumber(normalizeWhatsappTicketPhone(request.phoneNumber()));
 		ticket.setCopyEmail(normalizeOptionalEmail(requester.getEmail()));
 
 		Ticket savedTicket = saveTicketWithUniqueProtocol(ticket);
@@ -1662,10 +1663,11 @@ public class TicketService {
 		User companyOwner = resolveWhatsappCompanyOwner(ticket);
 		List<String> recipients = new java.util.ArrayList<>();
 
-		// O solicitante é a fonte estável do destino. O activeTicket representa
-		// apenas o contexto da última mensagem recebida e pode apontar para outro chamado.
+		// O telefone fica gravado no próprio chamado e não muda quando o cliente
+		// troca o chamado ativo na conversa do WhatsApp.
+		addWhatsappRecipientCandidates(recipients, ticket.getWhatsappPhoneNumber());
 		if (requester != null) {
-			addWhatsappRecipientCandidates(recipients, requester.getWhatsappTransportId(), requester.getPhoneNumber());
+			addWhatsappRecipientCandidates(recipients, requester.getPhoneNumber(), requester.getWhatsappTransportId());
 		}
 
 		whatsappConversationRepository.findByActiveTicketId(ticket.getId())
@@ -1688,6 +1690,15 @@ public class TicketService {
 				recipients.add(candidate.trim());
 			}
 		}
+	}
+
+	private String normalizeWhatsappTicketPhone(String phoneNumber) {
+		String normalized = phoneNumber == null ? "" : phoneNumber.trim();
+		if (normalized.isBlank() || normalized.toLowerCase(Locale.ROOT).endsWith("@lid")) {
+			return null;
+		}
+		String digits = normalized.replaceAll("\\D+", "");
+		return digits.isBlank() ? null : digits;
 	}
 
 	private String resolveUserWhatsappRecipientOrBlank(User user) {
