@@ -315,6 +315,7 @@ public class TicketService {
 		ticket.setStatus(status);
 		ticket.setPriority(priority);
 		ticket.setChannel(TicketChannel.WHATSAPP);
+		ticket.setWhatsappConversationId(request.whatsappConversationId());
 		ticket.setCopyEmail(normalizeOptionalEmail(requester.getEmail()));
 
 		Ticket savedTicket = saveTicketWithUniqueProtocol(ticket);
@@ -1662,13 +1663,21 @@ public class TicketService {
 		User companyOwner = resolveWhatsappCompanyOwner(ticket);
 		List<String> recipients = new java.util.ArrayList<>();
 
-		if (requester != null) {
+		if (ticket.getWhatsappConversationId() != null) {
+			whatsappConversationRepository.findById(ticket.getWhatsappConversationId())
+				.ifPresent(conversation -> addWhatsappRecipientCandidates(recipients,
+					conversation.getWhatsappTransportId(), conversation.getPhoneNumber()));
+		}
+
+		if (recipients.isEmpty() && requester != null) {
 			addWhatsappRecipientCandidates(recipients, requester.getWhatsappTransportId(), requester.getPhoneNumber());
 		}
 
-		whatsappConversationRepository.findByActiveTicketId(ticket.getId())
+		if (recipients.isEmpty()) {
+			whatsappConversationRepository.findByActiveTicketId(ticket.getId())
 			.ifPresent(conversation -> addWhatsappRecipientCandidates(recipients,
 				conversation.getWhatsappTransportId(), conversation.getPhoneNumber()));
+		}
 
 		if (recipients.isEmpty() && requester != null && hasWhatsappRecipient(requester)) {
 			String requesterRecipient = resolveWhatsappRecipient(requester);
@@ -1900,12 +1909,25 @@ public class TicketService {
 		User requester,
 		String phoneNumber,
 		String whatsappTransportId,
+		UUID whatsappConversationId,
 		UUID companyOwnerId,
 		UUID sectorId,
 		UUID assignedToUserId,
 		String description,
 		List<IncomingAttachment> attachments
 	) {
+		public CreateWhatsappTicketRequest(
+			User requester,
+			String phoneNumber,
+			String whatsappTransportId,
+			UUID companyOwnerId,
+			UUID sectorId,
+			UUID assignedToUserId,
+			String description,
+			List<IncomingAttachment> attachments
+		) {
+			this(requester, phoneNumber, whatsappTransportId, null, companyOwnerId, sectorId, assignedToUserId, description, attachments);
+		}
 	}
 
 	public record IncomingAttachment(

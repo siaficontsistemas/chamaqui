@@ -69,6 +69,9 @@ public class Ticket {
 	@Column(nullable = false, length = 20)
 	private TicketChannel channel = TicketChannel.PORTAL;
 
+	@Column(name = "whatsapp_conversation_id")
+	private UUID whatsappConversationId;
+
 	@Column(name = "opened_at", nullable = false)
 	private OffsetDateTime openedAt;
 
@@ -209,6 +212,14 @@ public class Ticket {
 
 	public void setChannel(TicketChannel channel) {
 		this.channel = channel;
+	}
+
+	public UUID getWhatsappConversationId() {
+		return whatsappConversationId;
+	}
+
+	public void setWhatsappConversationId(UUID whatsappConversationId) {
+		this.whatsappConversationId = whatsappConversationId;
 	}
 
 	public OffsetDateTime getOpenedAt() {
