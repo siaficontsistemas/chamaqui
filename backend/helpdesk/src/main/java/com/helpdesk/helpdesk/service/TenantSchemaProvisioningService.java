@@ -43,6 +43,11 @@ public class TenantSchemaProvisioningService {
 				"create table if not exists " + qualifiedTableName + " (like " + publicTableName + " including all)"
 			);
 		}
+		jdbcTemplate.execute(
+			"alter table " + qualifiedSchema + ".\"tickets\" "
+				+ "add column if not exists \"whatsapp_phone_number\" varchar(30), "
+				+ "add column if not exists \"whatsapp_transport_id\" varchar(80)"
+		);
 	}
 
 	private String quoteIdentifier(String value) {
