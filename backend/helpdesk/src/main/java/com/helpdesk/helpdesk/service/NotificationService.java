@@ -593,10 +593,8 @@ public class NotificationService {
 				&& notification.getId().equals(matchingNotification.getId());
 
 			if (isMatchingNotification) {
-				if (notification.isHidden()) {
-					notification.setHidden(false);
-					hasChanges = true;
-				}
+				// A exclusão feita pela lixeira deve permanecer. Uma nova
+				// notificação só será criada quando houver uma nova mensagem.
 				continue;
 			}
 

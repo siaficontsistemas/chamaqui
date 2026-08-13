@@ -61,6 +61,7 @@ function TicketConversation({
   onRefreshDashboardData,
   onRequestTicketTransfer,
   onUpdateTicketTitle,
+  onUpdateTicketClassification,
   ticket,
   userRole,
 }) {
@@ -77,6 +78,9 @@ function TicketConversation({
   const [titleDraft, setTitleDraft] = useState('')
   const [isEditingTitle, setIsEditingTitle] = useState(false)
   const [isSavingTitle, setIsSavingTitle] = useState(false)
+  const [classificationType, setClassificationType] = useState('')
+  const [systemArea, setSystemArea] = useState('')
+  const [isSavingClassification, setIsSavingClassification] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [isTransferConfirmationOpen, setIsTransferConfirmationOpen] = useState(false)
   const [isConfirmingTransfer, setIsConfirmingTransfer] = useState(false)
@@ -182,6 +186,8 @@ function TicketConversation({
     (userRole === 'employee' &&
       ticket?.assignedToEmail?.toLowerCase() === currentUser?.email?.toLowerCase())
 
+  const canEditClassification = userRole === 'admin' || userRole === 'employee'
+
   const canTransferTicket =
     (userRole === 'admin' ||
       (userRole === 'employee' &&
@@ -193,6 +199,32 @@ function TicketConversation({
     setTitleDraft(ticket?.title || '')
     setIsEditingTitle(false)
   }, [ticket?.id, ticket?.title])
+
+  useEffect(() => {
+    setClassificationType(ticket?.internalTypeCode || '')
+    setSystemArea(ticket?.internalSystemAreaCode || '')
+  }, [ticket?.id, ticket?.internalTypeCode, ticket?.internalSystemAreaCode])
+
+  async function handleClassificationChange(nextType, nextSystemArea) {
+    if (!canEditClassification || isSavingClassification || !onUpdateTicketClassification) {
+      return
+    }
+
+    setClassificationType(nextType)
+    setSystemArea(nextType === 'SYSTEM_ERROR' ? nextSystemArea : '')
+    setIsSavingClassification(true)
+    setErrorMessage('')
+
+    try {
+      await onUpdateTicketClassification(ticket.id, nextType, nextType === 'SYSTEM_ERROR' ? nextSystemArea : '')
+    } catch (error) {
+      setClassificationType(ticket.internalTypeCode || '')
+      setSystemArea(ticket.internalSystemAreaCode || '')
+      setErrorMessage(error.message)
+    } finally {
+      setIsSavingClassification(false)
+    }
+  }
 
   useEffect(() => {
     if (!isEditingTitle) {
@@ -796,6 +828,53 @@ function TicketConversation({
                     <dt>Prioridade</dt>
                     <dd>{ticket.priorityName || 'Não informado'}</dd>
                   </div>
+                  {canEditClassification || ticket.internalTypeName ? (
+                    <div>
+                      <dt>Classificação</dt>
+                      <dd>
+                        {canEditClassification ? (
+                          <select
+                            className="ticket-chat__classification-select"
+                            value={classificationType}
+                            onChange={(event) => handleClassificationChange(event.target.value, systemArea)}
+                            disabled={isSavingClassification}
+                          >
+                            <option value="">Não classificado</option>
+                            <option value="SYSTEM_ERROR">Erro do sistema</option>
+                            <option value="QUESTION">Dúvida</option>
+                            <option value="USER_ERROR">Erro do usuário</option>
+                            <option value="DOCUMENTATION_ERROR">Erro de Documentação</option>
+                          </select>
+                        ) : (
+                          ticket.internalTypeName
+                        )}
+                      </dd>
+                    </div>
+                  ) : null}
+                  {canEditClassification && classificationType === 'SYSTEM_ERROR' ? (
+                    <div>
+                      <dt>Área do erro</dt>
+                      <dd>
+                        <select
+                          className="ticket-chat__classification-select"
+                          value={systemArea}
+                          onChange={(event) => handleClassificationChange(classificationType, event.target.value)}
+                          disabled={isSavingClassification}
+                        >
+                          <option value="">Não informado</option>
+                          <option value="DATABASE">Banco de dados</option>
+                          <option value="APPLICATION">Aplicação</option>
+                          <option value="INSTABILITY">Instabilidade</option>
+                        </select>
+                      </dd>
+                    </div>
+                  ) : null}
+                  {!canEditClassification && ticket.internalTypeName === 'Erro do sistema' && ticket.internalSystemAreaName ? (
+                    <div>
+                      <dt>Área do erro</dt>
+                      <dd>{ticket.internalSystemAreaName}</dd>
+                    </div>
+                  ) : null}
                   <div>
                     <dt>Protocolo</dt>
                     <dd>{ticket.protocol || 'Não informado'}</dd>

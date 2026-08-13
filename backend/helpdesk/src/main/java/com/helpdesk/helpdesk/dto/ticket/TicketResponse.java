@@ -21,6 +21,10 @@ public record TicketResponse(
 	String statusName,
 	String priorityCode,
 	String priorityName,
+	String internalTypeCode,
+	String internalTypeName,
+	String internalSystemAreaCode,
+	String internalSystemAreaName,
 	OffsetDateTime openedAt,
 	OffsetDateTime closedAt,
 	String pendingTransferToName

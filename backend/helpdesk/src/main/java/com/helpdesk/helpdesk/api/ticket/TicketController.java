@@ -29,6 +29,7 @@ import com.helpdesk.helpdesk.dto.ticket.TicketMessageResponse;
 import com.helpdesk.helpdesk.dto.ticket.TicketResponse;
 import com.helpdesk.helpdesk.dto.ticket.TicketSummaryResponse;
 import com.helpdesk.helpdesk.dto.ticket.TicketTransferCandidateResponse;
+import com.helpdesk.helpdesk.dto.ticket.UpdateTicketClassificationRequest;
 import com.helpdesk.helpdesk.dto.ticket.UpdateTicketTitleRequest;
 import com.helpdesk.helpdesk.service.AppSessionService;
 import com.helpdesk.helpdesk.service.TicketService;
@@ -118,6 +119,15 @@ public class TicketController {
 		HttpSession session
 	) {
 		return ticketService.updateTitle(ticketId, withAuthorEmail(request, session));
+	}
+
+	@PutMapping("/{ticketId}/classification")
+	public TicketResponse updateClassification(
+		@PathVariable UUID ticketId,
+		@Valid @RequestBody UpdateTicketClassificationRequest request,
+		HttpSession session
+	) {
+		return ticketService.updateClassification(ticketId, request);
 	}
 
 	@GetMapping("/{ticketId}/attachments/{attachmentId}")

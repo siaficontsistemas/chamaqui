@@ -56,6 +56,7 @@ import com.helpdesk.helpdesk.dto.ticket.TicketSummaryResponse;
 import com.helpdesk.helpdesk.dto.ticket.TicketTargetAssigneeResponse;
 import com.helpdesk.helpdesk.dto.ticket.TicketTransferCandidateResponse;
 import com.helpdesk.helpdesk.dto.ticket.UpdateTicketTitleRequest;
+import com.helpdesk.helpdesk.dto.ticket.UpdateTicketClassificationRequest;
 import com.helpdesk.helpdesk.repository.CompanyPartnershipRepository;
 import com.helpdesk.helpdesk.repository.SectorMemberRepository;
 import com.helpdesk.helpdesk.repository.SectorRepository;
@@ -150,7 +151,7 @@ public class TicketService {
 		List<Ticket> tickets = loadVisibleTickets(viewer, statusCodes);
 
 		return tickets.stream()
-			.map(this::toResponse)
+			.map(ticket -> toResponse(ticket, viewer))
 			.toList();
 	}
 
@@ -159,7 +160,7 @@ public class TicketService {
 		User viewer = loadCurrentUserByEmail(email, "Usuário responsável pela consulta não encontrado.");
 		Ticket ticket = loadDetailedAccessibleTicket(ticketId, viewer);
 		auditTrailService.recordUserAction("TICKET_VIEWED", viewer, "ticket", ticket.getId());
-		return toResponse(ticket);
+		return toResponse(ticket, viewer);
 	}
 
 	@Transactional(readOnly = true)
@@ -278,7 +279,7 @@ public class TicketService {
 		TicketMessage initialMessage = ensureInitialMessage(savedTicket);
 		saveAttachments(savedTicket, initialMessage, requester, files);
 
-		return toResponse(savedTicket);
+		return toResponse(savedTicket, requester);
 	}
 
 	@Transactional
@@ -346,7 +347,24 @@ public class TicketService {
 		ensureTitleCanBeUpdated(ticket, author);
 		ticket.setTitle(normalizeTitle(request.title()));
 
-		return toResponse(ticketRepository.save(ticket));
+		return toResponse(ticketRepository.save(ticket), author);
+	}
+
+	@Transactional
+	public TicketResponse updateClassification(UUID ticketId, UpdateTicketClassificationRequest request) {
+		User author = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(request.authorEmail()))
+			.orElseThrow(() -> new NotFoundException("Usuário responsável pela classificação não encontrado."));
+		ensureInternalClassificationAccess(author);
+		Ticket ticket = loadDetailedAccessibleTicket(ticketId, author.getEmail());
+
+		String type = normalizeClassificationType(request.typeCode());
+		String systemArea = normalizeSystemArea(request.systemAreaCode());
+		if (!"SYSTEM_ERROR".equals(type)) {
+			systemArea = null;
+		}
+		ticket.setInternalType(type);
+		ticket.setInternalSystemArea(systemArea);
+		return toResponse(ticketRepository.save(ticket), author);
 	}
 
 	@Transactional
@@ -379,7 +397,7 @@ public class TicketService {
 		notification.setRecipient(recipient);
 		ticketTransferNotificationRepository.save(notification);
 
-		return toResponse(savedTicket);
+		return toResponse(savedTicket, author);
 	}
 
 	@Transactional
@@ -512,7 +530,7 @@ public class TicketService {
 		Ticket ticket = loadDetailedAccessibleTicket(ticketId, author.getEmail());
 
 		ensureTicketCanBeClosed(author);
-		return toResponse(closeTicketInternal(ticket, author, false));
+		return toResponse(closeTicketInternal(ticket, author, false), author);
 	}
 
 	@Transactional
@@ -754,7 +772,7 @@ public class TicketService {
 		return prefix + String.format("%04d", nextNumber);
 	}
 
-	private TicketResponse toResponse(Ticket ticket) {
+	private TicketResponse toResponse(Ticket ticket, User viewer) {
 		DisplayStatus displayStatus = resolveDisplayStatus(ticket);
 		User requesterCompany = resolveRequesterCompanyForDisplay(ticket.getRequester());
 		return new TicketResponse(
@@ -775,6 +793,10 @@ public class TicketService {
 			displayStatus.name(),
 			ticket.getPriority().getCode(),
 			ticket.getPriority().getName(),
+			canViewInternalClassification(viewer) ? ticket.getInternalType() : null,
+			canViewInternalClassification(viewer) ? classificationTypeName(ticket.getInternalType()) : null,
+			canViewInternalClassification(viewer) ? ticket.getInternalSystemArea() : null,
+			canViewInternalClassification(viewer) ? systemAreaName(ticket.getInternalSystemArea()) : null,
 			ticket.getOpenedAt(),
 			ticket.getClosedAt(),
 			ticket.getPendingTransferTo() == null ? null : ticket.getPendingTransferTo().getFullName()
@@ -1430,6 +1452,60 @@ public class TicketService {
 	private boolean hasRole(User user, String roleCode) {
 		return user.getRoles().stream()
 			.anyMatch(role -> roleCode.equalsIgnoreCase(role.getCode()));
+	}
+
+	private boolean canViewInternalClassification(User user) {
+		return user != null && (hasRole(user, "ADMIN") || hasRole(user, "EMPLOYEE"));
+	}
+
+	private void ensureInternalClassificationAccess(User user) {
+		if (!canViewInternalClassification(user)) {
+			throw new IllegalArgumentException("Somente funcionários e administradores podem classificar chamados.");
+		}
+	}
+
+	private String normalizeClassificationType(String value) {
+		if (value == null || value.isBlank()) {
+			return null;
+		}
+		return switch (value.trim().toUpperCase(Locale.ROOT)) {
+			case "SYSTEM_ERROR", "ERRO_SISTEMA" -> "SYSTEM_ERROR";
+			case "QUESTION", "DUVIDA" -> "QUESTION";
+			case "USER_ERROR", "ERRO_USUARIO" -> "USER_ERROR";
+			case "DOCUMENTATION_ERROR", "ERRO_DOCUMENTACAO" -> "DOCUMENTATION_ERROR";
+			default -> throw new IllegalArgumentException("Tipo de chamado inválido.");
+		};
+	}
+
+	private String normalizeSystemArea(String value) {
+		if (value == null || value.isBlank()) {
+			return null;
+		}
+		return switch (value.trim().toUpperCase(Locale.ROOT)) {
+			case "DATABASE", "BANCO_DADOS" -> "DATABASE";
+			case "APPLICATION", "APLICACAO" -> "APPLICATION";
+			case "INSTABILITY", "INSTABILIDADE" -> "INSTABILITY";
+			default -> throw new IllegalArgumentException("Subtipo de erro do sistema inválido.");
+		};
+	}
+
+	private String classificationTypeName(String code) {
+		return switch (code == null ? "" : code) {
+			case "SYSTEM_ERROR" -> "Erro do sistema";
+			case "QUESTION" -> "Dúvida";
+			case "USER_ERROR" -> "Erro do usuário";
+			case "DOCUMENTATION_ERROR" -> "Erro de Documentação";
+			default -> null;
+		};
+	}
+
+	private String systemAreaName(String code) {
+		return switch (code == null ? "" : code) {
+			case "DATABASE" -> "Banco de dados";
+			case "APPLICATION" -> "Aplicação";
+			case "INSTABILITY" -> "Instabilidade";
+			default -> null;
+		};
 	}
 
 	private User resolveRequesterCompany(User requester) {
