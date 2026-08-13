@@ -45,6 +45,7 @@ import {
   getTicketClosureNotifications,
   getTicketAssignmentNotifications,
   getTicketReplyNotifications,
+  getWebPushPublicKey,
   getTeamMembershipNotifications,
   getTicketTransferNotifications,
   getReceivedTeamInvites,
@@ -60,6 +61,7 @@ import {
   removeTeamMemberFromCompany,
   resetPasswordWithToken,
   requestTicketTransfer,
+  saveWebPushSubscription,
   logoutCurrentUser,
   searchCompanyPartnershipTargets,
   unlinkCompanyPartnership,
@@ -117,6 +119,13 @@ const dashboardPageComponents = {
 
 const AUTO_REFRESH_INTERVAL_MS = 5000
 const DEFAULT_DOCUMENT_TITLE = 'ChamAqui Helpdesk'
+
+function decodeBase64Url(value) {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/')
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')
+  const rawValue = window.atob(padded)
+  return Uint8Array.from(rawValue, (character) => character.charCodeAt(0))
+}
 
 
 function normalizeSector(sector) {
@@ -831,6 +840,49 @@ function App() {
       isCancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    if (!authUser?.email || typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+      return undefined
+    }
+
+    let isCancelled = false
+
+    async function enableWebPush() {
+      try {
+        const registration = await navigator.serviceWorker.register('/sw.js')
+        const { publicKey } = await getWebPushPublicKey()
+        if (isCancelled || !publicKey || !window.Notification) {
+          return
+        }
+
+        const permission = window.Notification.permission === 'default'
+          ? await window.Notification.requestPermission()
+          : window.Notification.permission
+        if (isCancelled || permission !== 'granted') {
+          return
+        }
+
+        const existingSubscription = await registration.pushManager.getSubscription()
+        const subscription = existingSubscription || await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: decodeBase64Url(publicKey),
+        })
+        if (!isCancelled) {
+          await saveWebPushSubscription(subscription)
+        }
+      } catch (error) {
+        // Web Push é opcional: falhas de permissão/configuração não impedem o uso do sistema.
+        console.warn('Não foi possível ativar as notificações push.', error)
+      }
+    }
+
+    enableWebPush()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [authUser?.email])
 
   useEffect(() => {
     if (typeof document === 'undefined') {

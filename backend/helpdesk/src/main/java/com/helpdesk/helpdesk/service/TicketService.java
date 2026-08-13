@@ -99,6 +99,7 @@ public class TicketService {
 	private final TenantAccessService tenantAccessService;
 	private final ScopedUserLookupService scopedUserLookupService;
 	private final AuditTrailService auditTrailService;
+	private final WebPushService webPushService;
 
 	public TicketService(
 		TicketRepository ticketRepository,
@@ -120,7 +121,8 @@ public class TicketService {
 		WhatsappConversationRepository whatsappConversationRepository,
 		TenantAccessService tenantAccessService,
 		ScopedUserLookupService scopedUserLookupService,
-		AuditTrailService auditTrailService
+		AuditTrailService auditTrailService,
+		WebPushService webPushService
 	) {
 		this.ticketRepository = ticketRepository;
 		this.userRepository = userRepository;
@@ -142,6 +144,7 @@ public class TicketService {
 		this.tenantAccessService = tenantAccessService;
 		this.scopedUserLookupService = scopedUserLookupService;
 		this.auditTrailService = auditTrailService;
+		this.webPushService = webPushService;
 	}
 
 	@Transactional(readOnly = true)
@@ -1144,22 +1147,42 @@ public class TicketService {
 			return;
 		}
 
-		if (!isRequesterSideAuthor(ticket, author)) {
-			return;
-		}
-
 		if ("CLOSED".equalsIgnoreCase(ticket.getStatus().getCode())) {
 			return;
 		}
 
-		if (ticket.getAssignedTo().getId().equals(author.getId())) {
+		if (isRequesterSideAuthor(ticket, author)) {
+			if (ticket.getAssignedTo().getId().equals(author.getId())) {
+				return;
+			}
+
+			createReplyNotificationForRecipient(ticket, message, ticket.getAssignedTo());
+			webPushService.notifyUser(
+				ticket.getAssignedTo(),
+				"Resposta recebida no chamado",
+				String.format("%s respondeu o chamado %s.", ticket.getRequester().getFullName(), ticket.getProtocol()),
+				ticketUrl(ticket)
+			);
+			User companyAdmin = resolveTicketCompanyAdmin(ticket);
+			if (companyAdmin != null && !companyAdmin.getId().equals(ticket.getAssignedTo().getId())) {
+				createReplyNotificationForRecipient(ticket, message, companyAdmin);
+				webPushService.notifyUser(
+					companyAdmin,
+					"Resposta recebida no chamado",
+					String.format("%s respondeu o chamado %s.", ticket.getRequester().getFullName(), ticket.getProtocol()),
+					ticketUrl(ticket)
+				);
+			}
 			return;
 		}
 
-		createReplyNotificationForRecipient(ticket, message, ticket.getAssignedTo());
-		User companyAdmin = resolveTicketCompanyAdmin(ticket);
-		if (companyAdmin != null && !companyAdmin.getId().equals(ticket.getAssignedTo().getId())) {
-			createReplyNotificationForRecipient(ticket, message, companyAdmin);
+		if (ticket.getRequester() != null && !ticket.getRequester().getId().equals(author.getId())) {
+			webPushService.notifyUser(
+				ticket.getRequester(),
+				"Nova resposta no seu chamado",
+				String.format("A equipe respondeu o chamado %s.", ticket.getProtocol()),
+				ticketUrl(ticket)
+			);
 		}
 	}
 
@@ -1172,6 +1195,12 @@ public class TicketService {
 		notification.setTicket(ticket);
 		notification.setRecipient(recipient);
 		ticketAssignmentNotificationRepository.save(notification);
+		webPushService.notifyUser(
+			recipient,
+			"Novo chamado aberto",
+			String.format("O chamado %s foi aberto para atendimento.", ticket.getProtocol()),
+			ticketUrl(ticket)
+		);
 	}
 
 	private void createReplyNotificationForRecipient(Ticket ticket, TicketMessage message, User recipient) {
@@ -1184,6 +1213,10 @@ public class TicketService {
 		notification.setMessage(message);
 		notification.setRecipient(recipient);
 		ticketReplyNotificationRepository.save(notification);
+	}
+
+	private String ticketUrl(Ticket ticket) {
+		return ticket == null || ticket.getId() == null ? "/tickets" : "/tickets/" + ticket.getId();
 	}
 
 	private User resolveTicketCompanyAdmin(Ticket ticket) {
