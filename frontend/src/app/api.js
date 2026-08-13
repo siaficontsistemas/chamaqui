@@ -362,6 +362,13 @@ export function updateTicketTitle(ticketId, payload) {
   })
 }
 
+export function updateTicketClassification(ticketId, payload) {
+  return apiRequest(`/api/v1/tickets/${ticketId}/classification`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
 function createMultipartRequest(path, payload) {
   const { files = [], ...data } = payload || {}
 

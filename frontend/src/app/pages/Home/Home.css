@@ -1977,6 +1977,16 @@
   grid-template-columns: 44px 1.05fr 1.85fr 1.55fr 0.95fr 0.95fr;
 }
 
+.ticket-list__head--with-classification,
+.ticket-list__row--with-classification {
+  grid-template-columns: 1.05fr 1.65fr 1.55fr 1.55fr 0.95fr 0.95fr;
+}
+
+.ticket-list__head--with-select.ticket-list__head--with-classification,
+.ticket-list__row--with-select.ticket-list__row--with-classification {
+  grid-template-columns: 44px 1.05fr 1.65fr 1.55fr 1.55fr 0.95fr 0.95fr;
+}
+
 .ticket-list__head {
   min-height: 52px;
   padding: 0 6px;
@@ -2435,6 +2445,16 @@
     border-radius: 18px;
     background: #f7f9fb;
     box-shadow: inset 0 0 0 1px rgba(36, 56, 74, 0.06);
+  }
+
+  /* Keep the ticket cards exactly in the original single-column mobile layout. */
+  .ticket-list__row--with-classification,
+  .ticket-list__row--with-select.ticket-list__row--with-classification {
+    grid-template-columns: 1fr;
+  }
+
+  .ticket-list__classification-cell {
+    display: none;
   }
 
   .ticket-list__select-cell {

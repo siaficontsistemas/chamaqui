@@ -24,7 +24,9 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/helpdesk
       SPRING_DATASOURCE_USERNAME: helpdesk
       SPRING_DATASOURCE_PASSWORD: helpdesk
-      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+      # O volume local pode ter sido criado por uma versão anterior do schema.
+      # Em Docker local, permite completar colunas/tabelas ausentes sem apagar dados.
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
       SPRING_MAIL_HOST: ${SPRING_MAIL_HOST}
       SPRING_MAIL_PORT: ${SPRING_MAIL_PORT}
       SPRING_MAIL_USERNAME: ${SPRING_MAIL_USERNAME}

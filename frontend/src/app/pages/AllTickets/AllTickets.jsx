@@ -37,6 +37,7 @@ function AllTickets({
   const [isDeletingTickets, setIsDeletingTickets] = useState(false)
   const normalizedSearchValue = searchValue.trim().toLowerCase()
   const canDeleteTickets = userRole === 'admin'
+  const canViewInternalClassification = userRole === 'admin' || userRole === 'employee'
   const formattedDate = useMemo(
     () =>
       new Intl.DateTimeFormat('pt-BR', {
@@ -151,7 +152,7 @@ function AllTickets({
       window.removeEventListener('focus', handleWindowFocus)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [currentUser?.email])
+  }, [currentUser?.email, userRole])
 
   useEffect(() => {
     setCurrentPage(1)
@@ -322,7 +323,7 @@ function AllTickets({
               <div className="ticket-list__table">
                 {paginatedTickets.length > 0 ? (
                   <>
-                    <div className={`ticket-list__head${canDeleteTickets ? ' ticket-list__head--with-select' : ''}`}>
+                    <div className={`ticket-list__head${canDeleteTickets ? ' ticket-list__head--with-select' : ''}${canViewInternalClassification ? ' ticket-list__head--with-classification' : ''}`}>
                       {canDeleteTickets ? (
                         <span className="ticket-list__select-cell">
                           <input
@@ -335,13 +336,14 @@ function AllTickets({
                       ) : null}
                       <span>Protocolo</span>
                       <span>Assunto</span>
+                      {canViewInternalClassification ? <span>Classificação</span> : null}
                       <span>Status</span>
                       <span>Data</span>
                       <span>Ação</span>
                     </div>
 
                     {paginatedTickets.map((ticket) => (
-                      <div className={`ticket-list__row${canDeleteTickets ? ' ticket-list__row--with-select' : ''}`} key={ticket.id}>
+                      <div className={`ticket-list__row${canDeleteTickets ? ' ticket-list__row--with-select' : ''}${canViewInternalClassification ? ' ticket-list__row--with-classification' : ''}`} key={ticket.id}>
                         {canDeleteTickets ? (
                           <span className="ticket-list__select-cell">
                             <input
@@ -354,6 +356,12 @@ function AllTickets({
                         ) : null}
                         <span>{ticket.protocol}</span>
                         <span title={ticket.title || ''}>{truncateTicketTitle(ticket.title)}</span>
+                        {canViewInternalClassification ? (
+                          <span className="ticket-list__classification-cell" title={ticket.internalTypeName || ''}>
+                            {ticket.internalTypeName || 'Não classificado'}
+                            {ticket.internalSystemAreaName ? ` · ${ticket.internalSystemAreaName}` : ''}
+                          </span>
+                        ) : null}
                         <span className="ticket-list__status-cell">
                           <strong
                             className={`ticket-list__status ${getStatusClass(ticket.statusCode)}`}

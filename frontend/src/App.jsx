@@ -64,6 +64,7 @@ import {
   searchCompanyPartnershipTargets,
   unlinkCompanyPartnership,
   updateTicketTitle as updateTicketTitleRequest,
+  updateTicketClassification as updateTicketClassificationRequest,
   updateProfile as updateProfileRequest,
   uploadCompanyLogo as uploadCompanyLogoRequest,
   updateTeamMemberSectors,
@@ -511,6 +512,7 @@ function TicketConversationRoute({
   onRefreshDashboardData,
   onRequestTicketTransfer,
   onUpdateTicketTitle,
+  onUpdateTicketClassification,
   selectedTicket,
   setSelectedTicket,
   userRole,
@@ -601,6 +603,7 @@ function TicketConversationRoute({
       onRefreshDashboardData={onRefreshDashboardData}
       onRequestTicketTransfer={onRequestTicketTransfer}
       onUpdateTicketTitle={onUpdateTicketTitle}
+      onUpdateTicketClassification={onUpdateTicketClassification}
       ticket={ticket}
       userRole={userRole}
     />
@@ -1102,6 +1105,22 @@ function App() {
     return updatedTicket
   }
 
+  async function handleUpdateTicketClassification(ticketId, typeCode, systemAreaCode) {
+    if (!ticketId || !currentUserEmail) {
+      return null
+    }
+
+    const updatedTicket = await updateTicketClassificationRequest(ticketId, {
+      typeCode: typeCode || null,
+      systemAreaCode: systemAreaCode || null,
+      authorEmail: currentUserEmail,
+    })
+
+    setSelectedTicket(updatedTicket)
+    await refreshDashboardData(currentUserEmail)
+    return updatedTicket
+  }
+
   async function handleSearchPartnershipCompanies(query) {
     if (!currentUserEmail) {
       return []
@@ -1394,23 +1413,54 @@ function App() {
     await refreshDashboardData(currentUserEmail)
   }
 
-  async function handleDeleteNotification(notificationOrId) {
-    if (!currentUserEmail) {
-      return
-    }
+	async function handleDeleteNotification(notificationOrId) {
+		if (!currentUserEmail) {
+			return
+		}
 
-    await deleteNotificationResource(notificationOrId)
-    await refreshDashboardData(currentUserEmail)
-  }
+		await deleteNotificationResource(notificationOrId)
+		removeDeletedNotificationFromState(notificationOrId)
+	}
+
+	function removeDeletedNotificationFromState(notificationOrId) {
+		const notification = typeof notificationOrId === 'object' ? notificationOrId : null
+		const notificationId = notification?.id || notificationOrId
+
+		if (!notificationId) {
+			return
+		}
+
+		if (notification?.type === 'app-feedback') {
+			setAppFeedbackNotifications((currentNotifications) =>
+				currentNotifications.filter((item) => item.id !== notificationId)
+			)
+			return
+		}
+
+		if (notification?.type === 'received') {
+			setReceivedInvites((currentInvites) =>
+				currentInvites.filter((invite) => invite.id !== notificationId)
+			)
+			return
+		}
+
+		if (notification?.type === 'sent') {
+			setSentInvites((currentInvites) =>
+				currentInvites.filter((invite) => invite.id !== notificationId)
+			)
+			return
+		}
+
+		setTicketNotifications((currentNotifications) =>
+			currentNotifications.filter((item) => item.id !== notificationId)
+		)
+	}
 
   async function deleteNotificationResource(notificationOrId) {
     if (typeof notificationOrId === 'object') {
-      if (notificationOrId.type === 'app-feedback') {
-        setAppFeedbackNotifications((currentNotifications) =>
-          currentNotifications.filter((notification) => notification.id !== notificationOrId.id)
-        )
-        return
-      }
+		if (notificationOrId.type === 'app-feedback') {
+			return
+		}
 
       if (notificationOrId.type === 'ticket-assignment') {
         await deleteTicketAssignmentNotification(notificationOrId.id, currentUserEmail)
@@ -1841,6 +1891,7 @@ function App() {
                 onRefreshDashboardData={refreshDashboardData}
                   onRequestTicketTransfer={handleRequestTicketTransfer}
                   onUpdateTicketTitle={handleUpdateTicketTitle}
+                  onUpdateTicketClassification={handleUpdateTicketClassification}
                   selectedTicket={selectedTicket}
                   setSelectedTicket={setSelectedTicket}
                   userRole={effectiveUserRole}

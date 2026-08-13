@@ -65,6 +65,12 @@ public class Ticket {
 	@JoinColumn(name = "priority_id", nullable = false)
 	private TicketPriority priority;
 
+	@Column(name = "internal_type", length = 40)
+	private String internalType;
+
+	@Column(name = "internal_system_area", length = 40)
+	private String internalSystemArea;
+
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false, length = 20)
 	private TicketChannel channel = TicketChannel.PORTAL;
@@ -204,6 +210,22 @@ public class Ticket {
 
 	public void setPriority(TicketPriority priority) {
 		this.priority = priority;
+	}
+
+	public String getInternalType() {
+		return internalType;
+	}
+
+	public void setInternalType(String internalType) {
+		this.internalType = internalType;
+	}
+
+	public String getInternalSystemArea() {
+		return internalSystemArea;
+	}
+
+	public void setInternalSystemArea(String internalSystemArea) {
+		this.internalSystemArea = internalSystemArea;
 	}
 
 	public TicketChannel getChannel() {
