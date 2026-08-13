@@ -259,9 +259,10 @@ public class NotificationService {
 
 	@Transactional
 	public void deleteTeamMembership(UUID notificationId, String email) {
-		TeamMembershipNotification notification = teamMembershipNotificationRepository.findDetailedById(notificationId)
+		User currentUser = loadUserByEmail(email);
+		TeamMembershipNotification notification = teamMembershipNotificationRepository
+			.findDetailedByIdAndRecipientEmail(notificationId, normalizeEmail(currentUser.getEmail()))
 			.orElseThrow(() -> new NotFoundException("Notificação de remoção não encontrada."));
-		ensureNotificationRecipient(notification.getRecipient(), loadUserByEmail(email));
 
 		notification.setHidden(true);
 		teamMembershipNotificationRepository.save(notification);

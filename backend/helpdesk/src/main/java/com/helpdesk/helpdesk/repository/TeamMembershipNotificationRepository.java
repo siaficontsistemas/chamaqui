@@ -25,4 +25,16 @@ public interface TeamMembershipNotificationRepository extends JpaRepository<Team
 
 	@EntityGraph(attributePaths = {"recipient", "removedBy", "removedBy.roles", "sector", "sector.createdBy"})
 	Optional<TeamMembershipNotification> findDetailedById(UUID id);
+
+	@Query("""
+		select notification
+		from TeamMembershipNotification notification
+		where notification.id = :id
+			and lower(notification.recipient.email) = lower(:email)
+		""")
+	@EntityGraph(attributePaths = {"recipient", "removedBy", "removedBy.roles", "sector", "sector.createdBy"})
+	Optional<TeamMembershipNotification> findDetailedByIdAndRecipientEmail(
+		@Param("id") UUID id,
+		@Param("email") String email
+	);
 }
