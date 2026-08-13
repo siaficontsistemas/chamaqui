@@ -622,6 +622,30 @@ export function getTicketAssignmentNotifications() {
   return apiRequest('/api/v1/notifications/ticket-assignments')
 }
 
+export function getWebPushPublicKey() {
+  return apiRequest('/api/v1/push/public-key')
+}
+
+export function saveWebPushSubscription(subscription) {
+  const subscriptionJson = subscription?.toJSON?.() || subscription || {}
+  return apiRequest('/api/v1/push/subscriptions', {
+    method: 'POST',
+    body: JSON.stringify({
+      endpoint: subscriptionJson.endpoint,
+      p256dh: subscriptionJson.keys?.p256dh,
+      auth: subscriptionJson.keys?.auth,
+      expirationTime: subscriptionJson.expirationTime ?? null,
+    }),
+  })
+}
+
+export function deleteWebPushSubscription(endpoint) {
+  return apiRequest('/api/v1/push/subscriptions', {
+    method: 'DELETE',
+    body: JSON.stringify({ endpoint, p256dh: 'unused', auth: 'unused' }),
+  })
+}
+
 export function deleteTicketAssignmentNotification(notificationId) {
   return apiRequest(`/api/v1/notifications/ticket-assignments/${notificationId}`, {
     method: 'DELETE',
