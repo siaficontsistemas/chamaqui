@@ -36,6 +36,7 @@ function MyData({
   companyPartnerships = [],
   teamMembers = [],
   onRemoveMemberFromCompany,
+  showCompanySettings = false,
 }) {
   const [deleteTarget, setDeleteTarget] = useState('')
   const [isDeletingAction, setIsDeletingAction] = useState(false)
@@ -83,7 +84,6 @@ function MyData({
   const isAdmin = currentUser?.roles?.includes('admin')
   const canManageWhatsapp = isAdmin && currentUser?.companyType === 'RESPONDER'
   const canManagePartnerships = isAdmin
-  const canManageClientCompanies = isAdmin && currentUser?.companyType === 'RESPONDER'
   const canManageCompanyLogo = isAdmin && currentUser?.companyType === 'RESPONDER'
   const partnershipSectionTitle =
     currentUser?.companyType === 'REQUESTER' ? 'Solicitar parceria' : 'Adicionar Empresa Cliente'
@@ -800,15 +800,6 @@ function MyData({
                       Excluir empresa
                     </button>
                   ) : null}
-                  {canManageClientCompanies ? (
-                    <button
-                      className="my-data__edit-button my-data__edit-button--secondary"
-                      type="button"
-                      onClick={() => onNavigatePage('clientCompanyRegister')}
-                    >
-                      Cadastrar empresa cliente
-                    </button>
-                  ) : null}
                   {isChangingPassword ? (
                     <button
                       className="my-data__edit-button my-data__edit-button--secondary"
@@ -943,7 +934,7 @@ function MyData({
                 </section>
               ) : null}
 
-              {canManageCompanyLogo ? (
+              {showCompanySettings && canManageCompanyLogo ? (
                 <section className="my-data__company-logo-card" aria-labelledby="company-logo-title">
                   <div className="my-data__company-logo-header">
                     <div>
@@ -1016,7 +1007,7 @@ function MyData({
                 </section>
               ) : null}
 
-              {canManageWhatsapp ? (
+              {showCompanySettings && canManageWhatsapp ? (
                 <section className="my-data__whatsapp-card" aria-labelledby="whatsapp-company-title">
                   <div className="my-data__whatsapp-header">
                     <div>
@@ -1080,7 +1071,7 @@ function MyData({
                 </section>
               ) : null}
 
-              {canManagePartnerships ? (
+              {showCompanySettings && canManagePartnerships ? (
                 <section className="my-data__partnership-card" aria-labelledby="company-partnership-title">
                   <div className="my-data__partnership-header">
                     <div>
