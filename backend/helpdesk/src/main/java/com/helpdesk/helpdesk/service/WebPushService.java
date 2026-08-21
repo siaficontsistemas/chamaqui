@@ -1,6 +1,7 @@
 package com.helpdesk.helpdesk.service;
 
 import java.security.GeneralSecurityException;
+import java.security.Security;
 import java.util.List;
 
 import org.apache.http.HttpResponse;
@@ -19,12 +20,19 @@ import com.helpdesk.helpdesk.repository.WebPushSubscriptionRepository;
 import nl.martijndwars.webpush.Notification;
 import nl.martijndwars.webpush.PushService;
 import nl.martijndwars.webpush.Subscription;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
 
 @Service
 public class WebPushService {
 
 	private static final Logger logger = LoggerFactory.getLogger(WebPushService.class);
 	private static final int MAX_ENDPOINT_LENGTH = 4000;
+
+	static {
+		if (Security.getProvider(BouncyCastleProvider.PROVIDER_NAME) == null) {
+			Security.addProvider(new BouncyCastleProvider());
+		}
+	}
 
 	private final WebPushSubscriptionRepository subscriptionRepository;
 	private final ScopedUserLookupService scopedUserLookupService;
