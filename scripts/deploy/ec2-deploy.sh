@@ -9,6 +9,14 @@ BAILEYS_APP_DIR="${BAILEYS_APP_DIR:-/home/ec2-user/baileys-service}"
 PM2_BACKEND_APP_NAME="${PM2_BACKEND_APP_NAME:-chamaqui-backend}"
 PM2_BAILEYS_APP_NAME="${PM2_BAILEYS_APP_NAME:-chamaqui-baileys}"
 RESTART_BAILEYS="${RESTART_BAILEYS:-true}"
+BACKEND_ENV_FILE="${BACKEND_ENV_FILE:-/home/ec2-user/chamaqui-backend.env}"
+
+if [ -f "${BACKEND_ENV_FILE}" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "${BACKEND_ENV_FILE}"
+  set +a
+fi
 
 TIMESTAMP="$(date +%Y%m%d%H%M%S)"
 
