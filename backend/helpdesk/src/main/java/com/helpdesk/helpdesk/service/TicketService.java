@@ -1160,7 +1160,12 @@ public class TicketService {
 			webPushService.notifyUser(
 				ticket.getAssignedTo(),
 				"Resposta recebida no chamado",
-				String.format("%s respondeu o chamado %s.", ticket.getRequester().getFullName(), ticket.getProtocol()),
+				String.format(
+					"%s respondeu o chamado %s: %s",
+					ticket.getRequester().getFullName(),
+					ticket.getProtocol(),
+					notificationMessagePreview(message.getMessage())
+				),
 				ticketUrl(ticket)
 			);
 			User companyAdmin = resolveTicketCompanyAdmin(ticket);
@@ -1169,7 +1174,12 @@ public class TicketService {
 				webPushService.notifyUser(
 					companyAdmin,
 					"Resposta recebida no chamado",
-					String.format("%s respondeu o chamado %s.", ticket.getRequester().getFullName(), ticket.getProtocol()),
+					String.format(
+						"%s respondeu o chamado %s: %s",
+						ticket.getRequester().getFullName(),
+						ticket.getProtocol(),
+						notificationMessagePreview(message.getMessage())
+					),
 					ticketUrl(ticket)
 				);
 			}
@@ -1180,10 +1190,25 @@ public class TicketService {
 			webPushService.notifyUser(
 				ticket.getRequester(),
 				"Nova resposta no seu chamado",
-				String.format("A equipe respondeu o chamado %s.", ticket.getProtocol()),
+				String.format(
+					"A equipe respondeu o chamado %s: %s",
+					ticket.getProtocol(),
+					notificationMessagePreview(message.getMessage())
+				),
 				ticketUrl(ticket)
 			);
 		}
+	}
+
+	private String notificationMessagePreview(String message) {
+		String normalized = message == null ? "" : message.replaceAll("\\s+", " ").trim();
+		if (normalized.isBlank()) {
+			return "Nova mensagem disponível.";
+		}
+		if (normalized.length() <= 140) {
+			return normalized;
+		}
+		return normalized.substring(0, 139).trim() + "…";
 	}
 
 	private void createAssignmentNotificationForRecipient(Ticket ticket, User recipient) {

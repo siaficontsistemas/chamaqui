@@ -1,4 +1,14 @@
 const DEFAULT_NOTIFICATION_URL = '/tickets'
+const DEFAULT_NOTIFICATION_ICON = '/favicon.svg'
+const MAX_NOTIFICATION_BODY_LENGTH = 180
+
+function truncateNotificationBody(value) {
+  const normalized = String(value || '').replace(/\s+/g, ' ').trim()
+  if (normalized.length <= MAX_NOTIFICATION_BODY_LENGTH) {
+    return normalized
+  }
+  return `${normalized.slice(0, MAX_NOTIFICATION_BODY_LENGTH - 1).trimEnd()}…`
+}
 
 self.addEventListener('push', (event) => {
   let payload = {}
@@ -11,10 +21,12 @@ self.addEventListener('push', (event) => {
 
   const title = payload.title || 'ChamAqui Helpdesk'
   const options = {
-    body: payload.body || 'Você tem uma nova atualização.',
+    body: truncateNotificationBody(payload.body || 'Você tem uma nova atualização.'),
     data: { url: payload.url || DEFAULT_NOTIFICATION_URL },
     tag: payload.tag || `chamaqui-${Date.now()}`,
     renotify: true,
+    icon: payload.icon || DEFAULT_NOTIFICATION_ICON,
+    badge: payload.badge || DEFAULT_NOTIFICATION_ICON,
   }
 
   event.waitUntil(self.registration.showNotification(title, options))
