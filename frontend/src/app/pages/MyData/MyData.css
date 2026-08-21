@@ -85,6 +85,12 @@
   color: #1b2b3d;
 }
 
+.company-management-panel {
+  display: grid;
+  gap: 1.25rem;
+  margin-top: 1.5rem;
+}
+
 .my-data__whatsapp-card {
   margin-top: 2rem;
   border: 1px solid rgba(19, 34, 53, 0.08);

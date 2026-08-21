@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import ConfirmActionModal from '../../components/confirm-action-modal/ConfirmActionModal'
+import CompanyManagementPanel from '../../components/company-management/CompanyManagementPanel'
 import Header from '../../components/header/Header'
 import Sidebar from '../../components/sidebar/Sidebar'
 import { getRoleLabel, getTeamContent, getTeamMembers } from '../../dashboardData'
@@ -11,8 +12,14 @@ function Team({
   isTeamDataLoading,
   navigationGroups,
   onAcceptCompanyInvite,
+  onAcceptCompanyPartnership,
+  onCreateCompanyPartnership,
+  onDeclineCompanyPartnership,
+  onDeleteCompanyLogo,
+  onCreateClientCompany,
   onInviteMember,
   onInviteCompanyMember,
+  onLookupClientCompany,
   onNavigatePage,
   onPublishNotification,
   onAcceptInvite,
@@ -23,6 +30,9 @@ function Team({
   onDeclineInvite,
   onDeclineTicketTransfer,
   onRemoveMemberFromCompany,
+  onSearchPartnershipCompanies,
+  onUploadCompanyLogo,
+  onUnlinkCompanyPartnership,
   onUpdateMemberSectors,
   onViewNotifications,
   receivedInvites = [],
@@ -31,6 +41,7 @@ function Team({
   ticketNotifications = [],
   teamDataError = '',
   teamMembers = [],
+  companyPartnerships = [],
   userRole = 'user',
 }) {
   const roleLabel = getRoleLabel(userRole)
@@ -1276,6 +1287,22 @@ function Team({
                   )}
                 </div>
               </div>
+
+              <CompanyManagementPanel
+                currentUser={currentUser}
+                companyPartnerships={companyPartnerships}
+                onAcceptCompanyPartnership={onAcceptCompanyPartnership}
+                onCreateCompanyPartnership={onCreateCompanyPartnership}
+                onDeclineCompanyPartnership={onDeclineCompanyPartnership}
+                onDeleteCompanyLogo={onDeleteCompanyLogo}
+                onCreateClientCompany={onCreateClientCompany}
+                onLookupClientCompany={onLookupClientCompany}
+                onRemoveMemberFromCompany={onRemoveMemberFromCompany}
+                onSearchPartnershipCompanies={onSearchPartnershipCompanies}
+                onUploadCompanyLogo={onUploadCompanyLogo}
+                onUnlinkCompanyPartnership={onUnlinkCompanyPartnership}
+                teamMembers={teamMembers}
+              />
             </div>
           </div>
         </section>
