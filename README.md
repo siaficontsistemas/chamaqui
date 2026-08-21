@@ -196,6 +196,9 @@ Principais variáveis suportadas:
 - `APP_WHATSAPP_WEBHOOK_URL`
 - `APP_STORAGE_ATTACHMENTS_DIR`
 - `APP_STORAGE_ATTACHMENTS_LEGACY_DIRS`
+- `APP_STORAGE_ATTACHMENTS_S3_BUCKET`
+- `APP_STORAGE_ATTACHMENTS_S3_REGION`
+- `APP_STORAGE_ATTACHMENTS_S3_PREFIX`
 
 Configuração recomendada para emails da plataforma:
 
@@ -219,17 +222,22 @@ Observação importante:
 
 ## Armazenamento de Anexos
 
-Os anexos dos chamados são armazenados em disco, fora do banco de dados.
+Os novos anexos dos chamados são armazenados no S3, fora do banco de dados. Os anexos antigos permanecem no disco local e continuam disponíveis pelo fallback de leitura.
 
 Configuração atual:
 
-- diretório principal padrão: `${user.home}/.helpdesk/uploads/ticket-attachments`
+- bucket S3: `APP_STORAGE_ATTACHMENTS_S3_BUCKET`
+- prefixo padrão no bucket: `ticket-attachments/`
+- diretório principal legado: `${user.home}/.helpdesk/uploads/ticket-attachments`
 - diretórios legados de leitura: `${user.dir}/uploads/ticket-attachments`
 
 Para ambientes de produção, recomenda-se definir explicitamente:
 
 - `APP_STORAGE_ATTACHMENTS_DIR`
 - `APP_STORAGE_ATTACHMENTS_LEGACY_DIRS`
+- `APP_STORAGE_ATTACHMENTS_S3_BUCKET`
+- `APP_STORAGE_ATTACHMENTS_S3_REGION` (use a mesma região da EC2, por exemplo `us-east-1`)
+- `APP_STORAGE_ATTACHMENTS_S3_PREFIX`
 
 Isso evita perda de referência a arquivos após mudança de pasta de execução, rebuild ou troca de ambiente.
 
@@ -360,6 +368,7 @@ Cadastre estes `Repository variables`:
 - `PM2_BACKEND_APP_NAME`: nome do processo backend no `PM2`, default `chamaqui-backend`
 - `PM2_BAILEYS_APP_NAME`: nome do processo do WhatsApp no `PM2`, default `chamaqui-baileys`
 - `RESTART_BAILEYS`: `true` ou `false`, default `true`
+- `BACKEND_ENV_FILE`: arquivo de variáveis carregado antes do restart do backend, default `/home/ec2-user/chamaqui-backend.env`
 
 ### Fluxo de uso
 
