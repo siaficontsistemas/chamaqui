@@ -5,6 +5,7 @@ import java.security.Security;
 import java.util.List;
 
 import org.apache.http.HttpResponse;
+import org.apache.http.util.EntityUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.jose4j.lang.JoseException;
@@ -123,7 +124,13 @@ public class WebPushService {
 				HttpResponse response = pushService.send(new Notification(subscription, payload));
 				int statusCode = response.getStatusLine().getStatusCode();
 				if (statusCode >= 400) {
-					logger.warn("O provedor de Web Push recusou a notificação: status={}, endpoint={}", statusCode, target.endpoint());
+					String responseBody = response.getEntity() == null ? "" : EntityUtils.toString(response.getEntity());
+					logger.warn(
+						"O provedor de Web Push recusou a notificação: status={}, endpoint={}, response={}",
+						statusCode,
+						target.endpoint(),
+						responseBody
+					);
 				}
 			} catch (GeneralSecurityException | JoseException | RuntimeException | java.io.IOException | java.util.concurrent.ExecutionException | InterruptedException exception) {
 				if (exception instanceof InterruptedException) {
