@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Header from '../../components/header/Header'
 import Sidebar from '../../components/sidebar/Sidebar'
 import { dashboardPages } from '../../dashboardData'
-import { ChevronDownIcon, PlusCircleIcon } from '../../dashboardIcons'
+import { ChevronDownIcon, MicIcon, PlusCircleIcon } from '../../dashboardIcons'
+import { buildAudioFile, getSupportedAudioMimeType } from '../../utils/audioRecorder'
 import '../Home/Home.css'
 
 function normalizeText(value) {
@@ -73,7 +74,11 @@ function NewTicket({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isCompanyOptionsOpen, setIsCompanyOptionsOpen] = useState(false)
   const [attachedFiles, setAttachedFiles] = useState([])
+  const [isRecordingAudio, setIsRecordingAudio] = useState(false)
   const fileInputRef = useRef(null)
+  const audioRecorderRef = useRef(null)
+  const audioStreamRef = useRef(null)
+  const audioChunksRef = useRef([])
   const availableSectors = useMemo(
     () => availableTicketSectors.filter((sector) => sector.active !== false),
     [availableTicketSectors]
@@ -126,6 +131,11 @@ function NewTicket({
       company.document.includes(formValues.companyName.replace(/\D/g, ''))
     )
   }, [availableCompanies, formValues.companyName])
+
+  useEffect(() => () => {
+    audioRecorderRef.current?.stop()
+    audioStreamRef.current?.getTracks().forEach((track) => track.stop())
+  }, [])
 
   useEffect(() => {
     if (availableCompanies.length !== 1) {
@@ -231,6 +241,49 @@ function NewTicket({
     )
   }
 
+  async function handleToggleAudioRecording() {
+    if (isRecordingAudio) {
+      audioRecorderRef.current?.stop()
+      return
+    }
+
+    const mimeType = getSupportedAudioMimeType()
+    if (!mimeType || !navigator.mediaDevices?.getUserMedia) {
+      setFeedbackMessage('Seu navegador não oferece suporte à gravação de áudio.')
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const recorder = new MediaRecorder(stream, { mimeType })
+      audioStreamRef.current = stream
+      audioRecorderRef.current = recorder
+      audioChunksRef.current = []
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data)
+      }
+      recorder.onstop = () => {
+        const blob = new Blob(audioChunksRef.current, { type: mimeType })
+        if (blob.size > 0) {
+          setAttachedFiles((currentFiles) => mergeUniqueFiles(currentFiles, [buildAudioFile(blob, mimeType)]))
+        }
+        stream.getTracks().forEach((track) => track.stop())
+        audioStreamRef.current = null
+        audioRecorderRef.current = null
+        audioChunksRef.current = []
+        setIsRecordingAudio(false)
+      }
+      recorder.start()
+      setFeedbackMessage('')
+      setIsRecordingAudio(true)
+    } catch {
+      audioStreamRef.current?.getTracks().forEach((track) => track.stop())
+      audioStreamRef.current = null
+      setFeedbackMessage('Não foi possível acessar o microfone. Verifique a permissão do navegador.')
+    }
+  }
+
   async function handleSubmit(event) {
     event.preventDefault()
 
@@ -249,7 +302,7 @@ function NewTicket({
       return
     }
 
-    if (formValues.description.trim().length < 10) {
+    if (formValues.description.trim().length < 10 && attachedFiles.length === 0) {
       setFeedbackMessage('Escreva a primeira mensagem do chamado com pelo menos 10 caracteres.')
       return
     }
@@ -522,15 +575,32 @@ function NewTicket({
                   className="ticket-form__attachment"
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
+                  disabled={isSubmitting || isRecordingAudio}
                 >
                   <PlusCircleIcon />
                   <span>{attachedFiles.length > 0 ? `Anexar Arquivos (${attachedFiles.length})` : 'Anexar Arquivos'}</span>
                 </button>
 
                 <button
+                  className={`ticket-form__attachment${isRecordingAudio ? ' ticket-form__attachment--recording' : ''}`}
+                  type="button"
+                  onClick={handleToggleAudioRecording}
+                  disabled={isSubmitting}
+                  aria-label={isRecordingAudio ? 'Parar gravação de áudio' : 'Gravar áudio'}
+                >
+                  <MicIcon />
+                  <span>{isRecordingAudio ? 'Parar gravação' : 'Gravar Áudio'}</span>
+                </button>
+
+                <button
                   className="ticket-form__submit"
                   type="submit"
-                  disabled={isSubmitting || availableCompanies.length === 0 || !currentUser?.email}
+                  disabled={
+                    isSubmitting ||
+                    isRecordingAudio ||
+                    availableCompanies.length === 0 ||
+                    !currentUser?.email
+                  }
                 >
                   {isSubmitting ? 'Criando...' : 'Criar Chamado'}
                 </button>

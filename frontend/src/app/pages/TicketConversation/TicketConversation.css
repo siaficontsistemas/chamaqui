@@ -233,7 +233,7 @@
 .ticket-message__meta {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 12px;
   flex-wrap: wrap;
   min-width: 0;
@@ -278,9 +278,203 @@
   white-space: pre-wrap;
 }
 
+.ticket-message__reply-preview {
+  display: grid;
+  gap: 3px;
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-left: 3px solid #eb9640;
+  border-radius: 6px;
+  background: rgba(235, 150, 64, 0.1);
+  color: #526474;
+  font-size: 0.86rem;
+}
+
+.ticket-message__reply-preview strong {
+  color: #203449;
+}
+
+.ticket-message__reply-preview span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ticket-message__reply-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 5px;
+  padding: 2px 4px;
+  border: 0;
+  background: transparent;
+  color: #607586;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.ticket-message__reply-button svg {
+  width: 13px;
+  height: 13px;
+}
+
+.ticket-message__reply-button:hover,
+.ticket-message__reply-button:focus-visible {
+  color: #203449;
+  text-decoration: underline;
+  outline: none;
+}
+
 .ticket-message__attachments {
   display: grid;
   gap: 10px;
+}
+
+.ticket-message__image-button {
+  width: fit-content;
+  max-width: min(100%, 420px);
+  padding: 0;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  cursor: zoom-in;
+  overflow: hidden;
+}
+
+.ticket-message__image {
+  display: block;
+  max-width: 100%;
+  max-height: 360px;
+  border-radius: 16px;
+  object-fit: cover;
+}
+
+.ticket-message__pdf-button {
+  width: min(100%, 420px);
+  display: grid;
+  gap: 5px;
+  padding: 14px 16px;
+  border: 0;
+  border-radius: 16px;
+  background: rgba(32, 52, 73, 0.08);
+  color: #203449;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ticket-message__pdf-button span {
+  color: #647584;
+  font-size: 0.84rem;
+}
+
+.ticket-image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  background: rgba(10, 18, 26, 0.86);
+  cursor: zoom-out;
+}
+
+.ticket-image-lightbox__image {
+  max-width: min(94vw, 1400px);
+  max-height: 92vh;
+  object-fit: contain;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  cursor: default;
+  transition: transform 0.16s ease;
+  transform-origin: center;
+  touch-action: none;
+}
+
+.ticket-image-lightbox__viewport {
+  width: min(94vw, 1400px);
+  height: 92vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+.ticket-image-lightbox__viewport.is-zoomed {
+  overflow: auto;
+}
+
+.ticket-image-lightbox__controls {
+  position: absolute;
+  right: 78px;
+  top: 22px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(8px);
+}
+
+.ticket-image-lightbox__controls button {
+  min-width: 32px;
+  height: 28px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.86);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.ticket-image-lightbox__controls button:hover,
+.ticket-image-lightbox__controls button:focus-visible {
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+  outline: none;
+}
+
+.ticket-image-lightbox__close {
+  position: absolute;
+  top: 18px;
+  right: 24px;
+  z-index: 4;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+  font-size: 2rem;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.ticket-pdf-lightbox__content {
+  position: relative;
+  width: min(94vw, 1200px);
+  height: 92vh;
+  padding-top: 58px;
+}
+
+.ticket-pdf-lightbox__controls {
+  top: 14px;
+  right: 58px;
+}
+
+.ticket-pdf-lightbox__frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 10px;
+  background: #ffffff;
 }
 
 .ticket-message__attachment {
@@ -312,7 +506,7 @@
 
 .ticket-chat__composer {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
   gap: 14px;
   align-items: end;
   min-width: 0;
@@ -341,6 +535,44 @@
   grid-column: 1 / -1;
   display: grid;
   gap: 10px;
+}
+
+.ticket-chat__replying-to {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-left: 3px solid #eb9640;
+  border-radius: 10px;
+  background: #f2f5f7;
+  color: #203449;
+}
+
+.ticket-chat__replying-to > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ticket-chat__replying-to span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #607586;
+  font-size: 0.86rem;
+}
+
+.ticket-chat__replying-to button {
+  min-width: 30px;
+  width: 30px;
+  min-height: 30px;
+  height: 30px;
+  padding: 0;
+  background: transparent;
+  color: #607586;
+  font-size: 1.4rem;
 }
 
 .ticket-chat__pending-attachment {
@@ -403,9 +635,27 @@
   height: 34px;
 }
 
+.ticket-chat__composer .ticket-chat__attach--recording {
+  color: #c73a36;
+}
+
 .ticket-chat__composer button:disabled {
   opacity: 0.7;
   cursor: not-allowed;
+}
+
+.ticket-chat__composer .ticket-chat__replying-to button {
+  min-width: 30px;
+  width: 30px;
+  min-height: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #607586;
+  display: grid;
+  place-items: center;
+  line-height: 1;
 }
 
 .ticket-chat__sidebar {

@@ -1,9 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { addTicketMessage, getTicketAttachmentDownloadUrl, getTicketMessages } from '../../api'
+import {
+  addTicketMessage,
+  getPublicTicketAttachmentApiUrl,
+  getTicketAttachmentDownloadUrl,
+  getTicketMessages,
+} from '../../api'
 import ConfirmActionModal from '../../components/confirm-action-modal/ConfirmActionModal'
 import Header from '../../components/header/Header'
 import Sidebar from '../../components/sidebar/Sidebar'
-import { PlusCircleIcon } from '../../dashboardIcons'
+import { MicIcon, PlusCircleIcon, ReplyIcon } from '../../dashboardIcons'
+import { buildAudioFile, getSupportedAudioMimeType } from '../../utils/audioRecorder'
 import './TicketConversation.css'
 
 function PencilIcon() {
@@ -67,6 +73,7 @@ function TicketConversation({
 }) {
   const [draftMessage, setDraftMessage] = useState('')
   const [attachedFiles, setAttachedFiles] = useState([])
+  const [isRecordingAudio, setIsRecordingAudio] = useState(false)
   const [messages, setMessages] = useState([])
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
   const [isSendingMessage, setIsSendingMessage] = useState(false)
@@ -85,9 +92,30 @@ function TicketConversation({
   const [isTransferConfirmationOpen, setIsTransferConfirmationOpen] = useState(false)
   const [isConfirmingTransfer, setIsConfirmingTransfer] = useState(false)
   const [isCloseConfirmationOpen, setIsCloseConfirmationOpen] = useState(false)
+  const [selectedImage, setSelectedImage] = useState(null)
+  const [selectedPdf, setSelectedPdf] = useState(null)
+  const [replyingToMessage, setReplyingToMessage] = useState(null)
+  const [imageZoom, setImageZoom] = useState(1)
+  const [imagePan, setImagePan] = useState({ x: 0, y: 0 })
+  const imageViewportRef = useRef(null)
   const fileInputRef = useRef(null)
+  const audioRecorderRef = useRef(null)
+  const audioStreamRef = useRef(null)
+  const audioChunksRef = useRef([])
   const titleInputRef = useRef(null)
   const composerRef = useRef(null)
+  const messageInputRef = useRef(null)
+
+  useEffect(() => () => {
+    audioRecorderRef.current?.stop()
+    audioStreamRef.current?.getTracks().forEach((track) => track.stop())
+  }, [])
+
+  useEffect(() => {
+    setImageZoom(1)
+    setImagePan({ x: 0, y: 0 })
+    imageViewportRef.current?.scrollTo({ left: 0, top: 0 })
+  }, [selectedImage?.url])
   const initialScrollTicketIdRef = useRef(null)
   const initialMessagesLoadedTicketIdRef = useRef(null)
   const dateFormatter = useMemo(
@@ -302,10 +330,14 @@ function TicketConversation({
         message.authorEmail?.toLowerCase() === ticket.requesterEmail?.toLowerCase() ? 'requester' : 'agent',
       createdAt: message.createdAt,
       text: message.message,
-      attachments: Array.isArray(message.attachments)
+      replyToMessageId: message.replyToMessageId || null,
+      replyToAuthorName: message.replyToAuthorName || '',
+      replyToMessage: message.replyToMessage || '',
+        attachments: Array.isArray(message.attachments)
         ? message.attachments.map((attachment) => ({
             ...attachment,
             downloadUrl: getTicketAttachmentDownloadUrl(ticket.id, attachment.id),
+            publicUrl: getPublicTicketAttachmentApiUrl(ticket.id, attachment.id),
           }))
         : [],
     }))
@@ -437,6 +469,70 @@ function TicketConversation({
     return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`
   }
 
+  function isAudioAttachment(attachment) {
+    return attachment.contentType?.toLowerCase().startsWith('audio/')
+  }
+
+  function isImageAttachment(attachment) {
+    return attachment.contentType?.toLowerCase().startsWith('image/')
+  }
+
+  function isPdfAttachment(attachment) {
+    return attachment.contentType?.toLowerCase() === 'application/pdf'
+  }
+
+  function hasVisibleMessageText(message) {
+    return message.text && message.text !== 'Anexo enviado.'
+  }
+
+  function handleReplyToMessage(message) {
+    setReplyingToMessage(message)
+    window.requestAnimationFrame(() => {
+      composerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      messageInputRef.current?.focus()
+    })
+  }
+
+  function handleImageZoom(event) {
+    event.preventDefault()
+    const viewport = event.currentTarget.getBoundingClientRect()
+    const cursorOffsetX = event.clientX - viewport.left - viewport.width / 2
+    const cursorOffsetY = event.clientY - viewport.top - viewport.height / 2
+    const zoomDirection = event.deltaY < 0 ? 0.2 : -0.2
+
+    setImageZoom((currentZoom) => {
+      const nextZoom = Math.min(3, Math.max(1, currentZoom + zoomDirection))
+      if (nextZoom !== currentZoom) {
+        if (nextZoom === 1) {
+          setImagePan({ x: 0, y: 0 })
+          imageViewportRef.current?.scrollTo({ left: 0, top: 0 })
+        } else {
+          setImagePan((currentPan) => ({
+            x: currentPan.x + cursorOffsetX * (currentZoom - nextZoom),
+            y: currentPan.y + cursorOffsetY * (currentZoom - nextZoom),
+          }))
+        }
+      }
+      return nextZoom
+    })
+  }
+
+  async function handleDownloadFile(file) {
+    if (!file?.url) return
+
+    const response = await fetch(selectedImage.url)
+    if (!response.ok) return
+
+    const blobUrl = window.URL.createObjectURL(await response.blob())
+    const link = document.createElement('a')
+    link.href = blobUrl
+    link.download = file.name || 'arquivo'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(blobUrl)
+  }
+
   function handleFileSelection(event) {
     const nextFiles = Array.from(event.target.files || [])
 
@@ -473,6 +569,49 @@ function TicketConversation({
     )
   }
 
+  async function handleToggleAudioRecording() {
+    if (isRecordingAudio) {
+      audioRecorderRef.current?.stop()
+      return
+    }
+
+    const mimeType = getSupportedAudioMimeType()
+    if (!mimeType || !navigator.mediaDevices?.getUserMedia) {
+      setErrorMessage('Seu navegador não oferece suporte à gravação de áudio.')
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const recorder = new MediaRecorder(stream, { mimeType })
+      audioStreamRef.current = stream
+      audioRecorderRef.current = recorder
+      audioChunksRef.current = []
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data)
+      }
+      recorder.onstop = () => {
+        const blob = new Blob(audioChunksRef.current, { type: mimeType })
+        if (blob.size > 0) {
+          setAttachedFiles((currentFiles) => mergeUniqueFiles(currentFiles, [buildAudioFile(blob, mimeType)]))
+        }
+        stream.getTracks().forEach((track) => track.stop())
+        audioStreamRef.current = null
+        audioRecorderRef.current = null
+        audioChunksRef.current = []
+        setIsRecordingAudio(false)
+      }
+      recorder.start()
+      setErrorMessage('')
+      setIsRecordingAudio(true)
+    } catch {
+      audioStreamRef.current?.getTracks().forEach((track) => track.stop())
+      audioStreamRef.current = null
+      setErrorMessage('Não foi possível acessar o microfone. Verifique a permissão do navegador.')
+    }
+  }
+
   async function handleSendMessage(event) {
     event.preventDefault()
 
@@ -490,11 +629,13 @@ function TicketConversation({
         authorEmail: currentUser.email,
         files: attachedFiles,
         message: nextMessage,
+        replyToMessageId: replyingToMessage?.id || undefined,
       })
 
       setMessages((currentMessages) => [...currentMessages, savedMessage])
       setDraftMessage('')
       setAttachedFiles([])
+      setReplyingToMessage(null)
       await onRefreshDashboardData?.(currentUser.email)
       if (isWhatsappTicket) {
         await loadMessages(true)
@@ -738,6 +879,18 @@ function TicketConversation({
                         <div className="ticket-message__meta">
                           <strong>{message.authorName}</strong>
                           <span>{formatDateTime(message.createdAt)}</span>
+                          {message.kind !== 'system' ? (
+                            <button
+                              className="ticket-message__reply-button"
+                              type="button"
+                              onClick={() => handleReplyToMessage(message)}
+                              aria-label={`Responder a ${message.authorName}`}
+                              title="Responder"
+                            >
+                              <ReplyIcon />
+                              <span>Responder</span>
+                            </button>
+                          ) : null}
                         </div>
                         {message.authorEmail ? (
                           <span className="ticket-message__email">{message.authorEmail}</span>
@@ -745,20 +898,67 @@ function TicketConversation({
                         {message.authorRole ? (
                           <span className="ticket-message__role">{message.authorRole}</span>
                         ) : null}
-                        <p>{message.text}</p>
+                        {message.replyToMessageId ? (
+                          <div className="ticket-message__reply-preview">
+                            <strong>{message.replyToAuthorName || 'Mensagem anterior'}</strong>
+                            <span>
+                              {message.replyToMessage === 'Anexo enviado.'
+                                ? 'Mídia anexada'
+                                : message.replyToMessage}
+                            </span>
+                          </div>
+                        ) : null}
+                        {hasVisibleMessageText(message) ? <p>{message.text}</p> : null}
                         {message.attachments.length > 0 ? (
                           <div className="ticket-message__attachments">
                             {message.attachments.map((attachment) => (
-                              <a
-                                className="ticket-message__attachment"
-                                href={attachment.downloadUrl}
-                                key={attachment.id}
-                                rel="noreferrer"
-                                target="_blank"
-                              >
-                                <strong>{attachment.originalFileName}</strong>
-                                <span>{formatFileSize(attachment.sizeBytes)}</span>
-                              </a>
+                              isImageAttachment(attachment) ? (
+                                <button
+                                  className="ticket-message__image-button"
+                                  type="button"
+                                  key={attachment.id}
+                                  onClick={() => setSelectedImage({
+                                    name: attachment.originalFileName,
+                                    url: attachment.publicUrl,
+                                  })}
+                                  title="Ampliar imagem"
+                                >
+                                  <img
+                                    alt={attachment.originalFileName}
+                                    className="ticket-message__image"
+                                    src={attachment.publicUrl}
+                                  />
+                                </button>
+                              ) : isPdfAttachment(attachment) ? (
+                                <button
+                                  className="ticket-message__pdf-button"
+                                  type="button"
+                                  key={attachment.id}
+                                  onClick={() => setSelectedPdf({
+                                    name: attachment.originalFileName,
+                                    url: attachment.publicUrl,
+                                  })}
+                                >
+                                  <strong>{attachment.originalFileName}</strong>
+                                  <span>Visualizar PDF</span>
+                                </button>
+                              ) : isAudioAttachment(attachment) ? (
+                                <div className="ticket-message__attachment" key={attachment.id}>
+                                  <strong>{attachment.originalFileName}</strong>
+                                  <audio controls preload="metadata" src={attachment.downloadUrl} />
+                                </div>
+                              ) : (
+                                <a
+                                  className="ticket-message__attachment"
+                                  href={attachment.downloadUrl}
+                                  key={attachment.id}
+                                  rel="noreferrer"
+                                  target="_blank"
+                                >
+                                  <strong>{attachment.originalFileName}</strong>
+                                  <span>{formatFileSize(attachment.sizeBytes)}</span>
+                                </a>
+                              )
                             ))}
                           </div>
                         ) : null}
@@ -771,6 +971,21 @@ function TicketConversation({
               </div>
 
               <form ref={composerRef} className="ticket-chat__composer" onSubmit={handleSendMessage}>
+                {replyingToMessage ? (
+                  <div className="ticket-chat__replying-to">
+                    <div>
+                      <strong>Respondendo a {replyingToMessage.authorName}</strong>
+                      <span>
+                        {hasVisibleMessageText(replyingToMessage)
+                          ? replyingToMessage.text
+                          : 'Mídia anexada'}
+                      </span>
+                    </div>
+                    <button type="button" onClick={() => setReplyingToMessage(null)}>
+                      ×
+                    </button>
+                  </div>
+                ) : null}
                 <input
                   hidden
                   multiple
@@ -779,6 +994,7 @@ function TicketConversation({
                   onChange={handleFileSelection}
                 />
                 <textarea
+                  ref={messageInputRef}
                   placeholder={
                     isTicketClosed
                       ? 'Este chamado foi encerrado.'
@@ -824,6 +1040,16 @@ function TicketConversation({
                   }
                 >
                   <PlusCircleIcon />
+                </button>
+                <button
+                  className={`ticket-chat__attach${isRecordingAudio ? ' ticket-chat__attach--recording' : ''}`}
+                  type="button"
+                  onClick={handleToggleAudioRecording}
+                  disabled={isSendingMessage || isTicketClosed}
+                  aria-label={isRecordingAudio ? 'Parar gravação de áudio' : 'Gravar áudio'}
+                  title={isRecordingAudio ? 'Parar gravação de áudio' : 'Gravar áudio'}
+                >
+                  <MicIcon />
                 </button>
                 <button
                   type="submit"
@@ -1051,6 +1277,134 @@ function TicketConversation({
         onConfirm={handleConfirmTransfer}
         isProcessing={isConfirmingTransfer}
       />
+      {selectedImage ? (
+        <div
+          className="ticket-image-lightbox"
+          role="dialog"
+          aria-label={`Imagem ampliada: ${selectedImage.name}`}
+          onClick={() => setSelectedImage(null)}
+        >
+          <div
+            className="ticket-image-lightbox__controls"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              aria-label="Diminuir zoom"
+              title="Diminuir zoom"
+              onClick={() => setImageZoom((currentZoom) => {
+                const nextZoom = Math.max(1, currentZoom - 0.2)
+                if (nextZoom === 1) {
+                  setImagePan({ x: 0, y: 0 })
+                  imageViewportRef.current?.scrollTo({ left: 0, top: 0 })
+                }
+                return nextZoom
+              })}
+            >
+              −
+            </button>
+            <button
+              type="button"
+              aria-label="Redefinir zoom"
+              title="Redefinir zoom"
+              onClick={() => {
+                setImageZoom(1)
+                setImagePan({ x: 0, y: 0 })
+              }}
+            >
+              {Math.round(imageZoom * 100)}%
+            </button>
+            <button
+              type="button"
+              aria-label="Aumentar zoom"
+              title="Aumentar zoom"
+              onClick={() => setImageZoom((currentZoom) => Math.min(3, currentZoom + 0.2))}
+            >
+              +
+            </button>
+            <button
+              type="button"
+              aria-label="Baixar imagem"
+              title="Baixar imagem"
+              onClick={() => handleDownloadFile(selectedImage)}
+            >
+              Baixar
+            </button>
+            <button
+              type="button"
+              aria-label="Abrir imagem em nova aba"
+              title="Abrir imagem em nova aba"
+              onClick={() => window.open(selectedImage.url, '_blank', 'noopener,noreferrer')}
+            >
+              Abrir
+            </button>
+          </div>
+          <button
+            className="ticket-image-lightbox__close"
+            type="button"
+            aria-label="Fechar imagem ampliada"
+            onClick={() => setSelectedImage(null)}
+          >
+            ×
+          </button>
+          <div
+            className={`ticket-image-lightbox__viewport${imageZoom > 1 ? ' is-zoomed' : ''}`}
+            ref={imageViewportRef}
+            onWheel={handleImageZoom}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <img
+              className={`ticket-image-lightbox__image${imageZoom > 1 ? ' is-zoomed' : ''}`}
+              src={selectedImage.url}
+              alt={selectedImage.name}
+              style={{ transform: `translate(${imagePan.x}px, ${imagePan.y}px) scale(${imageZoom})` }}
+            />
+          </div>
+        </div>
+      ) : null}
+      {selectedPdf ? (
+        <div
+          className="ticket-image-lightbox"
+          role="dialog"
+          aria-label={`PDF aberto: ${selectedPdf.name}`}
+          onClick={() => setSelectedPdf(null)}
+        >
+          <div
+            className="ticket-pdf-lightbox__content"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="ticket-image-lightbox__controls ticket-pdf-lightbox__controls">
+              <button
+                type="button"
+                onClick={() => handleDownloadFile(selectedPdf)}
+                title="Baixar PDF"
+              >
+                Baixar
+              </button>
+              <button
+                type="button"
+                onClick={() => window.open(selectedPdf.url, '_blank', 'noopener,noreferrer')}
+                title="Abrir PDF em nova aba"
+              >
+                Abrir
+              </button>
+            </div>
+            <button
+              className="ticket-image-lightbox__close"
+              type="button"
+              aria-label="Fechar PDF"
+              onClick={() => setSelectedPdf(null)}
+            >
+              ×
+            </button>
+            <iframe
+              className="ticket-pdf-lightbox__frame"
+              src={selectedPdf.url}
+              title={selectedPdf.name}
+            />
+          </div>
+        </div>
+      ) : null}
     </main>
   )
 }

@@ -11,6 +11,9 @@ public record TicketMessageResponse(
 	String authorRole,
 	String message,
 	boolean internal,
+	UUID replyToMessageId,
+	String replyToAuthorName,
+	String replyToMessage,
 	List<TicketAttachmentResponse> attachments,
 	OffsetDateTime createdAt
 ) {

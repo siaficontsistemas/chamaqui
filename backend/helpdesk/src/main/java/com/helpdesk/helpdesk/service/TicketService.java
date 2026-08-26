@@ -253,7 +253,14 @@ public class TicketService {
 			throw new IllegalArgumentException("O setor informado não pertence a empresa selecionada.");
 		}
 		ensureAcceptedPartnership(requesterCompany, sector.getCreatedBy());
+		List<MultipartFile> normalizedFiles = normalizeFiles(files);
 		String initialDescription = normalizeMessage(request.description());
+		if (initialDescription.isBlank() && normalizedFiles.isEmpty()) {
+			throw new IllegalArgumentException("Informe uma mensagem ou anexe ao menos um arquivo.");
+		}
+		if (initialDescription.isBlank()) {
+			initialDescription = "Anexo enviado.";
+		}
 
 		Ticket ticket = new Ticket();
 		ticket.setTitle(buildAutoTicketTitle(initialDescription));
@@ -280,7 +287,7 @@ public class TicketService {
 		// #endregion
 		notifyAssigneeAboutNewTicket(savedTicket);
 		TicketMessage initialMessage = ensureInitialMessage(savedTicket);
-		saveAttachments(savedTicket, initialMessage, requester, files);
+		saveAttachments(savedTicket, initialMessage, requester, normalizedFiles);
 
 		return toResponse(savedTicket, requester);
 	}
@@ -424,6 +431,12 @@ public class TicketService {
 		String normalizedMessage = normalizeMessage(request.message());
 
 		ensureInitialMessage(ticket);
+		TicketMessage replyToMessage = null;
+		if (request.replyToMessageId() != null) {
+			replyToMessage = ticketMessageRepository.findById(request.replyToMessageId())
+				.filter(message -> message.getTicket().getId().equals(ticket.getId()))
+				.orElseThrow(() -> new IllegalArgumentException("A mensagem selecionada para resposta não pertence a este chamado."));
+		}
 
 		if (normalizedMessage.isBlank() && validFiles.isEmpty()) {
 			throw new IllegalArgumentException("Envie uma mensagem ou anexe ao menos um arquivo.");
@@ -432,8 +445,9 @@ public class TicketService {
 		TicketMessage ticketMessage = new TicketMessage();
 		ticketMessage.setTicket(ticket);
 		ticketMessage.setAuthor(author);
-		ticketMessage.setMessage(normalizedMessage.isBlank() ? "Arquivo anexado." : normalizedMessage);
+		ticketMessage.setMessage(normalizedMessage.isBlank() ? "Anexo enviado." : normalizedMessage);
 		ticketMessage.setInternal(false);
+		ticketMessage.setReplyToMessage(replyToMessage);
 
 		TicketMessage savedMessage = ticketMessageRepository.save(ticketMessage);
 		List<TicketAttachmentResponse> attachments = saveAttachments(ticket, savedMessage, author, validFiles);
@@ -442,7 +456,7 @@ public class TicketService {
 			List<WhatsappService.OutboundAttachment> outboundAttachments = loadWhatsappOutboundAttachments(savedMessage.getId());
 			sendWhatsappTicketMessage(
 				ticket,
-				buildWhatsappOutboundText(ticket.getProtocol(), author.getFullName(), savedMessage.getMessage(), outboundAttachments),
+				buildWhatsappOutboundText(ticket.getProtocol(), author.getFullName(), normalizedMessage, outboundAttachments),
 				outboundAttachments
 			);
 		}
@@ -1415,6 +1429,9 @@ public class TicketService {
 			getPrimaryRoleLabel(message.getAuthor()),
 			message.getMessage(),
 			message.isInternal(),
+			message.getReplyToMessage() == null ? null : message.getReplyToMessage().getId(),
+			message.getReplyToMessage() == null ? null : message.getReplyToMessage().getAuthor().getFullName(),
+			message.getReplyToMessage() == null ? null : message.getReplyToMessage().getMessage(),
 			attachments,
 			message.getCreatedAt()
 		);
@@ -1700,9 +1717,7 @@ public class TicketService {
 		String normalizedAuthorName = authorName == null || authorName.isBlank() ? "Atendente" : authorName.trim();
 		String normalizedMessage = message == null ? "" : message.trim();
 		if (normalizedMessage.isBlank()) {
-			return attachments == null || attachments.isEmpty()
-				? ""
-				: "*%s diz para o protocolo %s:*".formatted(normalizedAuthorName, normalizedProtocol);
+			return "";
 		}
 
 		return ("*%s diz para o protocolo %s:* %s".formatted(

@@ -61,7 +61,8 @@ public class TicketAttachmentStorageService {
 		),
 		Map.entry("mp4", "video/mp4"),
 		Map.entry("mp3", "audio/mpeg"),
-		Map.entry("ogg", "audio/ogg")
+		Map.entry("ogg", "audio/ogg"),
+		Map.entry("webm", "audio/webm")
 	);
 	private static final Set<String> ALLOWED_CONTENT_TYPES = Set.copyOf(CONTENT_TYPES_BY_EXTENSION.values());
 
