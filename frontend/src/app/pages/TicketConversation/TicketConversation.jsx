@@ -944,7 +944,7 @@ function TicketConversation({
                               ) : isAudioAttachment(attachment) ? (
                                 <div className="ticket-message__attachment" key={attachment.id}>
                                   <strong>{attachment.originalFileName}</strong>
-                                  <audio controls preload="metadata" src={attachment.downloadUrl} />
+                                  <audio controls preload="metadata" src={attachment.publicUrl} />
                                 </div>
                               ) : (
                                 <a

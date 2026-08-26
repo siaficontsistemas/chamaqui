@@ -2,7 +2,7 @@ FROM node:22-alpine
 
 WORKDIR /app
 
-RUN apk add --no-cache git openssh
+RUN apk add --no-cache git openssh ffmpeg
 
 COPY package*.json ./
 RUN npm install --omit=dev

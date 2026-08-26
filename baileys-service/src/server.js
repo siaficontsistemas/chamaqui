@@ -1,6 +1,7 @@
 import express from 'express';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import pino from 'pino';
 import QRCode from 'qrcode';
 import * as Baileys from '@whiskeysockets/baileys';
@@ -326,9 +327,39 @@ function normalizeOutgoingAttachment(attachment) {
   };
 }
 
-function buildOutgoingAttachmentPayload(attachment) {
+async function convertWebmToOgg(buffer) {
+  return new Promise((resolve, reject) => {
+    const ffmpeg = spawn('ffmpeg', [
+      '-hide_banner',
+      '-loglevel', 'error',
+      '-i', 'pipe:0',
+      '-vn',
+      '-c:a', 'libopus',
+      '-b:a', '64k',
+      '-f', 'ogg',
+      'pipe:1',
+    ]);
+    const output = [];
+    const errors = [];
+
+    ffmpeg.stdout.on('data', (chunk) => output.push(chunk));
+    ffmpeg.stderr.on('data', (chunk) => errors.push(chunk));
+    ffmpeg.on('error', (error) => reject(new Error(`Não foi possível converter o áudio para o WhatsApp: ${error.message}`)));
+    ffmpeg.on('close', (code) => {
+      if (code !== 0 || output.length === 0) {
+        reject(new Error(`Não foi possível preparar o áudio para o WhatsApp: ${Buffer.concat(errors).toString()}`));
+        return;
+      }
+      resolve(Buffer.concat(output));
+    });
+
+    ffmpeg.stdin.end(buffer);
+  });
+}
+
+async function buildOutgoingAttachmentPayload(attachment) {
   const normalizedAttachment = normalizeOutgoingAttachment(attachment);
-  const buffer = Buffer.from(normalizedAttachment.base64, 'base64');
+  let buffer = Buffer.from(normalizedAttachment.base64, 'base64');
 
   if (!buffer.length) {
     throw new Error(`Anexo inválido: ${normalizedAttachment.originalFileName}`);
@@ -346,12 +377,13 @@ function buildOutgoingAttachmentPayload(attachment) {
         mimetype: normalizedAttachment.contentType,
       };
     case 'audio':
+      if (normalizedAttachment.contentType === 'audio/webm') {
+        buffer = await convertWebmToOgg(buffer);
+      }
       return {
         audio: buffer,
-        mimetype: normalizedAttachment.contentType,
-        // WhatsApp voice notes require OGG/Opus. WebM recordings are sent as
-        // regular audio so WhatsApp can calculate their duration correctly.
-        ptt: normalizedAttachment.contentType === 'audio/ogg',
+        mimetype: 'audio/ogg; codecs=opus',
+        ptt: true,
       };
     case 'sticker':
       return {
@@ -667,7 +699,7 @@ app.post('/sessions/:session/messages', async (req, res) => {
     for (const attachment of attachments) {
       response = await session.sock.sendMessage(
         recipient,
-        buildOutgoingAttachmentPayload(attachment),
+        await buildOutgoingAttachmentPayload(attachment),
         quoted && !response ? { quoted } : undefined,
       );
     }
