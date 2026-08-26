@@ -349,24 +349,6 @@
   object-fit: cover;
 }
 
-.ticket-message__pdf-button {
-  width: min(100%, 420px);
-  display: grid;
-  gap: 5px;
-  padding: 14px 16px;
-  border: 0;
-  border-radius: 16px;
-  background: rgba(32, 52, 73, 0.08);
-  color: #203449;
-  text-align: left;
-  cursor: pointer;
-}
-
-.ticket-message__pdf-button span {
-  color: #647584;
-  font-size: 0.84rem;
-}
-
 .ticket-image-lightbox {
   position: fixed;
   inset: 0;
@@ -455,26 +437,6 @@
   display: grid;
   place-items: center;
   cursor: pointer;
-}
-
-.ticket-pdf-lightbox__content {
-  position: relative;
-  width: min(94vw, 1200px);
-  height: 92vh;
-  padding-top: 58px;
-}
-
-.ticket-pdf-lightbox__controls {
-  top: 14px;
-  right: 58px;
-}
-
-.ticket-pdf-lightbox__frame {
-  width: 100%;
-  height: 100%;
-  border: 0;
-  border-radius: 10px;
-  background: #ffffff;
 }
 
 .ticket-message__attachment {
