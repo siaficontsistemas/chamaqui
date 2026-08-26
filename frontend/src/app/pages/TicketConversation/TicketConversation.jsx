@@ -93,7 +93,6 @@ function TicketConversation({
   const [isConfirmingTransfer, setIsConfirmingTransfer] = useState(false)
   const [isCloseConfirmationOpen, setIsCloseConfirmationOpen] = useState(false)
   const [selectedImage, setSelectedImage] = useState(null)
-  const [selectedPdf, setSelectedPdf] = useState(null)
   const [replyingToMessage, setReplyingToMessage] = useState(null)
   const [imageZoom, setImageZoom] = useState(1)
   const [imagePan, setImagePan] = useState({ x: 0, y: 0 })
@@ -475,10 +474,6 @@ function TicketConversation({
 
   function isImageAttachment(attachment) {
     return attachment.contentType?.toLowerCase().startsWith('image/')
-  }
-
-  function isPdfAttachment(attachment) {
-    return attachment.contentType?.toLowerCase() === 'application/pdf'
   }
 
   function hasVisibleMessageText(message) {
@@ -929,19 +924,6 @@ function TicketConversation({
                                     src={attachment.publicUrl}
                                   />
                                 </button>
-                              ) : isPdfAttachment(attachment) ? (
-                                <button
-                                  className="ticket-message__pdf-button"
-                                  type="button"
-                                  key={attachment.id}
-                                  onClick={() => setSelectedPdf({
-                                    name: attachment.originalFileName,
-                                    url: attachment.publicUrl,
-                                  })}
-                                >
-                                  <strong>{attachment.originalFileName}</strong>
-                                  <span>Visualizar PDF</span>
-                                </button>
                               ) : isAudioAttachment(attachment) ? (
                                 <div className="ticket-message__attachment" key={attachment.id}>
                                   <strong>{attachment.originalFileName}</strong>
@@ -1358,49 +1340,6 @@ function TicketConversation({
               src={selectedImage.url}
               alt={selectedImage.name}
               style={{ transform: `translate(${imagePan.x}px, ${imagePan.y}px) scale(${imageZoom})` }}
-            />
-          </div>
-        </div>
-      ) : null}
-      {selectedPdf ? (
-        <div
-          className="ticket-image-lightbox"
-          role="dialog"
-          aria-label={`PDF aberto: ${selectedPdf.name}`}
-          onClick={() => setSelectedPdf(null)}
-        >
-          <div
-            className="ticket-pdf-lightbox__content"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="ticket-image-lightbox__controls ticket-pdf-lightbox__controls">
-              <button
-                type="button"
-                onClick={() => handleDownloadFile(selectedPdf)}
-                title="Baixar PDF"
-              >
-                Baixar
-              </button>
-              <button
-                type="button"
-                onClick={() => window.open(selectedPdf.url, '_blank', 'noopener,noreferrer')}
-                title="Abrir PDF em nova aba"
-              >
-                Abrir
-              </button>
-            </div>
-            <button
-              className="ticket-image-lightbox__close"
-              type="button"
-              aria-label="Fechar PDF"
-              onClick={() => setSelectedPdf(null)}
-            >
-              ×
-            </button>
-            <iframe
-              className="ticket-pdf-lightbox__frame"
-              src={selectedPdf.url}
-              title={selectedPdf.name}
             />
           </div>
         </div>
