@@ -93,6 +93,7 @@ public class WhatsappWebhookService {
 		String sessionName = resolveSessionName(payloadJson);
 		boolean fromMe = resolveFromMe(payloadJson);
 		String transportId = resolveIncomingTransportId(payloadJson, fromMe);
+		String messageId = resolveIncomingMessageId(payloadJson);
 		String phone = resolveIncomingPhone(payloadJson, transportId, fromMe);
 		String body = resolveIncomingBody(payloadJson);
 		List<TicketService.IncomingAttachment> attachments = resolveIncomingAttachments(payloadJson);
@@ -161,7 +162,7 @@ public class WhatsappWebhookService {
 			User companyOwner = whatsappService.resolveCompanyAdminBySession(sessionName);
 			tenantExecutionService.runInTenantByOwnerUserId(
 				companyOwner.getId(),
-				() -> handleIncomingMessage(companyOwner, firstNonBlank(phone, transportId), transportId, body, attachments)
+				() -> handleIncomingMessage(companyOwner, firstNonBlank(phone, transportId), transportId, body, attachments, messageId)
 			);
 		} catch (IllegalArgumentException exception) {
 			logger.warn("Webhook do WhatsApp ignorado por sessão inválida: session={}, reason={}", sessionName, exception.getMessage());
@@ -184,6 +185,18 @@ public class WhatsappWebhookService {
 		String incomingTransportId,
 		String body,
 		List<TicketService.IncomingAttachment> attachments
+	) {
+		handleIncomingMessage(companyOwner, phoneNumber, incomingTransportId, body, attachments, null);
+	}
+
+	@Transactional
+	void handleIncomingMessage(
+		User companyOwner,
+		String phoneNumber,
+		String incomingTransportId,
+		String body,
+		List<TicketService.IncomingAttachment> attachments,
+		String incomingMessageId
 	) {
 		String whatsappTransportId = normalizeWhatsappTransportId(incomingTransportId);
 		String normalizedProvidedPhone = normalizePhone(phoneNumber);
@@ -315,7 +328,7 @@ public class WhatsappWebhookService {
 				return;
 			}
 			if (!normalizedBody.isBlank() || !incomingAttachments.isEmpty()) {
-				ticketService.addWhatsappMessage(conversation.getActiveTicket().getId(), normalizedBody, incomingAttachments);
+				ticketService.addWhatsappMessage(conversation.getActiveTicket().getId(), normalizedBody, incomingAttachments, incomingMessageId, incomingTransportId);
 			}
 			return;
 		}
@@ -350,7 +363,7 @@ public class WhatsappWebhookService {
 			case ASK_EMAIL -> handleEmailStep(companyOwner, conversation, replyTarget, normalizedBody);
 			case ASK_DOCUMENT -> handleDocumentStep(companyOwner, conversation, replyTarget);
 			case ASK_SUBJECT, ASK_DESCRIPTION ->
-				handleDescriptionStep(companyOwner, conversation, replyTarget, normalizedBody, incomingAttachments);
+				handleDescriptionStep(companyOwner, conversation, replyTarget, normalizedBody, incomingAttachments, false, incomingMessageId);
 			case ACTIVE_TICKET -> {
 				startNewTicketFlow(companyOwner, conversation, replyTarget, "Vamos abrir um novo chamado.");
 			}
@@ -1388,7 +1401,7 @@ public class WhatsappWebhookService {
 		String body,
 		List<TicketService.IncomingAttachment> attachments
 	) {
-		handleDescriptionStep(companyOwner, conversation, replyTarget, body, attachments, false);
+		handleDescriptionStep(companyOwner, conversation, replyTarget, body, attachments, false, null);
 	}
 
 	private void handleDescriptionStep(
@@ -1398,6 +1411,18 @@ public class WhatsappWebhookService {
 		String body,
 		List<TicketService.IncomingAttachment> attachments,
 		boolean allowShortDescription
+	) {
+		handleDescriptionStep(companyOwner, conversation, replyTarget, body, attachments, allowShortDescription, null);
+	}
+
+	private void handleDescriptionStep(
+		User companyOwner,
+		WhatsappConversation conversation,
+		String replyTarget,
+		String body,
+		List<TicketService.IncomingAttachment> attachments,
+		boolean allowShortDescription,
+		String incomingMessageId
 	) {
 		if (conversation.getSector() == null) {
 			resetConversation(conversation);
@@ -1469,7 +1494,8 @@ public class WhatsappWebhookService {
 					conversation.getSector().getId(),
 					conversation.getPendingAssignedUserId(),
 					normalizedDescription,
-					attachments == null ? List.of() : attachments
+					attachments == null ? List.of() : attachments,
+					incomingMessageId
 				)
 			);
 		} catch (RuntimeException exception) {
@@ -1588,7 +1614,7 @@ public class WhatsappWebhookService {
 		}
 
 		replyWithMessage(companyOwner, replyTarget, "Vou usar sua última mensagem para abrir o novo chamado.");
-		handleDescriptionStep(companyOwner, conversation, replyTarget, pendingMessage, pendingAttachments, true);
+			handleDescriptionStep(companyOwner, conversation, replyTarget, pendingMessage, pendingAttachments, true, null);
 	}
 
 	private boolean shouldAskForFreshTicketDescription(
@@ -2280,6 +2306,19 @@ public class WhatsappWebhookService {
 			extractDeepText(payload, "chat_id"),
 			extractDeepText(payload, "sender_id"),
 			extractDeepText(payload, "from")
+		);
+	}
+
+	private String resolveIncomingMessageId(JsonNode payload) {
+		return firstNonBlank(
+			extractPathText(payload, "key.id"),
+			extractPathText(payload, "message.key.id"),
+			extractPathText(payload, "payload.key.id"),
+			extractPathText(payload, "payload.message.key.id"),
+			extractPathText(payload, "data.key.id"),
+			extractPathText(payload, "data.message.key.id"),
+			extractText(payload, "messageId"),
+			extractText(payload, "id")
 		);
 	}
 

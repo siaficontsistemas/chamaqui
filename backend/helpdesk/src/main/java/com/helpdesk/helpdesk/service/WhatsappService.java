@@ -218,6 +218,16 @@ public class WhatsappService {
 		String message,
 		List<OutboundAttachment> attachments
 	) {
+		return sendMessage(companyOwner, phone, message, attachments, null);
+	}
+
+	public WhatsappOperationResponse sendMessage(
+		User companyOwner,
+		String phone,
+		String message,
+		List<OutboundAttachment> attachments,
+		QuotedMessage quotedMessage
+	) {
 		validateCompanyAdmin(companyOwner);
 		String recipient = normalizeRecipient(phone);
 		List<OutboundAttachment> normalizedAttachments = normalizeOutboundAttachments(attachments);
@@ -234,6 +244,16 @@ public class WhatsappService {
 		}
 		if (!normalizedAttachments.isEmpty()) {
 			payload.put("attachments", normalizedAttachments);
+		}
+		if (quotedMessage != null && !quotedMessage.messageId().isBlank() && !quotedMessage.remoteJid().isBlank()) {
+			payload.put("quoted", Map.of(
+				"key", Map.of(
+					"remoteJid", quotedMessage.remoteJid(),
+					"fromMe", false,
+					"id", quotedMessage.messageId()
+				),
+				"message", Map.of("conversation", quotedMessage.text())
+			));
 		}
 
 		JsonNode response = requestAuthorized(companyOwner, HttpMethod.POST, "/sessions/{session}/messages", payload);
@@ -597,5 +617,8 @@ public class WhatsappService {
 		String contentType,
 		String base64
 	) {
+	}
+
+	public record QuotedMessage(String messageId, String remoteJid, String text) {
 	}
 }
