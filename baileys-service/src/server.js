@@ -349,7 +349,9 @@ function buildOutgoingAttachmentPayload(attachment) {
       return {
         audio: buffer,
         mimetype: normalizedAttachment.contentType,
-        ptt: true,
+        // WhatsApp voice notes require OGG/Opus. WebM recordings are sent as
+        // regular audio so WhatsApp can calculate their duration correctly.
+        ptt: normalizedAttachment.contentType === 'audio/ogg',
       };
     case 'sticker':
       return {

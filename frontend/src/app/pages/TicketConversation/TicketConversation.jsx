@@ -573,7 +573,11 @@ function TicketConversation({
 
   async function handleToggleAudioRecording() {
     if (isRecordingAudio) {
-      audioRecorderRef.current?.stop()
+      const recorder = audioRecorderRef.current
+      if (recorder && recorder.state === 'recording') {
+        recorder.requestData()
+        recorder.stop()
+      }
       return
     }
 
