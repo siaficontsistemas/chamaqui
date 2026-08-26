@@ -43,6 +43,12 @@ public class TicketMessage {
 	@Column(name = "created_at", nullable = false)
 	private OffsetDateTime createdAt;
 
+	@Column(name = "whatsapp_message_id", length = 120)
+	private String whatsappMessageId;
+
+	@Column(name = "whatsapp_remote_jid", length = 180)
+	private String whatsappRemoteJid;
+
 	@PrePersist
 	void onCreate() {
 		if (createdAt == null) {
@@ -100,5 +106,21 @@ public class TicketMessage {
 
 	public void setCreatedAt(OffsetDateTime createdAt) {
 		this.createdAt = createdAt;
+	}
+
+	public String getWhatsappMessageId() {
+		return whatsappMessageId;
+	}
+
+	public void setWhatsappMessageId(String whatsappMessageId) {
+		this.whatsappMessageId = whatsappMessageId;
+	}
+
+	public String getWhatsappRemoteJid() {
+		return whatsappRemoteJid;
+	}
+
+	public void setWhatsappRemoteJid(String whatsappRemoteJid) {
+		this.whatsappRemoteJid = whatsappRemoteJid;
 	}
 }

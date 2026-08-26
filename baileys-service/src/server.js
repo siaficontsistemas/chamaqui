@@ -416,6 +416,7 @@ async function forwardMessageEvent(session, sock, message, source, type = '') {
     from: remoteJid,
     chatId: remoteJid,
     body,
+    messageId: String(message?.key?.id || '').trim(),
     attachments,
   };
 
@@ -649,6 +650,7 @@ app.post('/sessions/:session/messages', async (req, res) => {
 
     const message = normalizeTextMessage(req.body?.message);
     const attachments = Array.isArray(req.body?.attachments) ? req.body.attachments : [];
+    const quoted = req.body?.quoted && typeof req.body.quoted === 'object' ? req.body.quoted : undefined;
     if (!message && attachments.length === 0) {
       return res.status(400).json({ status: 'ERROR', message: 'Mensagem ou anexo obrigatório.' });
     }
@@ -657,11 +659,15 @@ app.post('/sessions/:session/messages', async (req, res) => {
     let response = null;
 
     if (message) {
-      response = await session.sock.sendMessage(recipient, { text: message });
+      response = await session.sock.sendMessage(recipient, { text: message }, quoted ? { quoted } : undefined);
     }
 
     for (const attachment of attachments) {
-      response = await session.sock.sendMessage(recipient, buildOutgoingAttachmentPayload(attachment));
+      response = await session.sock.sendMessage(
+        recipient,
+        buildOutgoingAttachmentPayload(attachment),
+        quoted && !response ? { quoted } : undefined,
+      );
     }
 
     return res.json({
