@@ -599,6 +599,18 @@
 
 .ticket-chat__composer .ticket-chat__attach--recording {
   color: #c73a36;
+  gap: 6px;
+  min-width: 78px;
+  width: 78px;
+  padding: 0 8px;
+}
+
+.ticket-chat__recording-duration {
+  color: #c73a36;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .ticket-chat__composer button:disabled {
