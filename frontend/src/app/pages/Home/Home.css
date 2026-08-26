@@ -1967,24 +1967,38 @@
 .ticket-list__head,
 .ticket-list__row {
   display: grid;
-  grid-template-columns: 1.05fr 1.85fr 1.55fr 0.95fr 0.95fr;
+  grid-template-columns: 1.05fr 1.05fr 1.85fr 1.55fr 0.95fr 0.95fr;
   align-items: center;
   column-gap: 28px;
 }
 
+.ticket-list__head > *,
+.ticket-list__row > * {
+  min-width: 0;
+}
+
+.ticket-list__subject-cell {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.ticket-list__protocol-cell {
+  white-space: nowrap;
+}
+
 .ticket-list__head--with-select,
 .ticket-list__row--with-select {
-  grid-template-columns: 44px 1.05fr 1.85fr 1.55fr 0.95fr 0.95fr;
+  grid-template-columns: 44px 1.05fr 1.05fr 1.85fr 1.55fr 0.95fr 0.95fr;
 }
 
 .ticket-list__head--with-classification,
 .ticket-list__row--with-classification {
-  grid-template-columns: 1.05fr 1.65fr 1.55fr 1.55fr 0.95fr 0.95fr;
+  grid-template-columns: 1.05fr 1.05fr 1.65fr 1.55fr 1.55fr 0.95fr 0.95fr;
 }
 
 .ticket-list__head--with-select.ticket-list__head--with-classification,
 .ticket-list__row--with-select.ticket-list__row--with-classification {
-  grid-template-columns: 44px 1.05fr 1.65fr 1.55fr 1.55fr 0.95fr 0.95fr;
+  grid-template-columns: 44px 1.05fr 1.05fr 1.65fr 1.55fr 1.55fr 0.95fr 0.95fr;
 }
 
 .ticket-list__head {
