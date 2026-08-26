@@ -1250,6 +1250,10 @@
   padding: 0;
 }
 
+.ticket-form__attachment--recording {
+  color: #c73a36;
+}
+
 .ticket-form__attachment svg {
   width: 34px;
   height: 34px;

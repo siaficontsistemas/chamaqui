@@ -188,7 +188,11 @@ public class TicketController {
 	}
 
 	private CreateTicketMessageRequest withAuthorEmail(CreateTicketMessageRequest request, HttpSession session) {
-		return new CreateTicketMessageRequest(appSessionService.requireCurrentEmail(session), request.message());
+		return new CreateTicketMessageRequest(
+			appSessionService.requireCurrentEmail(session),
+			request.message(),
+			request.replyToMessageId()
+		);
 	}
 
 	private UpdateTicketTitleRequest withAuthorEmail(UpdateTicketTitleRequest request, HttpSession session) {

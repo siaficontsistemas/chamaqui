@@ -349,7 +349,7 @@ function buildOutgoingAttachmentPayload(attachment) {
       return {
         audio: buffer,
         mimetype: normalizedAttachment.contentType,
-        ptt: false,
+        ptt: true,
       };
     case 'sticker':
       return {

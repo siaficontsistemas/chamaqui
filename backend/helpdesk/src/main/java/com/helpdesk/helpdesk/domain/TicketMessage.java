@@ -26,6 +26,10 @@ public class TicketMessage {
 	@JoinColumn(name = "ticket_id", nullable = false)
 	private Ticket ticket;
 
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "reply_to_message_id")
+	private TicketMessage replyToMessage;
+
 	@ManyToOne(fetch = FetchType.LAZY, optional = false)
 	@JoinColumn(name = "author_id", nullable = false)
 	private User author;
@@ -56,6 +60,14 @@ public class TicketMessage {
 
 	public void setTicket(Ticket ticket) {
 		this.ticket = ticket;
+	}
+
+	public TicketMessage getReplyToMessage() {
+		return replyToMessage;
+	}
+
+	public void setReplyToMessage(TicketMessage replyToMessage) {
+		this.replyToMessage = replyToMessage;
 	}
 
 	public User getAuthor() {

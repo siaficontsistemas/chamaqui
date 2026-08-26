@@ -68,4 +68,40 @@ function PlusCircleIcon() {
   )
 }
 
-export { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, PlusCircleIcon, SearchIcon }
+function MicIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none">
+      <path
+        d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Zm-7 9a7 7 0 0 0 14 0m-7 7v3m-3 0h6"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function ReplyIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M9 8 4 12l5 4m-5-4h9a7 7 0 0 1 7 7"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+export {
+  ChevronDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  MicIcon,
+  PlusCircleIcon,
+  ReplyIcon,
+  SearchIcon,
+}

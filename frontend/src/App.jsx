@@ -1113,7 +1113,7 @@ function App() {
     const trimmedCopyEmail = copyEmail?.trim() || ''
 
     if (
-      !trimmedDescription ||
+      (!trimmedDescription && files.length === 0) ||
       !priorityCode ||
       !companyOwnerId ||
       !sectorId ||

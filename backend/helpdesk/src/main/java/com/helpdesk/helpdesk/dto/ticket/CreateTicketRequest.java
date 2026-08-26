@@ -8,7 +8,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 public record CreateTicketRequest(
-	@NotBlank @Size(min = 10) String description,
+	@Size(max = 5000) String description,
 	@NotNull UUID companyOwnerId,
 	@NotNull UUID sectorId,
 	UUID assignedToUserId,
