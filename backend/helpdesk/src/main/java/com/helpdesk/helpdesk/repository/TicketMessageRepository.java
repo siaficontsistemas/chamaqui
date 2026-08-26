@@ -23,6 +23,8 @@ public interface TicketMessageRepository extends JpaRepository<TicketMessage, UU
 	@EntityGraph(attributePaths = {"author", "author.roles", "ticket"})
 	Optional<TicketMessage> findFirstByTicketIdOrderByCreatedAtDesc(UUID ticketId);
 
+	Optional<TicketMessage> findFirstByTicketIdAndWhatsappMessageId(UUID ticketId, String whatsappMessageId);
+
 	boolean existsByTicketId(UUID ticketId);
 
 	long countByTicketId(UUID ticketId);

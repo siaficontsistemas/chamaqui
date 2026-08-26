@@ -146,6 +146,20 @@ function unwrapMessageContent(message) {
   return current || {};
 }
 
+function resolveQuotedMessageId(message) {
+  const content = unwrapMessageContent(message?.message);
+  const contextInfo = [
+    content?.extendedTextMessage?.contextInfo,
+    content?.imageMessage?.contextInfo,
+    content?.videoMessage?.contextInfo,
+    content?.audioMessage?.contextInfo,
+    content?.documentMessage?.contextInfo,
+    content?.stickerMessage?.contextInfo,
+  ].find((value) => value?.stanzaId);
+
+  return String(contextInfo?.stanzaId || '').trim();
+}
+
 function resolveRemoteJid(message) {
   return (
     String(message?.key?.remoteJid || '').trim() ||
@@ -451,6 +465,7 @@ async function forwardMessageEvent(session, sock, message, source, type = '') {
     chatId: remoteJid,
     body,
     messageId: String(message?.key?.id || '').trim(),
+    replyToMessageId: resolveQuotedMessageId(message),
     attachments,
   };
 

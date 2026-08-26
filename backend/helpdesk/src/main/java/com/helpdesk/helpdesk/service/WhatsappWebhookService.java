@@ -94,6 +94,7 @@ public class WhatsappWebhookService {
 		boolean fromMe = resolveFromMe(payloadJson);
 		String transportId = resolveIncomingTransportId(payloadJson, fromMe);
 		String messageId = resolveIncomingMessageId(payloadJson);
+		String replyToMessageId = resolveReplyToMessageId(payloadJson);
 		String phone = resolveIncomingPhone(payloadJson, transportId, fromMe);
 		String body = resolveIncomingBody(payloadJson);
 		List<TicketService.IncomingAttachment> attachments = resolveIncomingAttachments(payloadJson);
@@ -162,7 +163,7 @@ public class WhatsappWebhookService {
 			User companyOwner = whatsappService.resolveCompanyAdminBySession(sessionName);
 			tenantExecutionService.runInTenantByOwnerUserId(
 				companyOwner.getId(),
-				() -> handleIncomingMessage(companyOwner, firstNonBlank(phone, transportId), transportId, body, attachments, messageId)
+				() -> handleIncomingMessage(companyOwner, firstNonBlank(phone, transportId), transportId, body, attachments, messageId, replyToMessageId)
 			);
 		} catch (IllegalArgumentException exception) {
 			logger.warn("Webhook do WhatsApp ignorado por sessão inválida: session={}, reason={}", sessionName, exception.getMessage());
@@ -186,7 +187,7 @@ public class WhatsappWebhookService {
 		String body,
 		List<TicketService.IncomingAttachment> attachments
 	) {
-		handleIncomingMessage(companyOwner, phoneNumber, incomingTransportId, body, attachments, null);
+		handleIncomingMessage(companyOwner, phoneNumber, incomingTransportId, body, attachments, null, null);
 	}
 
 	@Transactional
@@ -196,7 +197,8 @@ public class WhatsappWebhookService {
 		String incomingTransportId,
 		String body,
 		List<TicketService.IncomingAttachment> attachments,
-		String incomingMessageId
+		String incomingMessageId,
+		String incomingReplyToMessageId
 	) {
 		String whatsappTransportId = normalizeWhatsappTransportId(incomingTransportId);
 		String normalizedProvidedPhone = normalizePhone(phoneNumber);
@@ -328,7 +330,7 @@ public class WhatsappWebhookService {
 				return;
 			}
 			if (!normalizedBody.isBlank() || !incomingAttachments.isEmpty()) {
-				ticketService.addWhatsappMessage(conversation.getActiveTicket().getId(), normalizedBody, incomingAttachments, incomingMessageId, incomingTransportId);
+				ticketService.addWhatsappMessage(conversation.getActiveTicket().getId(), normalizedBody, incomingAttachments, incomingMessageId, incomingTransportId, incomingReplyToMessageId);
 			}
 			return;
 		}
@@ -2319,6 +2321,15 @@ public class WhatsappWebhookService {
 			extractPathText(payload, "data.message.key.id"),
 			extractText(payload, "messageId"),
 			extractText(payload, "id")
+		);
+	}
+
+	private String resolveReplyToMessageId(JsonNode payload) {
+		return firstNonBlank(
+			extractText(payload, "replyToMessageId"),
+			extractPathText(payload, "message.replyToMessageId"),
+			extractPathText(payload, "payload.replyToMessageId"),
+			extractPathText(payload, "data.replyToMessageId")
 		);
 	}
 
