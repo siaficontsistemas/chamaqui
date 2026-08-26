@@ -87,6 +87,9 @@ function TicketConversation({
   const [isCloseConfirmationOpen, setIsCloseConfirmationOpen] = useState(false)
   const fileInputRef = useRef(null)
   const titleInputRef = useRef(null)
+  const composerRef = useRef(null)
+  const initialScrollTicketIdRef = useRef(null)
+  const initialMessagesLoadedTicketIdRef = useRef(null)
   const dateFormatter = useMemo(
     () =>
       new Intl.DateTimeFormat('pt-BR', {
@@ -118,6 +121,7 @@ function TicketConversation({
       setErrorMessage(error.message)
     } finally {
       if (!shouldKeepError) {
+        initialMessagesLoadedTicketIdRef.current = ticket.id
         setIsLoadingMessages(false)
       }
     }
@@ -321,6 +325,37 @@ function TicketConversation({
 
     return nextMessages
   }, [messages, ticket?.closedAt, ticket?.id, ticket?.requesterEmail])
+
+  useEffect(() => {
+    initialScrollTicketIdRef.current = null
+  }, [ticket?.id])
+
+  useEffect(() => {
+    if (
+      !ticket?.id ||
+      isLoadingMessages ||
+      initialMessagesLoadedTicketIdRef.current !== ticket.id ||
+      initialScrollTicketIdRef.current === ticket.id
+    ) {
+      return undefined
+    }
+
+    if (visibleMessages.length === 0) {
+      return undefined
+    }
+
+    initialScrollTicketIdRef.current = ticket.id
+
+    const frameId = window.requestAnimationFrame(() => {
+      composerRef.current?.scrollIntoView({
+        behavior: 'auto',
+        block: 'end',
+      })
+    })
+
+    return () => window.cancelAnimationFrame(frameId)
+  }, [isLoadingMessages, ticket?.id, visibleMessages.length])
+
   const displayStatusName = useMemo(() => {
     if (!ticket) {
       return 'Não informado'
@@ -735,7 +770,7 @@ function TicketConversation({
                 )}
               </div>
 
-              <form className="ticket-chat__composer" onSubmit={handleSendMessage}>
+              <form ref={composerRef} className="ticket-chat__composer" onSubmit={handleSendMessage}>
                 <input
                   hidden
                   multiple
