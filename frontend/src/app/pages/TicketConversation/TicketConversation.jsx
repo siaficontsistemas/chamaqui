@@ -9,7 +9,11 @@ import ConfirmActionModal from '../../components/confirm-action-modal/ConfirmAct
 import Header from '../../components/header/Header'
 import Sidebar from '../../components/sidebar/Sidebar'
 import { MicIcon, PlusCircleIcon, ReplyIcon } from '../../dashboardIcons'
-import { buildAudioFile, getSupportedAudioMimeType } from '../../utils/audioRecorder'
+import {
+  buildAudioFile,
+  formatAudioDuration,
+  getSupportedAudioMimeType,
+} from '../../utils/audioRecorder'
 import './TicketConversation.css'
 
 function PencilIcon() {
@@ -74,6 +78,7 @@ function TicketConversation({
   const [draftMessage, setDraftMessage] = useState('')
   const [attachedFiles, setAttachedFiles] = useState([])
   const [isRecordingAudio, setIsRecordingAudio] = useState(false)
+  const [recordingDuration, setRecordingDuration] = useState(0)
   const [messages, setMessages] = useState([])
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
   const [isSendingMessage, setIsSendingMessage] = useState(false)
@@ -101,6 +106,7 @@ function TicketConversation({
   const audioRecorderRef = useRef(null)
   const audioStreamRef = useRef(null)
   const audioChunksRef = useRef([])
+  const audioTimerRef = useRef(null)
   const titleInputRef = useRef(null)
   const composerRef = useRef(null)
   const messageInputRef = useRef(null)
@@ -108,6 +114,7 @@ function TicketConversation({
   useEffect(() => () => {
     audioRecorderRef.current?.stop()
     audioStreamRef.current?.getTracks().forEach((track) => track.stop())
+    window.clearInterval(audioTimerRef.current)
   }, [])
 
   useEffect(() => {
@@ -587,9 +594,11 @@ function TicketConversation({
         if (event.data.size > 0) audioChunksRef.current.push(event.data)
       }
       recorder.onstop = () => {
-        const blob = new Blob(audioChunksRef.current, { type: mimeType })
+        window.clearInterval(audioTimerRef.current)
+        const recordingMimeType = recorder.mimeType || mimeType
+        const blob = new Blob(audioChunksRef.current, { type: recordingMimeType })
         if (blob.size > 0) {
-          setAttachedFiles((currentFiles) => mergeUniqueFiles(currentFiles, [buildAudioFile(blob, mimeType)]))
+          setAttachedFiles((currentFiles) => mergeUniqueFiles(currentFiles, [buildAudioFile(blob, recordingMimeType)]))
         }
         stream.getTracks().forEach((track) => track.stop())
         audioStreamRef.current = null
@@ -597,9 +606,13 @@ function TicketConversation({
         audioChunksRef.current = []
         setIsRecordingAudio(false)
       }
-      recorder.start()
+      recorder.start(250)
       setErrorMessage('')
+      setRecordingDuration(0)
       setIsRecordingAudio(true)
+      audioTimerRef.current = window.setInterval(() => {
+        setRecordingDuration((currentDuration) => currentDuration + 1)
+      }, 1000)
     } catch {
       audioStreamRef.current?.getTracks().forEach((track) => track.stop())
       audioStreamRef.current = null
@@ -1032,6 +1045,11 @@ function TicketConversation({
                   title={isRecordingAudio ? 'Parar gravação de áudio' : 'Gravar áudio'}
                 >
                   <MicIcon />
+                  {isRecordingAudio && (
+                    <span className="ticket-chat__recording-duration">
+                      {formatAudioDuration(recordingDuration)}
+                    </span>
+                  )}
                 </button>
                 <button
                   type="submit"

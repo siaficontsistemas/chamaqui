@@ -17,3 +17,11 @@ export function buildAudioFile(blob, mimeType) {
     lastModified: Date.now(),
   })
 }
+
+export function formatAudioDuration(durationSeconds) {
+  const safeDuration = Math.max(0, Math.floor(durationSeconds))
+  const minutes = Math.floor(safeDuration / 60)
+  const seconds = safeDuration % 60
+
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+}

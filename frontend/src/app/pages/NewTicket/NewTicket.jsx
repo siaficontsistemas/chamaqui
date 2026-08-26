@@ -3,7 +3,11 @@ import Header from '../../components/header/Header'
 import Sidebar from '../../components/sidebar/Sidebar'
 import { dashboardPages } from '../../dashboardData'
 import { ChevronDownIcon, MicIcon, PlusCircleIcon } from '../../dashboardIcons'
-import { buildAudioFile, getSupportedAudioMimeType } from '../../utils/audioRecorder'
+import {
+  buildAudioFile,
+  formatAudioDuration,
+  getSupportedAudioMimeType,
+} from '../../utils/audioRecorder'
 import '../Home/Home.css'
 
 function normalizeText(value) {
@@ -75,10 +79,12 @@ function NewTicket({
   const [isCompanyOptionsOpen, setIsCompanyOptionsOpen] = useState(false)
   const [attachedFiles, setAttachedFiles] = useState([])
   const [isRecordingAudio, setIsRecordingAudio] = useState(false)
+  const [recordingDuration, setRecordingDuration] = useState(0)
   const fileInputRef = useRef(null)
   const audioRecorderRef = useRef(null)
   const audioStreamRef = useRef(null)
   const audioChunksRef = useRef([])
+  const audioTimerRef = useRef(null)
   const availableSectors = useMemo(
     () => availableTicketSectors.filter((sector) => sector.active !== false),
     [availableTicketSectors]
@@ -135,6 +141,7 @@ function NewTicket({
   useEffect(() => () => {
     audioRecorderRef.current?.stop()
     audioStreamRef.current?.getTracks().forEach((track) => track.stop())
+    window.clearInterval(audioTimerRef.current)
   }, [])
 
   useEffect(() => {
@@ -264,9 +271,11 @@ function NewTicket({
         if (event.data.size > 0) audioChunksRef.current.push(event.data)
       }
       recorder.onstop = () => {
-        const blob = new Blob(audioChunksRef.current, { type: mimeType })
+        window.clearInterval(audioTimerRef.current)
+        const recordingMimeType = recorder.mimeType || mimeType
+        const blob = new Blob(audioChunksRef.current, { type: recordingMimeType })
         if (blob.size > 0) {
-          setAttachedFiles((currentFiles) => mergeUniqueFiles(currentFiles, [buildAudioFile(blob, mimeType)]))
+          setAttachedFiles((currentFiles) => mergeUniqueFiles(currentFiles, [buildAudioFile(blob, recordingMimeType)]))
         }
         stream.getTracks().forEach((track) => track.stop())
         audioStreamRef.current = null
@@ -274,9 +283,13 @@ function NewTicket({
         audioChunksRef.current = []
         setIsRecordingAudio(false)
       }
-      recorder.start()
+      recorder.start(250)
       setFeedbackMessage('')
+      setRecordingDuration(0)
       setIsRecordingAudio(true)
+      audioTimerRef.current = window.setInterval(() => {
+        setRecordingDuration((currentDuration) => currentDuration + 1)
+      }, 1000)
     } catch {
       audioStreamRef.current?.getTracks().forEach((track) => track.stop())
       audioStreamRef.current = null
@@ -589,7 +602,11 @@ function NewTicket({
                   aria-label={isRecordingAudio ? 'Parar gravação de áudio' : 'Gravar áudio'}
                 >
                   <MicIcon />
-                  <span>{isRecordingAudio ? 'Parar gravação' : 'Gravar Áudio'}</span>
+                  <span>
+                    {isRecordingAudio
+                      ? `Gravando ${formatAudioDuration(recordingDuration)}`
+                      : 'Gravar Áudio'}
+                  </span>
                 </button>
 
                 <button
