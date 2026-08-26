@@ -221,6 +221,18 @@ public class WhatsappService {
 		return sendMessage(companyOwner, phone, message, attachments, null);
 	}
 
+	public String resolveSentMessageId(WhatsappOperationResponse response) {
+		if (response == null || response.data() == null || response.data().isBlank()) {
+			return "";
+		}
+		try {
+			return objectMapper.readTree(response.data()).path("messageId").asText("").trim();
+		} catch (IOException exception) {
+			logger.warn("Não foi possível identificar o ID da mensagem enviada pelo WhatsApp.", exception);
+			return "";
+		}
+	}
+
 	public WhatsappOperationResponse sendMessage(
 		User companyOwner,
 		String phone,

@@ -57,6 +57,7 @@ import com.helpdesk.helpdesk.dto.ticket.TicketTargetAssigneeResponse;
 import com.helpdesk.helpdesk.dto.ticket.TicketTransferCandidateResponse;
 import com.helpdesk.helpdesk.dto.ticket.UpdateTicketTitleRequest;
 import com.helpdesk.helpdesk.dto.ticket.UpdateTicketClassificationRequest;
+import com.helpdesk.helpdesk.dto.whatsapp.WhatsappOperationResponse;
 import com.helpdesk.helpdesk.repository.CompanyPartnershipRepository;
 import com.helpdesk.helpdesk.repository.SectorMemberRepository;
 import com.helpdesk.helpdesk.repository.SectorRepository;
@@ -457,12 +458,17 @@ public class TicketService {
 
 		if (shouldMirrorMessageToWhatsapp(ticket, author)) {
 			List<WhatsappService.OutboundAttachment> outboundAttachments = loadWhatsappOutboundAttachments(savedMessage.getId());
-				sendWhatsappTicketMessage(
+				SentWhatsappMessage sentWhatsappMessage = sendWhatsappTicketMessage(
 					ticket,
 					buildWhatsappOutboundText(ticket.getProtocol(), author.getFullName(), normalizedMessage, outboundAttachments),
 					outboundAttachments,
 					toWhatsappQuotedMessage(replyToMessage)
 				);
+				if (!sentWhatsappMessage.messageId().isBlank()) {
+					savedMessage.setWhatsappMessageId(sentWhatsappMessage.messageId());
+					savedMessage.setWhatsappRemoteJid(sentWhatsappMessage.remoteJid());
+					ticketMessageRepository.save(savedMessage);
+				}
 		}
 
 		boolean isRequesterSideAuthor = isRequesterSideAuthor(ticket, author);
@@ -487,15 +493,15 @@ public class TicketService {
 		return toMessageResponse(savedMessage, attachments);
 	}
 
-	private void sendWhatsappTicketMessage(
+	private SentWhatsappMessage sendWhatsappTicketMessage(
 		Ticket ticket,
 		String message,
 		List<WhatsappService.OutboundAttachment> attachments
 	) {
-		sendWhatsappTicketMessage(ticket, message, attachments, null);
+		return sendWhatsappTicketMessage(ticket, message, attachments, null);
 	}
 
-	private void sendWhatsappTicketMessage(
+	private SentWhatsappMessage sendWhatsappTicketMessage(
 		Ticket ticket,
 		String message,
 		List<WhatsappService.OutboundAttachment> attachments,
@@ -504,12 +510,13 @@ public class TicketService {
 		RuntimeException lastException = null;
 		for (String recipient : resolveWhatsappTicketRecipients(ticket)) {
 			try {
+				WhatsappOperationResponse response;
 				if (quotedMessage == null) {
-					whatsappService.sendMessage(resolveWhatsappCompanyOwner(ticket), recipient, message, attachments);
+					response = whatsappService.sendMessage(resolveWhatsappCompanyOwner(ticket), recipient, message, attachments);
 				} else {
-					whatsappService.sendMessage(resolveWhatsappCompanyOwner(ticket), recipient, message, attachments, quotedMessage);
+					response = whatsappService.sendMessage(resolveWhatsappCompanyOwner(ticket), recipient, message, attachments, quotedMessage);
 				}
-				return;
+				return new SentWhatsappMessage(recipient, whatsappService.resolveSentMessageId(response));
 			} catch (RuntimeException exception) {
 				lastException = exception;
 				logger.warn("Falha ao enviar mensagem do chamado pelo WhatsApp; tentando próximo destinatário: ticketId={}, recipient={}",
@@ -520,6 +527,9 @@ public class TicketService {
 			throw lastException;
 		}
 		throw new IllegalArgumentException("O chamado do WhatsApp não possui um destinatário válido para resposta.");
+	}
+
+	private record SentWhatsappMessage(String remoteJid, String messageId) {
 	}
 
 	private WhatsappService.QuotedMessage toWhatsappQuotedMessage(TicketMessage message) {
@@ -553,6 +563,18 @@ public class TicketService {
 		String whatsappMessageId,
 		String whatsappRemoteJid
 	) {
+		return addWhatsappMessage(ticketId, message, attachments, whatsappMessageId, whatsappRemoteJid, null);
+	}
+
+	@Transactional
+	public TicketMessageResponse addWhatsappMessage(
+		UUID ticketId,
+		String message,
+		List<IncomingAttachment> attachments,
+		String whatsappMessageId,
+		String whatsappRemoteJid,
+		String replyToWhatsappMessageId
+	) {
 		Ticket ticket = ticketRepository.findById(ticketId)
 			.orElseThrow(() -> new NotFoundException("Chamado não encontrado."));
 		String normalizedMessage = normalizeMessage(message);
@@ -571,6 +593,12 @@ public class TicketService {
 		ticketMessage.setInternal(false);
 		ticketMessage.setWhatsappMessageId(whatsappMessageId);
 		ticketMessage.setWhatsappRemoteJid(whatsappRemoteJid);
+		if (replyToWhatsappMessageId != null && !replyToWhatsappMessageId.isBlank()) {
+			ticketMessage.setReplyToMessage(
+				ticketMessageRepository.findFirstByTicketIdAndWhatsappMessageId(ticketId, replyToWhatsappMessageId.trim())
+					.orElse(null)
+			);
+		}
 
 		TicketMessage savedMessage = ticketMessageRepository.save(ticketMessage);
 		List<TicketAttachmentResponse> savedAttachments = saveIncomingAttachments(
