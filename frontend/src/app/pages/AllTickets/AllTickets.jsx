@@ -10,6 +10,7 @@ import {
   matchesTicketRequesterCompany,
 } from '../../utils/ticketCompanyFilter'
 import { truncateTicketTitle } from '../../utils/truncateTicketTitle'
+import { formatTicketRequesterName } from '../../utils/formatTicketRequesterName'
 
 import { SearchIcon } from '../../dashboardIcons'
 import '../Home/Home.css'
@@ -335,6 +336,7 @@ function AllTickets({
                         </span>
                       ) : null}
                       <span>Protocolo</span>
+                      <span>Cliente</span>
                       <span>Assunto</span>
                       {canViewInternalClassification ? <span>Classificação</span> : null}
                       <span>Status</span>
@@ -354,8 +356,11 @@ function AllTickets({
                             />
                           </span>
                         ) : null}
-                        <span>{ticket.protocol}</span>
-                        <span title={ticket.title || ''}>{truncateTicketTitle(ticket.title)}</span>
+                        <span className="ticket-list__protocol-cell">{ticket.protocol}</span>
+                        <span>{formatTicketRequesterName(ticket.requesterName)}</span>
+                        <span className="ticket-list__subject-cell" title={ticket.title || ''}>
+                          {truncateTicketTitle(ticket.title)}
+                        </span>
                         {canViewInternalClassification ? (
                           <span className="ticket-list__classification-cell" title={ticket.internalTypeName || ''}>
                             {ticket.internalTypeName || 'Não classificado'}
