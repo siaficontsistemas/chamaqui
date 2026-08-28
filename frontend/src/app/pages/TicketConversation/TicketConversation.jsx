@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import EmojiPicker, { Categories, SuggestionMode, Theme } from 'emoji-picker-react'
 import {
   addTicketMessage,
   getPublicTicketAttachmentApiUrl,
@@ -22,6 +23,22 @@ function PencilIcon() {
       <path
         d="M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25zm2.92 2.33H5v-.92l9.06-9.06.92.92L5.92 19.58zM20.71 7.04a1.003 1.003 0 0 0 0-1.42l-2.34-2.33a1.003 1.003 0 0 0-1.42 0L15.12 5.1l3.75 3.75 1.84-1.81z"
         fill="currentColor"
+      />
+    </svg>
+  )
+}
+
+function EmojiIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+      <circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="9" cy="10" r="1" fill="currentColor" />
+      <circle cx="15" cy="10" r="1" fill="currentColor" />
+      <path
+        d="M8.5 14c.9 1.3 2.08 2 3.5 2s2.6-.7 3.5-2"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
       />
     </svg>
   )
@@ -99,6 +116,7 @@ function TicketConversation({
   const [isCloseConfirmationOpen, setIsCloseConfirmationOpen] = useState(false)
   const [selectedImage, setSelectedImage] = useState(null)
   const [replyingToMessage, setReplyingToMessage] = useState(null)
+  const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false)
   const [imageZoom, setImageZoom] = useState(1)
   const [imagePan, setImagePan] = useState({ x: 0, y: 0 })
   const imageViewportRef = useRef(null)
@@ -110,12 +128,28 @@ function TicketConversation({
   const titleInputRef = useRef(null)
   const composerRef = useRef(null)
   const messageInputRef = useRef(null)
+  const emojiPickerRef = useRef(null)
 
   useEffect(() => () => {
     audioRecorderRef.current?.stop()
     audioStreamRef.current?.getTracks().forEach((track) => track.stop())
     window.clearInterval(audioTimerRef.current)
   }, [])
+
+  useEffect(() => {
+    if (!isEmojiPickerOpen) {
+      return undefined
+    }
+
+    function closeEmojiPicker(event) {
+      if (!emojiPickerRef.current?.contains(event.target)) {
+        setIsEmojiPickerOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', closeEmojiPicker)
+    return () => document.removeEventListener('mousedown', closeEmojiPicker)
+  }, [isEmojiPickerOpen])
 
   useEffect(() => {
     setImageZoom(1)
@@ -571,6 +605,22 @@ function TicketConversation({
     )
   }
 
+  function handleInsertEmoji(emoji) {
+    const input = messageInputRef.current
+    const start = input?.selectionStart ?? draftMessage.length
+    const end = input?.selectionEnd ?? start
+    const nextMessage = `${draftMessage.slice(0, start)}${emoji}${draftMessage.slice(end)}`
+
+    setDraftMessage(nextMessage)
+    setIsEmojiPickerOpen(false)
+    window.requestAnimationFrame(() => {
+      if (!input) return
+      input.focus()
+      const nextCursorPosition = start + emoji.length
+      input.setSelectionRange(nextCursorPosition, nextCursorPosition)
+    })
+  }
+
   async function handleToggleAudioRecording() {
     if (isRecordingAudio) {
       const recorder = audioRecorderRef.current
@@ -992,21 +1042,99 @@ function TicketConversation({
                   type="file"
                   onChange={handleFileSelection}
                 />
-                <textarea
-                  ref={messageInputRef}
-                  placeholder={
-                    isTicketClosed
-                      ? 'Este chamado foi encerrado.'
-                      : isWhatsappTicket
-                        ? 'Responder cliente pelo WhatsApp...'
-                        : 'Responder chamado...'
-                  }
-                  rows={3}
-                  value={draftMessage}
-                  onChange={(event) => setDraftMessage(event.target.value)}
-                  onPaste={handlePasteFiles}
-                  disabled={isSendingMessage || isTicketClosed}
-                />
+                <div className="ticket-chat__composer-bar">
+                  <textarea
+                    ref={messageInputRef}
+                    placeholder={
+                      isTicketClosed
+                        ? 'Este chamado foi encerrado.'
+                        : isWhatsappTicket
+                          ? 'Responder cliente pelo WhatsApp...'
+                          : 'Responder chamado...'
+                    }
+                    rows={3}
+                    value={draftMessage}
+                    onChange={(event) => setDraftMessage(event.target.value)}
+                    onPaste={handlePasteFiles}
+                    disabled={isSendingMessage || isTicketClosed}
+                  />
+                  <div className="ticket-chat__composer-actions">
+                    <div ref={emojiPickerRef} className="ticket-chat__emoji-picker-wrapper">
+                      {isEmojiPickerOpen ? (
+                        <div className="ticket-chat__emoji-picker">
+                          <EmojiPicker
+                            className="ticket-chat__emoji-library"
+                            categories={[
+                              { category: Categories.SUGGESTED, name: 'Recentes' },
+                              { category: Categories.SMILEYS_PEOPLE, name: 'Smileys e pessoas' },
+                              { category: Categories.ANIMALS_NATURE, name: 'Animais e natureza' },
+                              { category: Categories.FOOD_DRINK, name: 'Comidas e bebidas' },
+                              { category: Categories.ACTIVITIES, name: 'Atividades' },
+                              { category: Categories.TRAVEL_PLACES, name: 'Viagens e lugares' },
+                              { category: Categories.OBJECTS, name: 'Objetos' },
+                              { category: Categories.SYMBOLS, name: 'Símbolos' },
+                              { category: Categories.FLAGS, name: 'Bandeiras' },
+                            ]}
+                            suggestedEmojisMode={SuggestionMode.RECENT}
+                            theme={Theme.LIGHT}
+                            emojiStyle="native"
+                            onEmojiClick={({ emoji }) => handleInsertEmoji(emoji)}
+                            searchPlaceholder="Pesquisar emoji"
+                            previewConfig={{ showPreview: false }}
+                            skinTonesDisabled
+                            lazyLoadEmojis
+                            width="100%"
+                            height="100%"
+                          />
+                        </div>
+                      ) : null}
+                      <button
+                        className="ticket-chat__attach ticket-chat__emoji-trigger"
+                        type="button"
+                        onClick={() => setIsEmojiPickerOpen((isOpen) => !isOpen)}
+                        disabled={isSendingMessage || isTicketClosed}
+                        aria-label="Escolher emoji"
+                        title="Escolher emoji"
+                        aria-expanded={isEmojiPickerOpen}
+                      >
+                        <EmojiIcon />
+                      </button>
+                    </div>
+                    <button
+                      className="ticket-chat__attach"
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isSendingMessage || isTicketClosed}
+                      aria-label={
+                        attachedFiles.length > 0
+                          ? `Anexar arquivos (${attachedFiles.length} selecionado(s))`
+                          : 'Anexar arquivos'
+                      }
+                      title={
+                        attachedFiles.length > 0
+                          ? `Anexar arquivos (${attachedFiles.length})`
+                          : 'Anexar arquivos'
+                      }
+                    >
+                      <PlusCircleIcon />
+                    </button>
+                    <button
+                      className={`ticket-chat__attach${isRecordingAudio ? ' ticket-chat__attach--recording' : ''}`}
+                      type="button"
+                      onClick={handleToggleAudioRecording}
+                      disabled={isSendingMessage || isTicketClosed}
+                      aria-label={isRecordingAudio ? 'Parar gravação de áudio' : 'Gravar áudio'}
+                      title={isRecordingAudio ? 'Parar gravação de áudio' : 'Gravar áudio'}
+                    >
+                      <MicIcon />
+                      {isRecordingAudio && (
+                        <span className="ticket-chat__recording-duration">
+                          {formatAudioDuration(recordingDuration)}
+                        </span>
+                      )}
+                    </button>
+                  </div>
+                </div>
                 {attachedFiles.length > 0 ? (
                   <div className="ticket-chat__pending-attachments">
                     {attachedFiles.map((file) => (
@@ -1022,39 +1150,6 @@ function TicketConversation({
                     ))}
                   </div>
                 ) : null}
-                <button
-                  className="ticket-chat__attach"
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isSendingMessage || isTicketClosed}
-                  aria-label={
-                    attachedFiles.length > 0
-                      ? `Anexar arquivos (${attachedFiles.length} selecionado(s))`
-                      : 'Anexar arquivos'
-                  }
-                  title={
-                    attachedFiles.length > 0
-                      ? `Anexar arquivos (${attachedFiles.length})`
-                      : 'Anexar arquivos'
-                  }
-                >
-                  <PlusCircleIcon />
-                </button>
-                <button
-                  className={`ticket-chat__attach${isRecordingAudio ? ' ticket-chat__attach--recording' : ''}`}
-                  type="button"
-                  onClick={handleToggleAudioRecording}
-                  disabled={isSendingMessage || isTicketClosed}
-                  aria-label={isRecordingAudio ? 'Parar gravação de áudio' : 'Gravar áudio'}
-                  title={isRecordingAudio ? 'Parar gravação de áudio' : 'Gravar áudio'}
-                >
-                  <MicIcon />
-                  {isRecordingAudio && (
-                    <span className="ticket-chat__recording-duration">
-                      {formatAudioDuration(recordingDuration)}
-                    </span>
-                  )}
-                </button>
                 <button
                   type="submit"
                   disabled={
