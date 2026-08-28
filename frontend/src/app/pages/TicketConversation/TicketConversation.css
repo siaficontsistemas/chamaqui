@@ -468,29 +468,52 @@
 
 .ticket-chat__composer {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 14px;
   align-items: end;
   min-width: 0;
 }
 
-.ticket-chat__composer textarea {
+.ticket-chat__composer-bar {
+  position: relative;
+  min-width: 0;
+  min-height: 108px;
+  border: 1px solid rgba(31, 49, 65, 0.12);
+  border-radius: 20px;
+  background: #ffffff;
+}
+
+.ticket-chat__composer-bar:focus-within {
+  border-color: rgba(32, 52, 73, 0.28);
+  box-shadow: 0 0 0 4px rgba(32, 52, 73, 0.08);
+}
+
+.ticket-chat__composer-bar textarea {
   width: 100%;
   max-width: 100%;
   min-height: 108px;
   resize: vertical;
-  padding: 16px 18px;
-  border: 1px solid rgba(31, 49, 65, 0.12);
+  padding: 16px 174px 16px 18px;
+  border: 0;
   border-radius: 20px;
-  background: #ffffff;
+  background: transparent;
   color: #111111;
   font: inherit;
   outline: none;
 }
 
-.ticket-chat__composer textarea:focus {
-  border-color: rgba(32, 52, 73, 0.28);
-  box-shadow: 0 0 0 4px rgba(32, 52, 73, 0.08);
+.ticket-chat__composer-bar textarea:focus {
+  border: 0;
+  box-shadow: none;
+}
+
+.ticket-chat__composer-actions {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .ticket-chat__pending-attachments {
@@ -569,6 +592,7 @@
   min-width: 48px;
   width: 48px;
   min-height: 48px;
+  border: 0;
   padding: 0;
   border-radius: 50%;
   background: transparent;
@@ -577,9 +601,14 @@
   align-items: center;
   justify-content: center;
   box-shadow: none;
+  cursor: pointer;
 }
 
-.ticket-chat__composer button {
+.ticket-chat__composer-actions .ticket-chat__attach {
+  flex: 0 0 48px;
+}
+
+.ticket-chat__composer > button {
   min-width: 128px;
   min-height: 48px;
   padding: 0 22px;
@@ -595,6 +624,164 @@
 .ticket-chat__composer .ticket-chat__attach svg {
   width: 34px;
   height: 34px;
+}
+
+.ticket-chat__emoji-picker-wrapper {
+  position: relative;
+}
+
+.ticket-chat__composer .ticket-chat__emoji-trigger {
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
+  min-height: 48px;
+  border: 0;
+}
+
+.ticket-chat__emoji-picker {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  width: min(560px, calc(100vw - 40px));
+  height: min(480px, calc(100vh - 40px));
+  border: 1px solid rgba(31, 49, 65, 0.1);
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 12px 30px rgba(31, 49, 65, 0.16);
+  overflow: hidden;
+}
+
+/* The library supplies the emoji data, categories, search and scrolling.
+   These variables keep its mature interaction model aligned with ChamaQui. */
+.ticket-chat__emoji-library {
+  --epr-highlight-color: #eb9640;
+  --epr-category-icon-active-color: #eb9640;
+  --epr-hover-bg-color: rgba(31, 49, 65, 0.08);
+  --epr-hover-bg-color-reduced-opacity: rgba(31, 49, 65, 0.05);
+  --epr-focus-bg-color: rgba(235, 150, 64, 0.12);
+  --epr-text-color: #60717d;
+  --epr-search-input-bg-color: #f4f6f7;
+  --epr-search-input-bg-color-active: #ffffff;
+  --epr-search-input-border-radius: 12px;
+  --epr-search-input-height: 42px;
+  --epr-search-input-padding: 0 38px;
+  --epr-search-border-color: rgba(31, 49, 65, 0.1);
+  --epr-search-border-color-active: #eb9640;
+  --epr-picker-border-radius: 0;
+  --epr-emoji-fullsize: 48px;
+  --epr-emoji-size: 26px;
+  --epr-emoji-padding: 11px;
+  --epr-category-label-height: 28px;
+  --epr-category-label-padding: 0 12px;
+  --epr-category-label-bg-color: #ffffff;
+  --epr-category-label-text-color: #60717d;
+  --epr-horizontal-padding: 12px;
+  --epr-header-padding: 8px var(--epr-horizontal-padding);
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background: #ffffff !important;
+  min-width: 0;
+}
+
+.ticket-chat__emoji-library .epr-header {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  border-bottom: 1px solid rgba(31, 49, 65, 0.08);
+}
+
+.ticket-chat__emoji-library button {
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background-color: transparent;
+  box-shadow: none;
+}
+
+.ticket-chat__emoji-library .epr-category-nav {
+  order: 1;
+  height: 42px;
+  padding: 5px 0 7px;
+  border-bottom: 1px solid rgba(31, 49, 65, 0.08);
+  opacity: 1 !important;
+}
+
+.ticket-chat__emoji-library .epr-search-container {
+  order: 2;
+}
+
+.ticket-chat__emoji-library .epr-search-container input {
+  font-size: 0.92rem;
+}
+
+.ticket-chat__emoji-library .epr-category-nav .epr-cat-btn {
+  position: relative;
+  flex: 0 0 30px;
+  opacity: 1 !important;
+  filter: brightness(0.62) saturate(1.15);
+  background-position-y: 0 !important;
+}
+
+.ticket-chat__emoji-library .epr-category-nav .epr-cat-btn:hover,
+.ticket-chat__emoji-library .epr-category-nav .epr-cat-btn:focus-visible {
+  opacity: 1;
+  border-radius: 0;
+  background-color: transparent !important;
+}
+
+.ticket-chat__emoji-library .epr-category-nav .epr-cat-btn.epr-active {
+  opacity: 1;
+}
+
+.ticket-chat__emoji-library .epr-category-nav .epr-cat-btn.epr-active::after {
+  position: absolute;
+  right: 2px;
+  bottom: -7px;
+  left: 2px;
+  height: 2px;
+  border-radius: 999px;
+  background: #eb9640;
+  content: '';
+}
+
+.ticket-chat__emoji-library .epr-body {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(31, 49, 65, 0.25) transparent;
+}
+
+.ticket-chat__emoji-library .epr-emoji-category-content {
+  justify-content: space-between;
+}
+
+.ticket-chat__emoji-library .epr-emoji-category-label {
+  color: #60717d;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+}
+
+.ticket-chat__emoji-library .epr-emoji {
+  width: var(--epr-emoji-fullsize) !important;
+  height: var(--epr-emoji-fullsize) !important;
+  min-width: var(--epr-emoji-fullsize) !important;
+  min-height: var(--epr-emoji-fullsize) !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border-radius: 8px;
+}
+
+.ticket-chat__emoji-library .epr-emoji:hover,
+.ticket-chat__emoji-library .epr-emoji:focus-visible {
+  background: rgba(31, 49, 65, 0.08) !important;
+  outline: none;
 }
 
 .ticket-chat__composer .ticket-chat__attach--recording {
@@ -798,6 +985,31 @@
 
   .ticket-chat__composer button {
     width: 100%;
+  }
+
+  .ticket-chat__composer-actions .ticket-chat__attach {
+    width: 48px;
+    min-width: 48px;
+  }
+
+  .ticket-chat__emoji-picker-wrapper {
+    width: auto;
+  }
+
+  .ticket-chat__emoji-trigger {
+    width: 48px !important;
+  }
+
+  .ticket-chat__composer .ticket-chat__emoji-option {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .ticket-chat__emoji-picker {
+    right: 0;
+    left: auto;
+    width: min(560px, calc(100vw - 24px));
+    height: min(480px, calc(100vh - 36px));
   }
 
   .ticket-message {
