@@ -171,11 +171,53 @@ class WhatsappWebhookServiceTest {
 		when(sectorRepository.findActiveByCreatedByIdOrderByNameAsc(companyOwner.getId()))
 			.thenReturn(List.of(sector));
 
-		service.handleIncomingMessage(companyOwner, "5511999999999", "", "abrir chamado", List.of());
+		service.handleIncomingMessage(companyOwner, "5511999999999", "", "criar novo chamado", List.of());
 
 		verify(whatsappConversationRepository).save(conversationCaptor.capture());
 		assertEquals(WhatsappConversationStep.ASK_SECTOR, conversationCaptor.getValue().getCurrentStep());
 		verify(whatsappService).sendMessage(eq(companyOwner), eq("5511999999999"), contains("Financeiro"));
+	}
+
+	@Test
+	void shouldRestartNormalConversationAfterTwoHoursWithoutInboundActivity() {
+		User companyOwner = companyOwner();
+		WhatsappConversation conversation = conversation(companyOwner, WhatsappConversationStep.NORMAL_CONVERSATION_ACTIVE);
+		conversation.setLastInboundMessageAt(OffsetDateTime.now().minusHours(3));
+
+		when(whatsappConversationRepository.findByCompanyOwnerIdAndPhoneNumber(companyOwner.getId(), "5511999999999"))
+			.thenReturn(Optional.of(conversation));
+
+		service.handleIncomingMessage(companyOwner, "5511999999999", "", "Olá novamente", List.of());
+
+		verify(whatsappConversationRepository, atLeastOnce()).save(conversationCaptor.capture());
+		WhatsappConversation savedConversation = conversationCaptor.getAllValues().get(conversationCaptor.getAllValues().size() - 1);
+		assertEquals(WhatsappConversationStep.ASK_INITIAL_MODE, savedConversation.getCurrentStep());
+		assertEquals(false, savedConversation.isNormalConversationActive());
+		verify(whatsappService).sendMessage(
+			eq(companyOwner),
+			eq("5511999999999"),
+			contains("reiniciada após 2 horas")
+		);
+	}
+
+	@Test
+	void shouldUseOutboundActivityWhenCheckingNormalConversationInactivity() {
+		User companyOwner = companyOwner();
+		WhatsappConversation conversation = conversation(companyOwner, WhatsappConversationStep.NORMAL_CONVERSATION_ACTIVE);
+		conversation.setLastInboundMessageAt(OffsetDateTime.now().minusHours(4));
+		conversation.setLastOutboundMessageAt(OffsetDateTime.now().minusMinutes(30));
+
+		when(whatsappConversationRepository.findByCompanyOwnerIdAndPhoneNumber(companyOwner.getId(), "5511999999999"))
+			.thenReturn(Optional.of(conversation));
+
+		service.handleIncomingMessage(companyOwner, "5511999999999", "", "Ainda estou aqui", List.of());
+
+		assertEquals(WhatsappConversationStep.NORMAL_CONVERSATION_ACTIVE, conversation.getCurrentStep());
+		verify(whatsappService, org.mockito.Mockito.never()).sendMessage(
+			eq(companyOwner),
+			eq("5511999999999"),
+			contains("reiniciada após 2 horas")
+		);
 	}
 
 	@Test
@@ -404,7 +446,7 @@ class WhatsappWebhookServiceTest {
 	}
 
 	@Test
-	void shouldCloseInactiveNormalConversationsAfterTwoDays() {
+	void shouldRestartInactiveNormalConversationsAfterTwoHours() {
 		User companyOwner = companyOwner();
 		WhatsappConversation conversation = conversation(companyOwner, WhatsappConversationStep.NORMAL_CONVERSATION_ACTIVE);
 		conversation.setNormalConversationActive(true);
@@ -413,12 +455,12 @@ class WhatsappWebhookServiceTest {
 		when(whatsappConversationRepository.findInactiveNormalConversations(any(OffsetDateTime.class)))
 			.thenReturn(List.of(conversation));
 
-		int closedCount = service.closeInactiveNormalConversations(OffsetDateTime.now().minusDays(2));
+		int closedCount = service.closeInactiveNormalConversations(OffsetDateTime.now().minusHours(2));
 
 		assertEquals(1, closedCount);
-		verify(whatsappConversationRepository).saveAll(anyList());
-		verify(whatsappService).sendMessage(eq(companyOwner), eq("5511999999999"), contains("encerrado por inatividade"));
-		assertEquals(WhatsappConversationStep.NORMAL_CONVERSATION_CLOSED, conversation.getCurrentStep());
+		verify(whatsappConversationRepository, atLeastOnce()).save(conversation);
+		verify(whatsappService).sendMessage(eq(companyOwner), eq("5511999999999"), contains("reiniciada após 2 horas"));
+		assertEquals(WhatsappConversationStep.ASK_INITIAL_MODE, conversation.getCurrentStep());
 	}
 
 	@Test

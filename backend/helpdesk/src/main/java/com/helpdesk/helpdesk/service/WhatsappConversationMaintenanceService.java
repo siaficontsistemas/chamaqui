@@ -20,7 +20,7 @@ public class WhatsappConversationMaintenanceService {
 
 	@Scheduled(cron = "0 0 * * * *")
 	public void closeInactiveNormalConversations() {
-		int closedCount = whatsappWebhookService.closeInactiveNormalConversations(OffsetDateTime.now().minusDays(2));
+		int closedCount = whatsappWebhookService.closeInactiveNormalConversations(OffsetDateTime.now().minusHours(2));
 		if (closedCount > 0) {
 			logger.info("Conversas normais do WhatsApp encerradas por inatividade: {}", closedCount);
 		}
