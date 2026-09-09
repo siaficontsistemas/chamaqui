@@ -254,6 +254,20 @@ public class WhatsappWebhookService {
 			return;
 		}
 
+		if (isNormalConversationInactive(
+			conversation,
+			previousInboundMessageAt,
+			previousOutboundMessageAt
+		)) {
+			promptForInitialMode(
+				companyOwner,
+				conversation,
+				replyTarget,
+				"Sua conversa foi reiniciada após 2 horas sem interação."
+			);
+			return;
+		}
+
 		if (shouldPromptForInactivityDestination(
 			conversation,
 			previousInboundMessageAt,
@@ -438,11 +452,12 @@ public class WhatsappWebhookService {
 		List<WhatsappConversation> conversations = whatsappConversationRepository.findInactiveNormalConversations(inactiveSince);
 		for (WhatsappConversation conversation : conversations) {
 			String replyTarget = resolveReplyTarget(conversation, normalizePhone(conversation.getPhoneNumber()));
-			closeNormalConversation(conversation);
-			replyWithMessage(conversation.getCompanyOwner(), replyTarget, buildNormalConversationClosedMessage(true));
-		}
-		if (!conversations.isEmpty()) {
-			whatsappConversationRepository.saveAll(conversations);
+			promptForInitialMode(
+				conversation.getCompanyOwner(),
+				conversation,
+				replyTarget,
+				"Sua conversa foi reiniciada após 2 horas sem interação."
+			);
 		}
 		return conversations.size();
 	}
@@ -464,6 +479,21 @@ public class WhatsappWebhookService {
 
 		OffsetDateTime lastInteractionAt = maxTimestamp(previousInboundMessageAt, previousOutboundMessageAt);
 		return lastInteractionAt != null && lastInteractionAt.isBefore(OffsetDateTime.now().minusHours(INACTIVITY_ROUTING_WINDOW_HOURS));
+	}
+
+	private boolean isNormalConversationInactive(
+		WhatsappConversation conversation,
+		OffsetDateTime previousInboundMessageAt,
+		OffsetDateTime previousOutboundMessageAt
+	) {
+		if (conversation.getCurrentStep() != WhatsappConversationStep.NORMAL_CONVERSATION_ACTIVE
+			|| !conversation.isNormalConversationActive()) {
+			return false;
+		}
+
+		OffsetDateTime lastInteractionAt = maxTimestamp(previousInboundMessageAt, previousOutboundMessageAt);
+		return lastInteractionAt != null
+			&& lastInteractionAt.isBefore(OffsetDateTime.now().minusHours(INACTIVITY_ROUTING_WINDOW_HOURS));
 	}
 
 	private void promptForInactivityMessageDestination(
@@ -1932,6 +1962,7 @@ public class WhatsappWebhookService {
 	private boolean isOpenNewTicketCommand(String body) {
 		String normalizedBody = normalizeComparable(body);
 		return normalizedBody.equals("abrir novo chamado")
+			|| normalizedBody.equals("criar novo chamado")
 			|| normalizedBody.equals("novo chamado")
 			|| normalizedBody.equals("abrir chamado")
 			|| normalizedBody.equals("abrindo chamado");
