@@ -80,6 +80,18 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 	@EntityGraph(attributePaths = {"roles", "companyOwner"})
 	java.util.List<User> findActiveByCompanyOwnerId(@Param("companyOwnerId") UUID companyOwnerId);
 
+	@Query("""
+		select user
+		from User user
+		join user.roles role
+		where role.code in ('USER', 'ADMIN')
+		  and user.deletedAt is null
+		  and user.status = com.helpdesk.helpdesk.domain.UserStatus.ACTIVE
+		order by lower(user.fullName), lower(user.email)
+		""")
+	@EntityGraph(attributePaths = {"roles", "companyOwner"})
+	java.util.List<User> findActiveRequesterUsers();
+
 	@EntityGraph(attributePaths = {"roles", "companyOwner"})
 	java.util.List<User> findByCompanyOwnerIdAndIdNotOrderByFullNameAsc(UUID companyOwnerId, UUID excludedUserId);
 

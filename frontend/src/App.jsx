@@ -53,6 +53,7 @@ import {
   getSentTeamInvites,
   getTeamMembers,
   getTicketById,
+  getTicketRequesters,
   getTicketSummary,
   getTicketTransferCandidates,
   linkExistingClientCompany,
@@ -416,6 +417,7 @@ async function fetchDashboardBundle() {
     nextSummary,
     nextSectors,
     nextTicketTargets,
+    nextTicketRequesters,
     nextMembers,
     nextReceivedInvites,
     nextSentInvites,
@@ -433,6 +435,9 @@ async function fetchDashboardBundle() {
     safeRequest(() => getTicketSummary(), null),
     safeRequest(() => getSectors(), []),
     safeRequest(() => getCompanyPartnershipTicketTargets(), []),
+    currentRole === 'admin' || currentRole === 'employee'
+      ? safeRequest(() => getTicketRequesters(), [])
+      : Promise.resolve([]),
     safeRequest(() => getTeamMembers(), []),
     safeRequest(() => getReceivedTeamInvites(), []),
     safeRequest(() => getSentTeamInvites(), []),
@@ -455,6 +460,7 @@ async function fetchDashboardBundle() {
     ticketSummary: nextSummary,
     sectors: Array.isArray(nextSectors) ? nextSectors.map(normalizeSector) : [],
     ticketTargets: Array.isArray(nextTicketTargets) ? nextTicketTargets.map(normalizeSector) : [],
+    ticketRequesters: Array.isArray(nextTicketRequesters) ? nextTicketRequesters : [],
     teamMembers: Array.isArray(nextMembers) ? nextMembers.map(normalizeTeamMember) : [],
     receivedInvites: Array.isArray(nextReceivedInvites)
       ? nextReceivedInvites.map(normalizeInvite)
@@ -643,6 +649,7 @@ function App() {
   const [currentUserRole, setCurrentUserRole] = useState('user')
   const [createdSectors, setCreatedSectors] = useState([])
   const [ticketTargetSectors, setTicketTargetSectors] = useState([])
+  const [ticketRequesters, setTicketRequesters] = useState([])
   const [teamMembers, setTeamMembers] = useState([])
   const [receivedInvites, setReceivedInvites] = useState([])
   const [sentInvites, setSentInvites] = useState([])
@@ -779,6 +786,7 @@ function App() {
     setTicketSummary(bundle.ticketSummary)
     setCreatedSectors(bundle.sectors)
     setTicketTargetSectors(bundle.ticketTargets)
+    setTicketRequesters(bundle.ticketRequesters)
     setTeamMembers(bundle.teamMembers)
     setReceivedInvites(bundle.receivedInvites)
     setSentInvites(bundle.sentInvites)
@@ -1101,6 +1109,8 @@ function App() {
   }
 
   async function handleCreateTicket({
+    requesterEmail,
+    whatsappEnabled,
     description,
     priorityCode,
     companyOwnerId,
@@ -1128,7 +1138,8 @@ function App() {
       priorityCode,
       companyOwnerId,
       copyEmail: trimmedCopyEmail || undefined,
-      requesterEmail: currentUserEmail,
+      requesterEmail: requesterEmail?.trim() || currentUserEmail,
+      whatsappEnabled: Boolean(whatsappEnabled),
       sectorId,
       assignedToUserId,
     })
@@ -1733,6 +1744,7 @@ function App() {
         onUpdateMemberSectors={handleUpdateMemberSectors}
         onViewNotifications={handleViewedNotifications}
         availableTicketSectors={ticketTargetSectors}
+        ticketRequesters={ticketRequesters}
         companyPartnerships={companyPartnerships}
         profileError={profileError}
         receivedInvites={receivedInvites}

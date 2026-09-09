@@ -301,6 +301,33 @@ function normalizeRecipient(recipient) {
   return `${digitsOnly}@s.whatsapp.net`;
 }
 
+async function resolveSendRecipient(sock, recipient) {
+  const normalizedRecipient = normalizeRecipient(recipient);
+
+  // Contatos mais recentes do WhatsApp podem ser representados por um LID.
+  // Consultar o contato antes do envio converte o telefone para o JID real
+  // da sessão quando essa informação estiver disponível.
+  if (!normalizedRecipient.endsWith('@s.whatsapp.net') || typeof sock?.onWhatsApp !== 'function') {
+    return normalizedRecipient;
+  }
+
+  try {
+    const contacts = await sock.onWhatsApp(normalizedRecipient);
+    const contact = (contacts || []).find((candidate) => candidate?.exists && candidate?.jid);
+    const resolvedJid = contact?.lid || contact?.jid;
+    if (resolvedJid) {
+      return jidNormalizedUser(resolvedJid);
+    }
+  } catch (error) {
+    logger.warn(
+      { recipient: normalizedRecipient, err: String(error) },
+      'Não foi possível resolver o JID real do destinatário; usando o número informado'
+    );
+  }
+
+  return normalizedRecipient;
+}
+
 function normalizeTextMessage(message) {
   return String(message || '').trim();
 }
@@ -704,7 +731,7 @@ app.post('/sessions/:session/messages', async (req, res) => {
       return res.status(400).json({ status: 'ERROR', message: 'Mensagem ou anexo obrigatório.' });
     }
 
-    const recipient = normalizeRecipient(req.body?.phone);
+    const recipient = await resolveSendRecipient(session.sock, req.body?.phone);
     let response = null;
 
     if (message) {

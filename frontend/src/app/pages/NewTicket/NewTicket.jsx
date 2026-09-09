@@ -58,6 +58,7 @@ function NewTicket({
   navigationGroups,
   onCreateTicket,
   onNavigatePage,
+  ticketRequesters = [],
 }) {
   const activeContent = dashboardPages.newTicket
   const canCreateTickets =
@@ -65,7 +66,13 @@ function NewTicket({
     (currentUser.roles.includes('user') ||
       currentUser.roles.includes('admin') ||
       currentUser.roles.includes('employee'))
+  const isStaffRole =
+    Array.isArray(currentUser?.roles) &&
+    (currentUser.roles.includes('admin') || currentUser.roles.includes('employee'))
   const [formValues, setFormValues] = useState({
+    requesterEmail: '',
+    requesterName: '',
+    deliveryMode: 'system',
     companyName: '',
     companyOwnerId: '',
     sectorId: '',
@@ -77,6 +84,7 @@ function NewTicket({
   const [feedbackMessage, setFeedbackMessage] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isCompanyOptionsOpen, setIsCompanyOptionsOpen] = useState(false)
+  const [isRequesterOptionsOpen, setIsRequesterOptionsOpen] = useState(false)
   const [attachedFiles, setAttachedFiles] = useState([])
   const [isRecordingAudio, setIsRecordingAudio] = useState(false)
   const [recordingDuration, setRecordingDuration] = useState(0)
@@ -137,6 +145,16 @@ function NewTicket({
       company.document.includes(formValues.companyName.replace(/\D/g, ''))
     )
   }, [availableCompanies, formValues.companyName])
+  const filteredRequesters = useMemo(() => {
+    const normalizedName = normalizeText(formValues.requesterName)
+    if (!normalizedName) {
+      return ticketRequesters
+    }
+
+    return ticketRequesters.filter((requester) =>
+      normalizeText(requester.fullName || '').includes(normalizedName)
+    )
+  }, [formValues.requesterName, ticketRequesters])
 
   useEffect(() => () => {
     audioRecorderRef.current?.stop()
@@ -165,6 +183,14 @@ function NewTicket({
 
   function handleChange(field, value) {
     setFormValues((currentValues) => {
+      if (field === 'requesterName') {
+        return {
+          ...currentValues,
+          requesterName: value,
+          requesterEmail: '',
+        }
+      }
+
       if (field === 'companyName') {
         const matchedCompany =
           availableCompanies.find(
@@ -196,6 +222,15 @@ function NewTicket({
         [field]: value,
       }
     })
+  }
+
+  function handleRequesterSelect(selectedRequester) {
+    setFormValues((currentValues) => ({
+      ...currentValues,
+      requesterName: selectedRequester?.fullName || '',
+      requesterEmail: selectedRequester?.email || '',
+    }))
+    setIsRequesterOptionsOpen(false)
   }
 
   function handleCompanySelect(selectedOption) {
@@ -309,6 +344,11 @@ function NewTicket({
       return
     }
 
+    if (isStaffRole && !formValues.requesterEmail.trim()) {
+      setFeedbackMessage('Informe o e-mail do cliente para quem o chamado será aberto.')
+      return
+    }
+
     if (!formValues.sectorId) {
       setFeedbackMessage('Selecione um setor para criar o chamado.')
       return
@@ -328,6 +368,8 @@ function NewTicket({
       setIsSubmitting(true)
       setFeedbackMessage('')
       await onCreateTicket({
+        requesterEmail: formValues.requesterEmail.trim(),
+        whatsappEnabled: isStaffRole && formValues.deliveryMode === 'whatsapp',
         description: formValues.description,
         files: attachedFiles,
         priorityCode: formValues.priorityCode,
@@ -337,6 +379,9 @@ function NewTicket({
         copyEmail: formValues.copyEmail,
       })
       setFormValues({
+        requesterEmail: '',
+        requesterName: '',
+        deliveryMode: 'system',
         companyName: '',
         companyOwnerId: '',
         sectorId: '',
@@ -388,6 +433,71 @@ function NewTicket({
             ) : (
               <form className="ticket-form" onSubmit={handleSubmit}>
               <div className="ticket-form__grid">
+                {isStaffRole ? (
+                  <label className="ticket-field ticket-field--combobox">
+                    <span>Cliente</span>
+                    <div className="ticket-field__control ticket-field__control--select">
+                      <input
+                        placeholder={ticketRequesters.length > 0 ? 'Selecione ou digite o nome do cliente...' : 'Nenhum cliente disponível'}
+                        type="text"
+                        value={formValues.requesterName}
+                        onChange={(event) => {
+                          handleChange('requesterName', event.target.value)
+                          setIsRequesterOptionsOpen(true)
+                        }}
+                        onFocus={() => setIsRequesterOptionsOpen(true)}
+                        onBlur={() => window.setTimeout(() => setIsRequesterOptionsOpen(false), 150)}
+                        disabled={ticketRequesters.length === 0}
+                        required
+                      />
+                      <button
+                        className="ticket-field__toggle"
+                        type="button"
+                        onClick={() => setIsRequesterOptionsOpen((currentValue) => !currentValue)}
+                        aria-label="Abrir opções de cliente"
+                        disabled={ticketRequesters.length === 0}
+                      >
+                        <ChevronDownIcon />
+                      </button>
+                    </div>
+                    {isRequesterOptionsOpen ? (
+                      <div className="ticket-field__options" role="listbox" aria-label="Clientes">
+                        {filteredRequesters.length > 0 ? (
+                          filteredRequesters.map((requester) => (
+                            <button
+                              className={`ticket-field__option${requester.email === formValues.requesterEmail ? ' is-active' : ''}`}
+                              key={requester.id || requester.email}
+                              type="button"
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={() => handleRequesterSelect(requester)}
+                            >
+                              {requester.fullName} — {requester.email}
+                            </button>
+                          ))
+                        ) : (
+                          <span className="ticket-field__option ticket-field__option--empty">
+                            Nenhum cliente encontrado
+                          </span>
+                        )}
+                      </div>
+                    ) : null}
+                  </label>
+                ) : null}
+                {isStaffRole ? (
+                  <label className="ticket-field">
+                    <span>Canal de atendimento</span>
+                    <div className="ticket-field__control ticket-field__control--select">
+                      <select
+                        value={formValues.deliveryMode}
+                        onChange={(event) => handleChange('deliveryMode', event.target.value)}
+                      >
+                        <option value="system">Somente sistema</option>
+                        <option value="whatsapp">Sistema + WhatsApp</option>
+                      </select>
+                      <ChevronDownIcon />
+                    </div>
+                  </label>
+                ) : null}
                 <label className="ticket-field ticket-field--combobox">
                   <span>Empresa</span>
                   <div className="ticket-field__control ticket-field__control--select">
@@ -509,32 +619,34 @@ function NewTicket({
                   </div>
                 </label>
 
-                <label className="ticket-field">
-                  <span>Destinatário</span>
-                  <div className="ticket-field__control ticket-field__control--select">
-                    <select
-                      value={formValues.assignedToUserId}
-                      onChange={(event) => handleChange('assignedToUserId', event.target.value)}
-                      disabled={!formValues.sectorId}
-                    >
-                      {!selectedSector ? (
-                        <option disabled value="">
-                          Selecione um setor primeiro
-                        </option>
-                      ) : (
-                        <>
-                          <option value="">Aleatoriamente</option>
-                          {sectorAssignees.map((assignee) => (
-                            <option key={assignee.id} value={assignee.id}>
-                              {assignee.fullName}
-                            </option>
-                          ))}
-                        </>
-                      )}
-                    </select>
-                    <ChevronDownIcon />
-                  </div>
-                </label>
+                {!isStaffRole ? (
+                  <label className="ticket-field">
+                    <span>Destinatário</span>
+                    <div className="ticket-field__control ticket-field__control--select">
+                      <select
+                        value={formValues.assignedToUserId}
+                        onChange={(event) => handleChange('assignedToUserId', event.target.value)}
+                        disabled={!formValues.sectorId}
+                      >
+                        {!selectedSector ? (
+                          <option disabled value="">
+                            Selecione um setor primeiro
+                          </option>
+                        ) : (
+                          <>
+                            <option value="">Aleatoriamente</option>
+                            {sectorAssignees.map((assignee) => (
+                              <option key={assignee.id} value={assignee.id}>
+                                {assignee.fullName}
+                              </option>
+                            ))}
+                          </>
+                        )}
+                      </select>
+                      <ChevronDownIcon />
+                    </div>
+                  </label>
+                ) : null}
               </div>
 
               <label className="ticket-field">

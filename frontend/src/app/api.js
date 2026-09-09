@@ -325,6 +325,10 @@ export function getTicketSummary() {
   return apiRequest('/api/v1/tickets/summary')
 }
 
+export function getTicketRequesters() {
+  return apiRequest('/api/v1/tickets/requesters')
+}
+
 export function getTickets(_email, status) {
   const searchParams = new URLSearchParams()
 

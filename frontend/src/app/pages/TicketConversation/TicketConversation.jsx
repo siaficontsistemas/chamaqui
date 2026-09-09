@@ -168,6 +168,7 @@ function TicketConversation({
   )
 
   const isWhatsappTicket = ticket?.channel === 'WHATSAPP'
+  const canSendToWhatsapp = isWhatsappTicket && (userRole === 'admin' || userRole === 'employee')
 
   const loadMessages = async (shouldKeepError = false) => {
     if (!ticket?.id || !currentUser?.email) {
@@ -1048,7 +1049,7 @@ function TicketConversation({
                     placeholder={
                       isTicketClosed
                         ? 'Este chamado foi encerrado.'
-                        : isWhatsappTicket
+                        : canSendToWhatsapp
                           ? 'Responder cliente pelo WhatsApp...'
                           : 'Responder chamado...'
                     }
@@ -1158,11 +1159,11 @@ function TicketConversation({
                     isTicketClosed
                   }
                 >
-                  {isSendingMessage ? 'Enviando...' : isWhatsappTicket ? 'Enviar ao WhatsApp' : 'Enviar'}
+                  {isSendingMessage ? 'Enviando...' : canSendToWhatsapp ? 'Enviar ao WhatsApp' : 'Enviar'}
                 </button>
               </form>
 
-              {isWhatsappTicket ? (
+              {canSendToWhatsapp ? (
                 <div className="ticket-chat__feedback">
                   As respostas enviadas por esta tela tambem sao encaminhadas para o WhatsApp do cliente.
                 </div>

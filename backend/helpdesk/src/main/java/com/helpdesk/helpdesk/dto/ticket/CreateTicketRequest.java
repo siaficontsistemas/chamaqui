@@ -14,6 +14,7 @@ public record CreateTicketRequest(
 	UUID assignedToUserId,
 	@NotBlank String priorityCode,
 	@NotBlank @Email String requesterEmail,
-	@Email @Size(max = 255) String copyEmail
+	@Email @Size(max = 255) String copyEmail,
+	Boolean whatsappEnabled
 ) {
 }

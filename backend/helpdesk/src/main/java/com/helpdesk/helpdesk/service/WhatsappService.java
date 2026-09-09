@@ -233,6 +233,18 @@ public class WhatsappService {
 		}
 	}
 
+	public String resolveSentRecipient(WhatsappOperationResponse response) {
+		if (response == null || response.data() == null || response.data().isBlank()) {
+			return "";
+		}
+		try {
+			return objectMapper.readTree(response.data()).path("recipient").asText("").trim();
+		} catch (IOException exception) {
+			logger.warn("Não foi possível identificar o destinatário real da mensagem enviada pelo WhatsApp.", exception);
+			return "";
+		}
+	}
+
 	public WhatsappOperationResponse sendMessage(
 		User companyOwner,
 		String phone,
