@@ -17,6 +17,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.slf4j.Logger;
@@ -44,6 +45,8 @@ import com.helpdesk.helpdesk.domain.TicketStatus;
 import com.helpdesk.helpdesk.domain.TicketTransferNotification;
 import com.helpdesk.helpdesk.domain.TicketTransferStatus;
 import com.helpdesk.helpdesk.domain.User;
+import com.helpdesk.helpdesk.domain.WhatsappConversation;
+import com.helpdesk.helpdesk.domain.WhatsappConversationStep;
 import com.helpdesk.helpdesk.dto.ticket.CloseTicketRequest;
 import com.helpdesk.helpdesk.dto.ticket.CreateTicketMessageRequest;
 import com.helpdesk.helpdesk.dto.ticket.CreateTicketRequest;
@@ -54,6 +57,7 @@ import com.helpdesk.helpdesk.dto.ticket.TicketMessageResponse;
 import com.helpdesk.helpdesk.dto.ticket.TicketResponse;
 import com.helpdesk.helpdesk.dto.ticket.TicketSummaryResponse;
 import com.helpdesk.helpdesk.dto.ticket.TicketTargetAssigneeResponse;
+import com.helpdesk.helpdesk.dto.ticket.TicketRequesterResponse;
 import com.helpdesk.helpdesk.dto.ticket.TicketTransferCandidateResponse;
 import com.helpdesk.helpdesk.dto.ticket.UpdateTicketTitleRequest;
 import com.helpdesk.helpdesk.dto.ticket.UpdateTicketClassificationRequest;
@@ -232,8 +236,35 @@ public class TicketService {
 			.toList();
 	}
 
+	@Transactional(readOnly = true)
+	public List<TicketRequesterResponse> listAvailableRequesters() {
+		return userRepository.findActiveRequesterUsers().stream()
+			.filter(tenantAccessService::belongsToCurrentTenant)
+			.filter(this::isRequesterSideUser)
+			.map(user -> new TicketRequesterResponse(user.getId(), user.getFullName(), user.getEmail(), user.getPhoneNumber()))
+			.toList();
+	}
+
+	private boolean isRequesterSideUser(User user) {
+		User company = user.getCompanyType() == CompanyType.REQUESTER ? user : user.getCompanyOwner();
+		return company != null && company.getCompanyType() == CompanyType.REQUESTER;
+	}
+
 	@Transactional
 	public TicketResponse create(CreateTicketRequest request, List<MultipartFile> files) {
+		return createInternal(request, files, null);
+	}
+
+	@Transactional
+	public TicketResponse createForStaff(CreateTicketRequest request, List<MultipartFile> files, String authorEmail) {
+		User author = loadCurrentUserByEmail(authorEmail, "Funcionário responsável pela abertura não encontrado.");
+		if (!hasRole(author, "ADMIN") && !hasRole(author, "EMPLOYEE")) {
+			throw new IllegalArgumentException("Somente funcionários e administradores podem abrir chamados para clientes.");
+		}
+		return createInternal(request, files, author);
+	}
+
+	private TicketResponse createInternal(CreateTicketRequest request, List<MultipartFile> files, User staffAuthor) {
 		User requester = scopedUserLookupService.findUniqueByEmailInCurrentTenant(normalizeEmail(request.requesterEmail()))
 			.orElseThrow(() -> new NotFoundException("Solicitante não encontrado."));
 		TicketStatus status = ticketStatusRepository.findByCode("OPEN")
@@ -262,6 +293,10 @@ public class TicketService {
 		if (initialDescription.isBlank()) {
 			initialDescription = "Anexo enviado.";
 		}
+		boolean whatsappEnabled = staffAuthor != null && Boolean.TRUE.equals(request.whatsappEnabled());
+		WhatsappConversation whatsappConversation = !whatsappEnabled
+			? null
+			: prepareStaffWhatsappConversation(sector.getCreatedBy(), requester);
 
 		Ticket ticket = new Ticket();
 		ticket.setTitle(buildAutoTicketTitle(initialDescription));
@@ -271,7 +306,10 @@ public class TicketService {
 		ticket.setSector(sector);
 		ticket.setStatus(status);
 		ticket.setPriority(priority);
-		ticket.setChannel(TicketChannel.PORTAL);
+		ticket.setChannel(whatsappConversation == null ? TicketChannel.PORTAL : TicketChannel.WHATSAPP);
+		if (whatsappConversation != null) {
+			ticket.setWhatsappConversationId(whatsappConversation.getId());
+		}
 		ticket.setCopyEmail(normalizeOptionalEmail(request.copyEmail()));
 
 		Ticket savedTicket = saveTicketWithUniqueProtocol(ticket);
@@ -287,10 +325,17 @@ public class TicketService {
 		);
 		// #endregion
 		notifyAssigneeAboutNewTicket(savedTicket);
-		TicketMessage initialMessage = ensureInitialMessage(savedTicket);
+		if (whatsappConversation != null) {
+			whatsappConversation.setActiveTicket(savedTicket);
+			whatsappConversation.setNormalConversationActive(false);
+			whatsappConversation.setCurrentStep(WhatsappConversationStep.ACTIVE_TICKET);
+			whatsappConversationRepository.save(whatsappConversation);
+			notifyRequesterAboutStaffCreatedTicket(savedTicket, whatsappConversation);
+		}
+		TicketMessage initialMessage = ensureInitialMessage(savedTicket, staffAuthor == null ? requester : staffAuthor);
 		saveAttachments(savedTicket, initialMessage, requester, normalizedFiles);
 
-		return toResponse(savedTicket, requester);
+		return toResponse(savedTicket, staffAuthor == null ? requester : staffAuthor);
 	}
 
 	@Transactional
@@ -460,7 +505,7 @@ public class TicketService {
 			List<WhatsappService.OutboundAttachment> outboundAttachments = loadWhatsappOutboundAttachments(savedMessage.getId());
 				SentWhatsappMessage sentWhatsappMessage = sendWhatsappTicketMessage(
 					ticket,
-					buildWhatsappOutboundText(ticket.getProtocol(), author.getFullName(), normalizedMessage, outboundAttachments),
+					buildWhatsappOutboundText(ticket.getProtocol(), resolveWhatsappResponderName(ticket, author), normalizedMessage, outboundAttachments),
 					outboundAttachments,
 					toWhatsappQuotedMessage(replyToMessage)
 				);
@@ -1345,6 +1390,10 @@ public class TicketService {
 	}
 
 	private TicketMessage ensureInitialMessage(Ticket ticket) {
+		return ensureInitialMessage(ticket, ticket.getRequester());
+	}
+
+	private TicketMessage ensureInitialMessage(Ticket ticket, User author) {
 		if (ticketMessageRepository.existsByTicketId(ticket.getId())) {
 			return ticketMessageRepository.findFirstByTicketIdOrderByCreatedAtAsc(ticket.getId())
 				.orElseThrow(() -> new NotFoundException("Mensagem inicial do chamado não encontrada."));
@@ -1352,11 +1401,88 @@ public class TicketService {
 
 		TicketMessage initialMessage = new TicketMessage();
 		initialMessage.setTicket(ticket);
-		initialMessage.setAuthor(ticket.getRequester());
+		initialMessage.setAuthor(author == null ? ticket.getRequester() : author);
 		initialMessage.setMessage(ticket.getDescription());
 		initialMessage.setInternal(false);
 		initialMessage.setCreatedAt(ticket.getOpenedAt() == null ? OffsetDateTime.now() : ticket.getOpenedAt());
 		return ticketMessageRepository.save(initialMessage);
+	}
+
+	private WhatsappConversation prepareStaffWhatsappConversation(User companyOwner, User requester) {
+		String recipient = resolveUserWhatsappRecipientOrBlank(requester);
+		if (recipient.isBlank()) {
+			throw new IllegalArgumentException("O cliente selecionado não possui telefone ou WhatsApp cadastrado.");
+		}
+
+		String normalizedPhone = normalizePhone(recipient);
+		String transportId = requester.getWhatsappTransportId() == null || requester.getWhatsappTransportId().isBlank()
+			? null
+			: requester.getWhatsappTransportId().trim();
+		Optional<WhatsappConversation> existingConversation = transportId == null
+			? Optional.empty()
+			: whatsappConversationRepository.findByCompanyOwnerIdAndWhatsappTransportId(companyOwner.getId(), transportId);
+		if (existingConversation.isEmpty()) {
+			existingConversation = whatsappConversationRepository.findByCompanyOwnerIdAndPhoneNumber(companyOwner.getId(), normalizedPhone);
+		}
+
+		WhatsappConversation conversation = existingConversation.orElseGet(WhatsappConversation::new);
+		conversation.setCompanyOwner(companyOwner);
+		conversation.setPhoneNumber(normalizedPhone);
+		conversation.setWhatsappTransportId(transportId);
+		return whatsappConversationRepository.save(conversation);
+	}
+
+	private void notifyRequesterAboutStaffCreatedTicket(Ticket ticket, WhatsappConversation conversation) {
+		String recipient = firstNonBlank(conversation.getWhatsappTransportId(), conversation.getPhoneNumber());
+		String message = """
+			Um funcionário abriu um novo chamado para você no ChamaQui.
+			Protocolo: %s
+			Mensagem: %s
+
+		Você pode responder por este WhatsApp ou pela plataforma.
+		""".formatted(ticket.getProtocol(), notificationMessagePreview(ticket.getDescription())).trim();
+		try {
+			WhatsappOperationResponse response = whatsappService.sendMessage(resolveWhatsappCompanyOwner(ticket), recipient, message);
+			String resolvedRecipient = whatsappService.resolveSentRecipient(response);
+			if (!resolvedRecipient.isBlank() && resolvedRecipient.contains("@")) {
+				linkStaffTicketToResolvedWhatsappConversation(ticket, conversation, resolvedRecipient);
+			}
+		} catch (RuntimeException exception) {
+			logger.warn("Falha ao avisar o cliente sobre chamado aberto por funcionário: ticketId={}, recipient={}",
+				ticket.getId(), recipient, exception);
+		}
+	}
+
+	private void linkStaffTicketToResolvedWhatsappConversation(
+		Ticket ticket,
+		WhatsappConversation conversation,
+		String resolvedRecipient
+	) {
+		Optional<WhatsappConversation> existingConversation = whatsappConversationRepository
+			.findByCompanyOwnerIdAndWhatsappTransportId(ticket.getSector().getCreatedBy().getId(), resolvedRecipient);
+
+		if (existingConversation.isEmpty() || existingConversation.get().getId().equals(conversation.getId())) {
+			conversation.setWhatsappTransportId(resolvedRecipient);
+			whatsappConversationRepository.save(conversation);
+			return;
+		}
+
+		// O telefone e o LID podem ter criado registros separados. Reaproveitamos
+		// a conversa que já possui o LID e movemos o novo chamado para ela.
+		WhatsappConversation resolvedConversation = existingConversation.get();
+		conversation.setWhatsappTransportId(null);
+		conversation.setActiveTicket(null);
+		whatsappConversationRepository.saveAndFlush(conversation);
+
+		resolvedConversation.setCompanyOwner(ticket.getSector().getCreatedBy());
+		resolvedConversation.setActiveTicket(ticket);
+		resolvedConversation.setCurrentStep(WhatsappConversationStep.ACTIVE_TICKET);
+		resolvedConversation.setNormalConversationActive(false);
+		whatsappConversationRepository.save(resolvedConversation);
+
+		ticket.setWhatsappConversationId(resolvedConversation.getId());
+		ticketRepository.save(ticket);
+		whatsappConversationRepository.delete(conversation);
 	}
 
 	private Map<UUID, List<TicketAttachmentResponse>> loadAttachmentsByMessageId(UUID ticketId) {
@@ -1796,6 +1922,26 @@ public class TicketService {
 			normalizedProtocol,
 			normalizedMessage
 		)).trim();
+	}
+
+	private String resolveWhatsappResponderName(Ticket ticket, User author) {
+		if (author != null && hasRole(author, "employee") && hasText(author.getFullName())) {
+			return author.getFullName().trim();
+		}
+
+		if (ticket != null && ticket.getAssignedTo() != null && hasText(ticket.getAssignedTo().getFullName())) {
+			return ticket.getAssignedTo().getFullName().trim();
+		}
+
+		if (author != null && hasText(author.getFullName())) {
+			return author.getFullName().trim();
+		}
+
+		return "Atendente";
+	}
+
+	private boolean hasText(String value) {
+		return value != null && !value.isBlank();
 	}
 
 	private List<WhatsappService.OutboundAttachment> loadWhatsappOutboundAttachments(UUID messageId) {

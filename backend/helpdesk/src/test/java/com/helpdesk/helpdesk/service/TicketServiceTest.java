@@ -174,7 +174,8 @@ class TicketServiceTest {
 				assignee.getId(),
 				"HIGH",
 				"cliente@cliente.com",
-				null
+				null,
+				false
 			),
 			List.of()
 		);

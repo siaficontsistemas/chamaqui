@@ -33,6 +33,7 @@ import com.helpdesk.helpdesk.dto.ticket.UpdateTicketClassificationRequest;
 import com.helpdesk.helpdesk.dto.ticket.UpdateTicketTitleRequest;
 import com.helpdesk.helpdesk.service.AppSessionService;
 import com.helpdesk.helpdesk.service.TicketService;
+import com.helpdesk.helpdesk.domain.User;
 
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
@@ -62,6 +63,15 @@ public class TicketController {
 		return ticketService.summary(appSessionService.requireCurrentEmail(session));
 	}
 
+	@GetMapping("/requesters")
+	public List<com.helpdesk.helpdesk.dto.ticket.TicketRequesterResponse> listRequesters(HttpSession session) {
+		User actor = appSessionService.requireUser(session);
+		if (!hasRole(actor, "ADMIN") && !hasRole(actor, "EMPLOYEE")) {
+			throw new IllegalArgumentException("Somente funcionários e administradores podem consultar clientes.");
+		}
+		return ticketService.listAvailableRequesters();
+	}
+
 	@GetMapping("/{ticketId}")
 	public TicketResponse get(@PathVariable UUID ticketId, HttpSession session) {
 		return ticketService.get(ticketId, appSessionService.requireCurrentEmail(session));
@@ -78,7 +88,7 @@ public class TicketController {
 	@PostMapping
 	@ResponseStatus(HttpStatus.CREATED)
 	public TicketResponse create(@Valid @RequestBody CreateTicketRequest request, HttpSession session) {
-		return ticketService.create(withRequesterEmail(request, session), List.of());
+		return createTicket(request, List.of(), session);
 	}
 
 	@PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -88,7 +98,16 @@ public class TicketController {
 		@RequestPart(name = "files", required = false) List<MultipartFile> files,
 		HttpSession session
 	) {
-		return ticketService.create(withRequesterEmail(request, session), files);
+		return createTicket(request, files == null ? List.of() : files, session);
+	}
+
+	private TicketResponse createTicket(CreateTicketRequest request, List<MultipartFile> files, HttpSession session) {
+		User actor = appSessionService.requireUser(session);
+		CreateTicketRequest effectiveRequest = withRequesterEmail(request, actor);
+		if (hasRole(actor, "ADMIN") || hasRole(actor, "EMPLOYEE")) {
+			return ticketService.createForStaff(effectiveRequest, files, actor.getEmail());
+		}
+		return ticketService.create(effectiveRequest, files);
 	}
 
 	@PostMapping("/{ticketId}/messages")
@@ -175,16 +194,27 @@ public class TicketController {
 		return ticketService.requestTransfer(ticketId, withAuthorEmail(request, session));
 	}
 
-	private CreateTicketRequest withRequesterEmail(CreateTicketRequest request, HttpSession session) {
+	private CreateTicketRequest withRequesterEmail(CreateTicketRequest request, User actor) {
 		return new CreateTicketRequest(
 			request.description(),
 			request.companyOwnerId(),
 			request.sectorId(),
 			request.assignedToUserId(),
 			request.priorityCode(),
-			appSessionService.requireCurrentEmail(session),
-			request.copyEmail()
+			isStaff(actor) && request.requesterEmail() != null && !request.requesterEmail().isBlank()
+				? request.requesterEmail()
+				: actor.getEmail(),
+			request.copyEmail(),
+			request.whatsappEnabled()
 		);
+	}
+
+	private boolean isStaff(User user) {
+		return hasRole(user, "ADMIN") || hasRole(user, "EMPLOYEE");
+	}
+
+	private boolean hasRole(User user, String roleCode) {
+		return user != null && user.getRoles().stream().anyMatch(role -> roleCode.equalsIgnoreCase(role.getCode()));
 	}
 
 	private CreateTicketMessageRequest withAuthorEmail(CreateTicketMessageRequest request, HttpSession session) {
