@@ -30,6 +30,9 @@ env:
   PM2_BACKEND_APP_NAME: ${{ vars.PM2_BACKEND_APP_NAME || 'chamaqui-backend' }}
   PM2_BAILEYS_APP_NAME: ${{ vars.PM2_BAILEYS_APP_NAME || 'chamaqui-baileys' }}
   RESTART_BAILEYS: ${{ vars.RESTART_BAILEYS || 'true' }}
+  SPRING_DATASOURCE_URL: jdbc:postgresql://chamaqui-postgres-new.cy9g64kikfr9.us-east-1.rds.amazonaws.com:5432/helpdesk?sslmode=require
+  SPRING_DATASOURCE_USERNAME: helpdesk
+  SPRING_DATASOURCE_PASSWORD: ${{ secrets.SPRING_DATASOURCE_PASSWORD }}
 
 jobs:
   deploy:
@@ -50,6 +53,9 @@ jobs:
             BAILEYS_APP_DIR
             PM2_BACKEND_APP_NAME
             PM2_BAILEYS_APP_NAME
+            SPRING_DATASOURCE_URL
+            SPRING_DATASOURCE_USERNAME
+            SPRING_DATASOURCE_PASSWORD
           )
 
           for var_name in "${required_vars[@]}"; do
@@ -58,6 +64,16 @@ jobs:
               exit 1
             fi
           done
+
+          if [ "${SPRING_DATASOURCE_URL}" != "jdbc:postgresql://chamaqui-postgres-new.cy9g64kikfr9.us-east-1.rds.amazonaws.com:5432/helpdesk?sslmode=require" ]; then
+            echo "SPRING_DATASOURCE_URL não aponta para o RDS novo." >&2
+            exit 1
+          fi
+
+          if [ "${SPRING_DATASOURCE_USERNAME}" != "helpdesk" ]; then
+            echo "SPRING_DATASOURCE_USERNAME inválido." >&2
+            exit 1
+          fi
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -109,8 +125,19 @@ jobs:
             ./chamaqui-backend-release.tar.gz \
             "${EC2_SSH_USER}@${EC2_SSH_HOST}:/tmp/chamaqui-backend-release-${GITHUB_SHA}.tar.gz"
 
+      - name: Prepare and upload production datasource environment
+        run: |
+          DATASOURCE_ENV_FILE="${RUNNER_TEMP}/chamaqui-datasource-${GITHUB_SHA}.env"
+          umask 077
+          printf 'SPRING_DATASOURCE_URL=%q\n' "${SPRING_DATASOURCE_URL}" > "${DATASOURCE_ENV_FILE}"
+          printf 'SPRING_DATASOURCE_USERNAME=%q\n' "${SPRING_DATASOURCE_USERNAME}" >> "${DATASOURCE_ENV_FILE}"
+          printf 'SPRING_DATASOURCE_PASSWORD=%q\n' "${SPRING_DATASOURCE_PASSWORD}" >> "${DATASOURCE_ENV_FILE}"
+          scp -P "${SSH_PORT}" \
+            "${DATASOURCE_ENV_FILE}" \
+            "${EC2_SSH_USER}@${EC2_SSH_HOST}:/tmp/chamaqui-datasource-${GITHUB_SHA}.env"
+
       - name: Deploy on EC2
         run: |
           ssh -p "${SSH_PORT}" "${EC2_SSH_USER}@${EC2_SSH_HOST}" \
-            "DEPLOY_ROOT='${DEPLOY_ROOT}' BACKEND_JAR_PATH='${BACKEND_JAR_PATH}' BAILEYS_APP_DIR='${BAILEYS_APP_DIR}' PM2_BACKEND_APP_NAME='${PM2_BACKEND_APP_NAME}' PM2_BAILEYS_APP_NAME='${PM2_BAILEYS_APP_NAME}' RESTART_BAILEYS='${RESTART_BAILEYS}' bash -s -- '/tmp/chamaqui-backend-release-${GITHUB_SHA}.tar.gz'" \
+            "DEPLOY_ROOT='${DEPLOY_ROOT}' BACKEND_JAR_PATH='${BACKEND_JAR_PATH}' BAILEYS_APP_DIR='${BAILEYS_APP_DIR}' PM2_BACKEND_APP_NAME='${PM2_BACKEND_APP_NAME}' PM2_BAILEYS_APP_NAME='${PM2_BAILEYS_APP_NAME}' RESTART_BAILEYS='${RESTART_BAILEYS}' DATASOURCE_ENV_FILE='/tmp/chamaqui-datasource-${GITHUB_SHA}.env' bash -s -- '/tmp/chamaqui-backend-release-${GITHUB_SHA}.tar.gz'" \
             < ./scripts/deploy/ec2-deploy.sh
