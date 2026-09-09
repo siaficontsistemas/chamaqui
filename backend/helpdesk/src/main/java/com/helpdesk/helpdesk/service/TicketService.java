@@ -302,7 +302,9 @@ public class TicketService {
 		ticket.setTitle(buildAutoTicketTitle(initialDescription));
 		ticket.setDescription(initialDescription);
 		ticket.setRequester(requester);
-		ticket.setAssignedTo(resolveAssignee(sector, request.assignedToUserId()));
+		ticket.setAssignedTo(staffAuthor == null
+			? resolveAssignee(sector, request.assignedToUserId())
+			: staffAuthor);
 		ticket.setSector(sector);
 		ticket.setStatus(status);
 		ticket.setPriority(priority);
