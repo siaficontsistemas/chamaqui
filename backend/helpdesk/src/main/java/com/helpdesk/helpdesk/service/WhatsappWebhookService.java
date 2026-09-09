@@ -1186,17 +1186,11 @@ public class WhatsappWebhookService {
 		}
 
 		if (isNegativeAnswer(body)) {
-			conversation.setSector(null);
-			conversation.setPendingName(null);
-			conversation.setPendingEmail(null);
-			conversation.setPendingDocument(null);
-			conversation.setPendingSubject(null);
-			conversation.setCurrentStep(WhatsappConversationStep.ASK_SECTOR);
-			whatsappConversationRepository.save(conversation);
-			replyWithMessage(
+			promptForInitialMode(
 				companyOwner,
+				conversation,
 				replyTarget,
-				buildSectorPrompt(companyOwner, "Tudo bem. Vamos cadastrar novos dados. Escolha um setor:")
+				"Tudo bem. Escolha como deseja continuar:"
 			);
 			return;
 		}

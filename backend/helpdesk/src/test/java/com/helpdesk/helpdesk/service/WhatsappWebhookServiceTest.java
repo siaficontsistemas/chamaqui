@@ -221,6 +221,32 @@ class WhatsappWebhookServiceTest {
 	}
 
 	@Test
+	void shouldReturnToInitialModeWhenUserDeclinesReuseOfRequesterData() {
+		User companyOwner = companyOwner();
+		WhatsappConversation conversation = conversation(companyOwner, WhatsappConversationStep.ASK_REUSE_REQUESTER_DATA);
+		conversation.setPendingName("Maria Silva");
+		conversation.setPendingEmail("maria@empresa.com");
+
+		when(whatsappConversationRepository.findByCompanyOwnerIdAndPhoneNumber(companyOwner.getId(), "5511999999999"))
+			.thenReturn(Optional.of(conversation));
+
+		service.handleIncomingMessage(companyOwner, "5511999999999", "", "não", List.of());
+
+		verify(whatsappConversationRepository).save(conversationCaptor.capture());
+		assertEquals(WhatsappConversationStep.ASK_INITIAL_MODE, conversationCaptor.getValue().getCurrentStep());
+		verify(whatsappService).sendMessage(
+			eq(companyOwner),
+			eq("5511999999999"),
+			contains("1) Criar chamado")
+		);
+		verify(whatsappService).sendMessage(
+			eq(companyOwner),
+			eq("5511999999999"),
+			contains("2) Conversa normal")
+		);
+	}
+
+	@Test
 	void shouldReturnToNormalConversationEvenWithTicketModeActive() {
 		User companyOwner = companyOwner();
 		WhatsappConversation conversation = conversation(companyOwner, WhatsappConversationStep.ACTIVE_TICKET);
