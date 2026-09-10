@@ -16,6 +16,7 @@ import org.mockito.ArgumentCaptor;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.nullable;
 import org.mockito.Captor;
 import org.mockito.Mock;
 import static org.mockito.Mockito.atLeastOnce;
@@ -217,6 +218,40 @@ class WhatsappWebhookServiceTest {
 			eq(companyOwner),
 			eq("5511999999999"),
 			contains("reiniciada após 2 horas")
+		);
+	}
+
+	@Test
+	void shouldNotShowTwoHourInactivityNoticeForAnActiveTicket() {
+		User companyOwner = companyOwner();
+		Ticket activeTicket = new Ticket();
+		setField(activeTicket, "id", UUID.randomUUID());
+		com.helpdesk.helpdesk.domain.TicketStatus status = new com.helpdesk.helpdesk.domain.TicketStatus();
+		setField(status, "code", "OPEN");
+		activeTicket.setStatus(status);
+
+		WhatsappConversation conversation = conversation(companyOwner, WhatsappConversationStep.ACTIVE_TICKET);
+		conversation.setActiveTicket(activeTicket);
+		conversation.setLastInboundMessageAt(OffsetDateTime.now().minusHours(4));
+
+		when(whatsappConversationRepository.findByCompanyOwnerIdAndPhoneNumber(companyOwner.getId(), "5511999999999"))
+			.thenReturn(Optional.of(conversation));
+
+		service.handleIncomingMessage(companyOwner, "5511999999999", "", "Mensagem no chamado", List.of());
+
+		assertEquals(WhatsappConversationStep.ACTIVE_TICKET, conversation.getCurrentStep());
+		verify(ticketService).addWhatsappMessage(
+			eq(activeTicket.getId()),
+			eq("Mensagem no chamado"),
+			anyList(),
+			nullable(String.class),
+			nullable(String.class),
+			nullable(String.class)
+		);
+		verify(whatsappService, org.mockito.Mockito.never()).sendMessage(
+			eq(companyOwner),
+			eq("5511999999999"),
+			contains("2 horas")
 		);
 	}
 
