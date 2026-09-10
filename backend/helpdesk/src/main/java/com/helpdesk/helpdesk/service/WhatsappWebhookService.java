@@ -268,17 +268,6 @@ public class WhatsappWebhookService {
 			return;
 		}
 
-		if (shouldPromptForInactivityDestination(
-			conversation,
-			previousInboundMessageAt,
-			previousOutboundMessageAt,
-			normalizedBody,
-			incomingAttachments
-		)) {
-			promptForInactivityMessageDestination(companyOwner, conversation, replyTarget, normalizedBody, incomingAttachments);
-			return;
-		}
-
 		if (conversation.getCurrentStep() == WhatsappConversationStep.NORMAL_CONVERSATION_CLOSED) {
 			promptForInitialMode(companyOwner, conversation, replyTarget, null);
 			return;
@@ -460,25 +449,6 @@ public class WhatsappWebhookService {
 			);
 		}
 		return conversations.size();
-	}
-
-	private boolean shouldPromptForInactivityDestination(
-		WhatsappConversation conversation,
-		OffsetDateTime previousInboundMessageAt,
-		OffsetDateTime previousOutboundMessageAt,
-		String body,
-		List<TicketService.IncomingAttachment> attachments
-	) {
-		if (conversation.getCurrentStep() == WhatsappConversationStep.ASK_INITIAL_MODE
-			|| conversation.getCurrentStep() == WhatsappConversationStep.NORMAL_CONVERSATION_CLOSED
-			|| conversation.getCurrentStep() == WhatsappConversationStep.ASK_INACTIVITY_MESSAGE_DESTINATION
-			|| isNewTicketCreationStep(conversation.getCurrentStep())
-			|| (body.isBlank() && (attachments == null || attachments.isEmpty()))) {
-			return false;
-		}
-
-		OffsetDateTime lastInteractionAt = maxTimestamp(previousInboundMessageAt, previousOutboundMessageAt);
-		return lastInteractionAt != null && lastInteractionAt.isBefore(OffsetDateTime.now().minusHours(INACTIVITY_ROUTING_WINDOW_HOURS));
 	}
 
 	private boolean isNormalConversationInactive(
