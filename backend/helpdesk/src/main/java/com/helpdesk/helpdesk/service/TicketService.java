@@ -1437,7 +1437,7 @@ public class TicketService {
 	private void notifyRequesterAboutStaffCreatedTicket(Ticket ticket, WhatsappConversation conversation) {
 		String recipient = firstNonBlank(conversation.getWhatsappTransportId(), conversation.getPhoneNumber());
 		String message = """
-			Um funcionário abriu um novo chamado para você no ChamaQui.
+			Um funcionário abriu um novo chamado para você no ChamAqui.
 			Protocolo: %s
 			Mensagem: %s
 
@@ -1897,12 +1897,12 @@ public class TicketService {
 			: ticket.getTitle().trim();
 
 		return """
-			Voce recebeu um novo chamado no ChamaQui da empresa %s.
+			Voce recebeu um novo chamado no ChamAqui da empresa %s.
 			Protocolo: %s
 			Solicitante: %s
 			Titulo: %s
 
-			Acesse o ChamaQui da empresa e responda o chamado assim que possivel.
+			Acesse o ChamAqui da empresa e responda o chamado assim que possivel.
 			""".formatted(companyName, protocol, requesterName, title).trim();
 	}
 

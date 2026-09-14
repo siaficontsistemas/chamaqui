@@ -655,7 +655,7 @@
 }
 
 /* The library supplies the emoji data, categories, search and scrolling.
-   These variables keep its mature interaction model aligned with ChamaQui. */
+   These variables keep its mature interaction model aligned with ChamAqui. */
 .ticket-chat__emoji-library {
   --epr-highlight-color: #eb9640;
   --epr-category-icon-active-color: #eb9640;

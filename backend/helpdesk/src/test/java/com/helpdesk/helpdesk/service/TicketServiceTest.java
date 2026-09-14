@@ -184,7 +184,7 @@ class TicketServiceTest {
 			eq(responderAdmin),
 			eq("5511999999999@c.us"),
 			argThat(message ->
-				message.contains("Voce recebeu um novo chamado no ChamaQui da empresa Empresa Admin.")
+				message.contains("Voce recebeu um novo chamado no ChamAqui da empresa Empresa Admin.")
 					&& message.contains("Protocolo: " + response.protocol())
 					&& message.contains("Solicitante: Cliente")
 					&& message.contains("Titulo: Preciso de ajuda com o faturam...")
@@ -247,7 +247,7 @@ class TicketServiceTest {
 			eq(responderAdmin),
 			eq("5511988887777"),
 			argThat(message ->
-				message.contains("Voce recebeu um novo chamado no ChamaQui da empresa Empresa Admin.")
+				message.contains("Voce recebeu um novo chamado no ChamAqui da empresa Empresa Admin.")
 					&& message.contains("Protocolo: " + createdTicket.getProtocol())
 					&& message.contains("Solicitante: Cliente Externo")
 					&& message.contains("Titulo: Mensagem inicial do chamado vi...")
