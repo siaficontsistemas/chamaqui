@@ -301,7 +301,7 @@ Os serviços centrais incluem:
 
 - Quando um novo chamado e aberto e existe um funcionario responsavel com `whatsappTransportId` ou `phoneNumber` configurado, o backend envia automaticamente uma mensagem de WhatsApp para esse responsavel.
 - A automacao vale para chamados abertos pelo portal e tambem para chamados abertos a partir do fluxo de WhatsApp.
-- A mensagem informa empresa, protocolo, solicitante e titulo do chamado, orientando o responsavel a entrar no ChamaQui da empresa para responder.
+- A mensagem informa empresa, protocolo, solicitante e titulo do chamado, orientando o responsavel a entrar no ChamAqui da empresa para responder.
 - Se o responsavel nao tiver destino valido de WhatsApp configurado, o chamado continua sendo criado normalmente e a notificacao automatica e ignorada.
 - Se houver falha no envio da mensagem, a abertura do chamado nao e cancelada; a falha fica restrita ao envio do WhatsApp.
 
