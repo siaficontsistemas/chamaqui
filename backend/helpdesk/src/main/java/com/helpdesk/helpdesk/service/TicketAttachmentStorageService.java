@@ -76,7 +76,7 @@ public class TicketAttachmentStorageService {
 	public TicketAttachmentStorageService(
 		@Value("${app.storage.attachments-dir:${user.home}/.helpdesk/uploads/ticket-attachments}") String rootDirectory,
 		@Value("${app.storage.attachments-legacy-dirs:${user.dir}/uploads/ticket-attachments}") String legacyDirectories,
-		@Value("${app.storage.attachments-max-file-size-bytes:26214400}") long maxFileSizeBytes,
+		@Value("${app.storage.attachments-max-file-size-bytes:52428800}") long maxFileSizeBytes,
 		@Value("${app.storage.attachments-s3.bucket:}") String bucketName,
 		@Value("${app.storage.attachments-s3.region:us-east-1}") String region,
 		@Value("${app.storage.attachments-s3.prefix:ticket-attachments}") String keyPrefix,
@@ -320,7 +320,7 @@ public class TicketAttachmentStorageService {
 			throw new IllegalArgumentException("Os anexos enviados devem conter conteúdo.");
 		}
 		if (sizeBytes > maxFileSizeBytes) {
-			throw new IllegalArgumentException("O anexo excede o limite permitido de 25 MB.");
+			throw new IllegalArgumentException("O anexo excede o limite permitido de 50 MB.");
 		}
 		if (extractExtension(originalFileName).isEmpty()) {
 			throw new IllegalArgumentException("O anexo precisa ter uma extensão válida.");

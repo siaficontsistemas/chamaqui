@@ -10,6 +10,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import com.helpdesk.helpdesk.dto.common.ApiErrorResponse;
 
@@ -38,6 +39,15 @@ public class GlobalExceptionHandler {
 			fieldErrors.put(fieldError.getField(), fieldError.getDefaultMessage());
 		}
 		return buildResponse(HttpStatus.BAD_REQUEST, "Os dados enviados são inválidos.", fieldErrors);
+	}
+
+	@ExceptionHandler(MaxUploadSizeExceededException.class)
+	ResponseEntity<ApiErrorResponse> handleMaxUploadSizeExceeded(MaxUploadSizeExceededException exception) {
+		return buildResponse(
+			HttpStatus.PAYLOAD_TOO_LARGE,
+			"O arquivo ou a requisição excede o limite de upload permitido.",
+			Map.of()
+		);
 	}
 
 	@ExceptionHandler(Exception.class)
