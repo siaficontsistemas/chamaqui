@@ -15,6 +15,7 @@ import {
   formatAudioDuration,
   getSupportedAudioMimeType,
 } from '../../utils/audioRecorder'
+import { getAttachmentSizeError } from '../../utils/attachmentLimits'
 import './TicketConversation.css'
 
 function PencilIcon() {
@@ -572,8 +573,17 @@ function TicketConversation({
 
   function handleFileSelection(event) {
     const nextFiles = Array.from(event.target.files || [])
+    const mergedFiles = mergeUniqueFiles(attachedFiles, nextFiles)
+    const sizeError = getAttachmentSizeError(mergedFiles)
 
-    setAttachedFiles((currentFiles) => mergeUniqueFiles(currentFiles, nextFiles))
+    if (sizeError) {
+      setErrorMessage(sizeError)
+      event.target.value = ''
+      return
+    }
+
+    setErrorMessage('')
+    setAttachedFiles(mergedFiles)
 
     event.target.value = ''
   }
@@ -590,7 +600,16 @@ function TicketConversation({
     }
 
     event.preventDefault()
-    setAttachedFiles((currentFiles) => mergeUniqueFiles(currentFiles, pastedImageFiles))
+    const mergedFiles = mergeUniqueFiles(attachedFiles, pastedImageFiles)
+    const sizeError = getAttachmentSizeError(mergedFiles)
+
+    if (sizeError) {
+      setErrorMessage(sizeError)
+      return
+    }
+
+    setErrorMessage('')
+    setAttachedFiles(mergedFiles)
   }
 
   function handleRemoveFile(fileToRemove) {
@@ -653,7 +672,15 @@ function TicketConversation({
         const recordingMimeType = recorder.mimeType || mimeType
         const blob = new Blob(audioChunksRef.current, { type: recordingMimeType })
         if (blob.size > 0) {
-          setAttachedFiles((currentFiles) => mergeUniqueFiles(currentFiles, [buildAudioFile(blob, recordingMimeType)]))
+          const audioFile = buildAudioFile(blob, recordingMimeType)
+          const mergedFiles = mergeUniqueFiles(attachedFiles, [audioFile])
+          const sizeError = getAttachmentSizeError(mergedFiles)
+
+          if (sizeError) {
+            setErrorMessage(sizeError)
+          } else {
+            setAttachedFiles(mergedFiles)
+          }
         }
         stream.getTracks().forEach((track) => track.stop())
         audioStreamRef.current = null
