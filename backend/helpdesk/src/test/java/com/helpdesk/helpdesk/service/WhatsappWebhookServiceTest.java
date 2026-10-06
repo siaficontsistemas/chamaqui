@@ -125,6 +125,27 @@ class WhatsappWebhookServiceTest {
 	}
 
 	@Test
+	void shouldReturnToInitialModeWhenAClosedTicketAssociationStillExists() {
+		User companyOwner = companyOwner();
+		Ticket closedTicket = new Ticket();
+		com.helpdesk.helpdesk.domain.TicketStatus closedStatus = new com.helpdesk.helpdesk.domain.TicketStatus();
+		setField(closedStatus, "code", "CLOSED");
+		closedTicket.setStatus(closedStatus);
+		closedTicket.setClosedAt(OffsetDateTime.now());
+
+		WhatsappConversation conversation = conversation(companyOwner, WhatsappConversationStep.ACTIVE_TICKET);
+		conversation.setActiveTicket(closedTicket);
+		when(whatsappConversationRepository.findByCompanyOwnerIdAndPhoneNumber(companyOwner.getId(), "5511999999999"))
+			.thenReturn(Optional.of(conversation));
+
+		service.handleIncomingMessage(companyOwner, "5511999999999", "", "Bom dia", List.of());
+
+		assertNull(conversation.getActiveTicket());
+		assertEquals(WhatsappConversationStep.ASK_INITIAL_MODE, conversation.getCurrentStep());
+		verify(whatsappService).sendMessage(eq(companyOwner), eq("5511999999999"), contains("1) Criar chamado"));
+	}
+
+	@Test
 	void shouldStartExistingTicketFlowWhenUserChoosesCreateTicket() {
 		User companyOwner = companyOwner();
 		WhatsappConversation conversation = conversation(companyOwner, WhatsappConversationStep.ASK_INITIAL_MODE);
