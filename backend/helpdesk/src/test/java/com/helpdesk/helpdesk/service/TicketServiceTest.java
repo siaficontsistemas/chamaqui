@@ -6,9 +6,11 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import org.mockito.InjectMocks;
@@ -30,9 +32,12 @@ import com.helpdesk.helpdesk.domain.TicketPriority;
 import com.helpdesk.helpdesk.domain.TicketReplyNotification;
 import com.helpdesk.helpdesk.domain.TicketStatus;
 import com.helpdesk.helpdesk.domain.User;
+import com.helpdesk.helpdesk.domain.WhatsappConversation;
+import com.helpdesk.helpdesk.domain.WhatsappConversationStep;
 import com.helpdesk.helpdesk.domain.UserStatus;
 import com.helpdesk.helpdesk.dto.ticket.CreateTicketMessageRequest;
 import com.helpdesk.helpdesk.dto.ticket.CreateTicketRequest;
+import com.helpdesk.helpdesk.dto.ticket.CloseTicketRequest;
 import com.helpdesk.helpdesk.dto.ticket.TicketMessageResponse;
 import com.helpdesk.helpdesk.dto.ticket.TicketResponse;
 import com.helpdesk.helpdesk.repository.CompanyPartnershipRepository;
@@ -115,6 +120,62 @@ class TicketServiceTest {
 
 	@InjectMocks
 	private TicketService ticketService;
+
+	@Test
+	void shouldClearWhatsappConversationWhenManuallyCreatedWhatsappTicketIsClosed() {
+		User companyOwner = user("admin@empresa.com", "Empresa Admin", "ADMIN", null);
+		companyOwner.setCompanyType(CompanyType.RESPONDER);
+		User requester = user("cliente@gmail.com", "Cliente", "USER", null);
+		requester.setPhoneNumber("5511999999999");
+		User employee = user("funcionario@empresa.com", "Funcionario", "EMPLOYEE", companyOwner);
+		Sector sector = new Sector();
+		sector.setName("Administrativo");
+		sector.setCreatedBy(companyOwner);
+		Ticket ticket = new Ticket();
+		UUID ticketId = UUID.randomUUID();
+		UUID conversationId = UUID.randomUUID();
+		setField(ticket, "id", ticketId);
+		ticket.setProtocol("CA-2026-0132");
+		ticket.setTitle("Chamado manual");
+		ticket.setDescription("Mensagem inicial");
+		ticket.setRequester(requester);
+		ticket.setAssignedTo(employee);
+		ticket.setSector(sector);
+		ticket.setStatus(ticketStatus("OPEN"));
+		ticket.setPriority(ticketPriority("MEDIUM"));
+		ticket.setChannel(TicketChannel.WHATSAPP);
+		ticket.setWhatsappConversationId(conversationId);
+		WhatsappConversation conversation = new WhatsappConversation();
+		setField(conversation, "id", conversationId);
+		conversation.setCompanyOwner(companyOwner);
+		conversation.setPhoneNumber("5511999999999");
+		conversation.setWhatsappTransportId("5511999999999@c.us");
+		conversation.setActiveTicket(ticket);
+		conversation.setCurrentStep(WhatsappConversationStep.ACTIVE_TICKET);
+
+		when(scopedUserLookupService.findUniqueByEmailInCurrentTenant("funcionario@empresa.com"))
+			.thenReturn(Optional.of(employee));
+		when(ticketRepository.findDetailedVisibleByIdAndEmail(ticketId, "funcionario@empresa.com"))
+			.thenReturn(Optional.of(ticket));
+		when(ticketStatusRepository.findByCode("CLOSED")).thenReturn(Optional.of(ticketStatus("CLOSED")));
+		when(ticketRepository.save(any(Ticket.class))).thenAnswer(invocation -> invocation.getArgument(0));
+		when(whatsappConversationRepository.findByActiveTicketId(ticketId)).thenReturn(Optional.of(conversation));
+		when(whatsappConversationRepository.findById(conversationId)).thenReturn(Optional.of(conversation));
+		when(whatsappService.sendMessage(any(User.class), any(String.class), any(String.class), anyList()))
+			.thenReturn(null);
+
+		ticketService.closeTicket(ticketId, new CloseTicketRequest("funcionario@empresa.com"));
+
+		assertEquals("CLOSED", ticket.getStatus().getCode());
+		assertNull(conversation.getActiveTicket());
+		assertEquals(WhatsappConversationStep.ASK_INITIAL_MODE, conversation.getCurrentStep());
+		verify(whatsappService).sendMessage(
+			eq(companyOwner),
+			eq("5511999999999@c.us"),
+			argThat(message -> message.contains("Seu chamado foi encerrado")),
+			eq(List.of())
+		);
+	}
 
 	@Test
 	void shouldNotifyAssignedEmployeeWhenPortalTicketIsCreated() {

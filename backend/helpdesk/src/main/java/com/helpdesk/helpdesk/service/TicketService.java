@@ -734,6 +734,7 @@ public class TicketService {
 
 	private Ticket closeTicketInternal(Ticket ticket, User author, boolean notifyRequesterOnClosure) {
 		if (isTicketClosed(ticket)) {
+			clearWhatsappConversationForTicket(ticket.getId());
 			return ticket;
 		}
 
@@ -746,6 +747,7 @@ public class TicketService {
 		ticket.setClosedAt(closedAt);
 
 		Ticket savedTicket = ticketRepository.save(ticket);
+		clearWhatsappConversationForTicket(savedTicket.getId());
 
 		if (notifyRequesterOnClosure) {
 			createClosureNotification(savedTicket, author);
@@ -819,6 +821,18 @@ public class TicketService {
 	private void clearWhatsappConversationForTicket(UUID ticketId) {
 		whatsappConversationRepository.findByActiveTicketId(ticketId).ifPresent(conversation -> {
 			conversation.setActiveTicket(null);
+			conversation.setNormalConversationActive(false);
+			conversation.setCurrentStep(WhatsappConversationStep.ASK_INITIAL_MODE);
+			conversation.setSector(null);
+			conversation.setPendingMessage(null);
+			conversation.setPendingName(null);
+			conversation.setPendingEmail(null);
+			conversation.setPendingDocument(null);
+			conversation.setPendingAssignedUserId(null);
+			conversation.setPendingSubject(null);
+			conversation.setPendingResumeMessage(null);
+			conversation.setPendingResumeAttachments(null);
+			conversation.setLastTicketSelectionPromptAt(null);
 			whatsappConversationRepository.save(conversation);
 		});
 	}

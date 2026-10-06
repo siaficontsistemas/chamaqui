@@ -343,9 +343,13 @@ public class WhatsappWebhookService {
 			return;
 		}
 
-		boolean hadClosedTicket = conversation.getActiveTicket() != null;
-		if (hadClosedTicket) {
-			startNewTicketFlow(companyOwner, conversation, replyTarget, null);
+		if (conversation.getActiveTicket() != null && hasClosedTicket(conversation.getActiveTicket())) {
+			conversation.setActiveTicket(null);
+			conversation.setNormalConversationActive(false);
+			conversation.setCurrentStep(WhatsappConversationStep.ASK_INITIAL_MODE);
+			conversation.setSector(null);
+			whatsappConversationRepository.save(conversation);
+			promptForInitialMode(companyOwner, conversation, replyTarget, null);
 			return;
 		}
 
@@ -1851,6 +1855,13 @@ public class WhatsappWebhookService {
 			&& conversation.getActiveTicket().getStatus() != null
 			&& !"CLOSED".equalsIgnoreCase(conversation.getActiveTicket().getStatus().getCode())
 			&& conversation.getActiveTicket().getClosedAt() == null;
+	}
+
+	private boolean hasClosedTicket(Ticket ticket) {
+		return ticket != null
+			&& (ticket.getStatus() == null
+				|| "CLOSED".equalsIgnoreCase(ticket.getStatus().getCode())
+				|| ticket.getClosedAt() != null);
 	}
 
 	private boolean isNewTicketCreationStep(WhatsappConversationStep step) {
