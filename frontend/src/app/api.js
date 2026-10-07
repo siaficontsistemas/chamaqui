@@ -225,6 +225,19 @@ export function createClientPreRegistration(payload) {
   return apiRequest('/api/v1/client-pre-registrations', { method: 'POST', body: JSON.stringify(payload) })
 }
 
+export function updateClientPreRegistration(clientId, payload) {
+  return apiRequest(`/api/v1/client-pre-registrations/${encodeURIComponent(clientId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deleteClientPreRegistration(clientId) {
+  return apiRequest(`/api/v1/client-pre-registrations/${encodeURIComponent(clientId)}`, {
+    method: 'DELETE',
+  })
+}
+
 export function loginPlatformAdmin(credentials) {
   return apiRequest('/api/v1/platform-admin/auth/login', {
     method: 'POST',

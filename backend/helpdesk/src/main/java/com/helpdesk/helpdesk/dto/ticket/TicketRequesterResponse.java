@@ -6,6 +6,9 @@ public record TicketRequesterResponse(
 	UUID id,
 	String fullName,
 	String email,
-	String phoneNumber
+	String phoneNumber,
+	boolean preRegistered,
+	UUID companyOwnerId,
+	String companyName
 ) {
 }

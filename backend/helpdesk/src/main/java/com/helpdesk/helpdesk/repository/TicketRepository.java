@@ -15,6 +15,8 @@ import com.helpdesk.helpdesk.domain.Ticket;
 
 public interface TicketRepository extends JpaRepository<Ticket, UUID> {
 
+	boolean existsByRequesterId(UUID requesterId);
+
 	@Query("""
 		select distinct ticket
 		from Ticket ticket

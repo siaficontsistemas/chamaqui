@@ -61,6 +61,8 @@ function NewTicket({
   navigationGroups,
   onCreateTicket,
   onCreateClientPreRegistration,
+  onUpdateClientPreRegistration,
+  onDeleteClientPreRegistration,
   onNavigatePage,
   ticketRequesters = [],
 }) {
@@ -89,6 +91,9 @@ function NewTicket({
   const [preRegistrationOpen, setPreRegistrationOpen] = useState(false)
   const [preRegistrationValues, setPreRegistrationValues] = useState({ fullName: '', phoneNumber: '', companyOwnerId: '' })
   const [preRegistrationFeedback, setPreRegistrationFeedback] = useState('')
+  const [editingPreRegistrationId, setEditingPreRegistrationId] = useState(null)
+  const [preRegistrationToDelete, setPreRegistrationToDelete] = useState(null)
+  const [isDeletingPreRegistration, setIsDeletingPreRegistration] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isCompanyOptionsOpen, setIsCompanyOptionsOpen] = useState(false)
   const [isRequesterOptionsOpen, setIsRequesterOptionsOpen] = useState(false)
@@ -247,10 +252,14 @@ function NewTicket({
     if (!preRegistrationValues.companyOwnerId) { setPreRegistrationFeedback('Selecione a empresa cliente para criar o pré-cadastro.'); return }
     try {
       setPreRegistrationFeedback('')
-      const created = await onCreateClientPreRegistration?.(preRegistrationValues)
-      if (created) handleRequesterSelect(created)
-      setPreRegistrationValues({ fullName: '', phoneNumber: '', companyOwnerId: '' }); setPreRegistrationOpen(false)
-      setFeedbackMessage('Pré-cadastro criado. O cliente já pode receber chamados pelo sistema.')
+      const saved = editingPreRegistrationId
+        ? await onUpdateClientPreRegistration?.(editingPreRegistrationId, preRegistrationValues)
+        : await onCreateClientPreRegistration?.(preRegistrationValues)
+      if (saved) handleRequesterSelect(saved)
+      closePreRegistration()
+      setFeedbackMessage(editingPreRegistrationId
+        ? 'Pré-cadastro atualizado com sucesso.'
+        : 'Pré-cadastro criado. O cliente já pode receber chamados pelo sistema.')
     } catch (error) { setPreRegistrationFeedback(error.message) }
   }
 
@@ -276,21 +285,62 @@ function NewTicket({
   }
 
   function togglePreRegistration() {
-    setPreRegistrationOpen((isOpen) => {
-      if (!isOpen && !preRegistrationValues.companyOwnerId && formValues.companyOwnerId) {
-        setPreRegistrationValues((currentValues) => ({
-          ...currentValues,
-          companyOwnerId: formValues.companyOwnerId,
-        }))
-      }
-      return !isOpen
+    if (preRegistrationOpen) {
+      closePreRegistration()
+      return
+    }
+
+    setEditingPreRegistrationId(null)
+    setPreRegistrationValues({ fullName: '', phoneNumber: '', companyOwnerId: '' })
+    setPreRegistrationFeedback('')
+    setPreRegistrationOpen(true)
+  }
+
+  function openPreRegistrationEdit(requester) {
+    setEditingPreRegistrationId(requester.id)
+    setPreRegistrationValues({
+      fullName: requester.fullName || '',
+      phoneNumber: requester.phoneNumber || '',
+      companyOwnerId: requester.companyOwnerId || '',
     })
+    setPreRegistrationFeedback('')
+    setPreRegistrationOpen(true)
   }
 
   function closePreRegistration() {
     if (isSubmitting) return
     setPreRegistrationOpen(false)
     setPreRegistrationFeedback('')
+    setEditingPreRegistrationId(null)
+    setPreRegistrationValues({ fullName: '', phoneNumber: '', companyOwnerId: '' })
+  }
+
+  function openPreRegistrationDelete(requester) {
+    setPreRegistrationToDelete(requester)
+  }
+
+  function closePreRegistrationDelete() {
+    if (isDeletingPreRegistration) return
+    setPreRegistrationToDelete(null)
+  }
+
+  async function handlePreRegistrationDelete() {
+    if (!preRegistrationToDelete?.id || !onDeleteClientPreRegistration) return
+
+    try {
+      setIsDeletingPreRegistration(true)
+      await onDeleteClientPreRegistration(preRegistrationToDelete.id)
+      if (formValues.requesterEmail === preRegistrationToDelete.email) {
+        handleRequesterSelect(null)
+      }
+      setPreRegistrationToDelete(null)
+      setFeedbackMessage('Pré-cadastro excluído com sucesso.')
+    } catch (error) {
+      setPreRegistrationToDelete(null)
+      setFeedbackMessage(error.message)
+    } finally {
+      setIsDeletingPreRegistration(false)
+    }
   }
 
   function handleFileSelection(event) {
@@ -536,16 +586,44 @@ function NewTicket({
                       {isRequesterOptionsOpen ? (
                         <div className="ticket-field__options" role="listbox" aria-label="Clientes">
                           {filteredRequesters.length > 0 ? (
-                            filteredRequesters.map((requester) => (
-                              <button
-                                className={`ticket-field__option${requester.email === formValues.requesterEmail ? ' is-active' : ''}`}
+                          filteredRequesters.map((requester) => (
+                              <div
+                                className={`ticket-field__option-row${requester.email === formValues.requesterEmail ? ' is-active' : ''}`}
                                 key={requester.id || requester.email}
-                                type="button"
-                                onMouseDown={(event) => event.preventDefault()}
-                                onClick={() => handleRequesterSelect(requester)}
                               >
-                                {requester.fullName} — {requester.email}
-                              </button>
+                                <button
+                                  className="ticket-field__option"
+                                  type="button"
+                                  onMouseDown={(event) => event.preventDefault()}
+                                  onClick={() => handleRequesterSelect(requester)}
+                                >
+                                  <span>{requester.fullName} — {requester.email}</span>
+                                </button>
+                                {requester.preRegistered ? (
+                                  <span className="ticket-field__option-actions">
+                                    <button
+                                      className="ticket-field__option-action"
+                                      type="button"
+                                      onMouseDown={(event) => event.preventDefault()}
+                                      onClick={() => openPreRegistrationEdit(requester)}
+                                      aria-label={`Editar pré-cadastro de ${requester.fullName}`}
+                                      title="Editar pré-cadastro"
+                                    >
+                                      ✎
+                                    </button>
+                                    <button
+                                      className="ticket-field__option-action ticket-field__option-action--danger"
+                                      type="button"
+                                      onMouseDown={(event) => event.preventDefault()}
+                                      onClick={() => openPreRegistrationDelete(requester)}
+                                      aria-label={`Excluir pré-cadastro de ${requester.fullName}`}
+                                      title="Excluir pré-cadastro"
+                                    >
+                                      ×
+                                    </button>
+                                  </span>
+                                ) : null}
+                              </div>
                             ))
                           ) : (
                             <span className="ticket-field__option ticket-field__option--empty">
@@ -823,13 +901,15 @@ function NewTicket({
       </div>
       <ConfirmActionModal
         cancelLabel="Cancelar"
-        confirmLabel="Criar cliente"
-        description="Cadastre rapidamente o cliente para continuar a abertura do chamado."
+        confirmLabel={editingPreRegistrationId ? 'Salvar alterações' : 'Criar cliente'}
+        description={editingPreRegistrationId
+          ? 'Atualize os dados do pré-cadastro sem perder os chamados associados.'
+          : 'Cadastre rapidamente o cliente para continuar a abertura do chamado.'}
         isOpen={preRegistrationOpen}
         isProcessing={isSubmitting}
         onCancel={closePreRegistration}
         onConfirm={handlePreRegistrationSubmit}
-        title="Novo pré-cadastro"
+        title={editingPreRegistrationId ? 'Editar pré-cadastro' : 'Novo pré-cadastro'}
       >
         <div className="pre-registration-modal__form">
           <label className="ticket-field">
@@ -870,6 +950,19 @@ function NewTicket({
           {preRegistrationFeedback ? <p className="team-feedback pre-registration-modal__feedback">{preRegistrationFeedback}</p> : null}
         </div>
       </ConfirmActionModal>
+      <ConfirmActionModal
+        cancelLabel="Cancelar"
+        confirmLabel="Excluir pré-cadastro"
+        confirmVariant="danger"
+        description={preRegistrationToDelete
+          ? `Tem certeza que deseja excluir o pré-cadastro de ${preRegistrationToDelete.fullName}? Se houver chamados associados, a exclusão será bloqueada para preservar o histórico.`
+          : ''}
+        isOpen={Boolean(preRegistrationToDelete)}
+        isProcessing={isDeletingPreRegistration}
+        onCancel={closePreRegistrationDelete}
+        onConfirm={handlePreRegistrationDelete}
+        title="Excluir pré-cadastro"
+      />
     </main>
   )
 }

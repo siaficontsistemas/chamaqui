@@ -248,7 +248,15 @@ public class TicketService {
 		return userRepository.findActiveRequesterUsers().stream()
 			.filter(this::isVisibleRequester)
 			.filter(this::isRequesterSideUser)
-			.map(user -> new TicketRequesterResponse(user.getId(), user.getFullName(), user.getEmail(), user.getPhoneNumber()))
+			.map(user -> new TicketRequesterResponse(
+				user.getId(),
+				user.getFullName(),
+				user.getEmail(),
+				user.getPhoneNumber(),
+				user.isPreRegistered(),
+				user.getCompanyOwner() == null ? null : user.getCompanyOwner().getId(),
+				user.getCompanyOwner() == null ? null : user.getCompanyOwner().getCompanyName()
+			))
 			.toList();
 	}
 

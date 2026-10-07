@@ -14,6 +14,8 @@ import {
   createCompanyPartnership,
   createTicket,
   createClientPreRegistration,
+  updateClientPreRegistration,
+  deleteClientPreRegistration,
   createSector,
   createTeamInvite,
   declineCompanyAccessRequestNotification,
@@ -1176,6 +1178,18 @@ function App() {
     return result
   }
 
+  async function handleUpdateClientPreRegistration(clientId, payload) {
+    const result = await updateClientPreRegistration(clientId, payload)
+    await refreshDashboardData(currentUserEmail)
+    return result
+  }
+
+  async function handleDeleteClientPreRegistration(clientId) {
+    const result = await deleteClientPreRegistration(clientId)
+    await refreshDashboardData(currentUserEmail)
+    return result
+  }
+
   async function handleUpdateTicketTitle(ticketId, title) {
     const trimmedTitle = title?.trim() || ''
 
@@ -1742,6 +1756,8 @@ function App() {
         onCreateCompanyPartnership={handleCreateCompanyPartnership}
         onCreateTicket={handleCreateTicket}
         onCreateClientPreRegistration={handleCreateClientPreRegistration}
+        onUpdateClientPreRegistration={handleUpdateClientPreRegistration}
+        onDeleteClientPreRegistration={handleDeleteClientPreRegistration}
         onChangePassword={handleChangePassword}
         onLookupClientCompany={handleLookupClientCompany}
         onLinkExistingClientCompany={handleLinkExistingClientCompany}
