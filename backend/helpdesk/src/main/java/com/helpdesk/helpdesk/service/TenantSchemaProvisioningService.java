@@ -48,6 +48,24 @@ public class TenantSchemaProvisioningService {
 			"alter table " + qualifiedSchema + ".\"tickets\" "
 				+ "add column if not exists \"whatsapp_conversation_id\" uuid"
 		);
+		jdbcTemplate.execute(
+			"alter table " + qualifiedSchema + ".\"calendar_obligations\" "
+				+ "add column if not exists \"linked_company_owner_id\" uuid"
+		);
+		jdbcTemplate.execute(
+			"alter table " + qualifiedSchema + ".\"calendar_obligations\" "
+				+ "add column if not exists \"priority_code\" varchar(20)"
+		);
+		jdbcTemplate.execute(
+			"update " + qualifiedSchema + ".\"calendar_obligations\" "
+				+ "set \"linked_company_owner_id\" = \"company_owner_id\" "
+				+ "where \"linked_company_owner_id\" is null"
+		);
+		jdbcTemplate.execute(
+			"update " + qualifiedSchema + ".\"calendar_obligations\" "
+				+ "set \"priority_code\" = 'MEDIUM' "
+				+ "where \"priority_code\" is null or btrim(\"priority_code\") = ''"
+		);
 	}
 
 	private String quoteIdentifier(String value) {

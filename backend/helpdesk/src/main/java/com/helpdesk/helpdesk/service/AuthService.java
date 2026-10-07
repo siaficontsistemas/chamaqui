@@ -82,6 +82,7 @@ public class AuthService {
 		boolean isAdminRegistration = "admin".equalsIgnoreCase(request.role());
 		CompanyType companyType = CompanyType.fromValue(request.companyType());
 		String normalizedEmail = request.email().trim().toLowerCase(Locale.ROOT);
+		String normalizedPhoneNumber = normalizePhoneNumber(request.phoneNumber());
 		emailDomainValidationService.ensurePublicEmailDomainExists(normalizedEmail);
 		String normalizedDocumentNumber = normalizeDocumentNumber(request.documentNumber());
 		String normalizedInviteToken = blankToNull(request.inviteToken());
@@ -116,6 +117,12 @@ public class AuthService {
 		}
 		if (normalizedDocumentNumber == null || !BrazilianDocumentValidator.isValidCpf(normalizedDocumentNumber)) {
 			throw new IllegalArgumentException("Informe um CPF válido.");
+		}
+		if (normalizedPhoneNumber != null) {
+			User phoneOwner = userRepository.findByPhoneNumber(normalizedPhoneNumber).orElse(null);
+			if (phoneOwner != null && (upgradeableUser == null || !phoneOwner.getId().equals(upgradeableUser.getId()))) {
+				throw new IllegalArgumentException("Já existe um usuário cadastrado com esse telefone.");
+			}
 		}
 		if (normalizedCompanyDocument != null && normalizedCompanyDocument.length() != 14) {
 			throw new IllegalArgumentException("Informe um CNPJ válido para a empresa.");
@@ -187,7 +194,7 @@ public class AuthService {
 		User user = upgradeableUser == null ? new User() : upgradeableUser;
 		user.setFullName(request.fullName().trim());
 		user.setEmail(normalizedEmail);
-		user.setPhoneNumber(normalizePhoneNumber(request.phoneNumber()));
+		user.setPhoneNumber(normalizedPhoneNumber);
 		user.setDocumentNumber(normalizedDocumentNumber);
 		user.setCompanyName(isAdminRegistration ? companyName : null);
 		user.setCompanyDocument(isAdminRegistration ? normalizedCompanyDocument : null);

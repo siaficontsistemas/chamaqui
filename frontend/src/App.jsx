@@ -13,6 +13,7 @@ import {
   createCompanyInvite,
   createCompanyPartnership,
   createTicket,
+  createClientPreRegistration,
   createSector,
   createTeamInvite,
   declineCompanyAccessRequestNotification,
@@ -35,6 +36,7 @@ import {
   declineTeamInvite,
   getStoredAppAuthToken,
   getCompanyPartnershipTicketTargets,
+  getAvailableCompanies,
   getAuthMe,
   getProfile,
   getMyCompanyPartnerships,
@@ -97,6 +99,7 @@ import MyData from './app/pages/MyData/MyData'
 import NewTicket from './app/pages/NewTicket/NewTicket'
 import OpenTickets from './app/pages/OpenTickets/OpenTickets'
 import Register from './app/pages/Register/Register'
+import CompleteRegistration from './app/pages/CompleteRegistration/CompleteRegistration'
 import Reports from './app/pages/Reports/Reports'
 import Sector from './app/pages/Sector/Sector'
 import Team from './app/pages/Team/Team'
@@ -148,6 +151,14 @@ function normalizeSector(sector) {
           email: assignee.email || '',
         }))
       : [],
+  }
+}
+
+function normalizeClientCompany(company) {
+  return {
+    id: company.id,
+    name: company.name || 'Empresa não informada',
+    document: company.code || '',
   }
 }
 
@@ -417,6 +428,7 @@ async function fetchDashboardBundle() {
     nextSummary,
     nextSectors,
     nextTicketTargets,
+    nextClientCompanies,
     nextTicketRequesters,
     nextMembers,
     nextReceivedInvites,
@@ -435,6 +447,9 @@ async function fetchDashboardBundle() {
     safeRequest(() => getTicketSummary(), null),
     safeRequest(() => getSectors(), []),
     safeRequest(() => getCompanyPartnershipTicketTargets(), []),
+    currentRole === 'admin' || currentRole === 'employee'
+      ? safeRequest(() => getAvailableCompanies('REQUESTER'), [])
+      : Promise.resolve([]),
     currentRole === 'admin' || currentRole === 'employee'
       ? safeRequest(() => getTicketRequesters(), [])
       : Promise.resolve([]),
@@ -460,6 +475,9 @@ async function fetchDashboardBundle() {
     ticketSummary: nextSummary,
     sectors: Array.isArray(nextSectors) ? nextSectors.map(normalizeSector) : [],
     ticketTargets: Array.isArray(nextTicketTargets) ? nextTicketTargets.map(normalizeSector) : [],
+    ticketClientCompanies: Array.isArray(nextClientCompanies)
+      ? nextClientCompanies.map(normalizeClientCompany)
+      : [],
     ticketRequesters: Array.isArray(nextTicketRequesters) ? nextTicketRequesters : [],
     teamMembers: Array.isArray(nextMembers) ? nextMembers.map(normalizeTeamMember) : [],
     receivedInvites: Array.isArray(nextReceivedInvites)
@@ -649,6 +667,7 @@ function App() {
   const [currentUserRole, setCurrentUserRole] = useState('user')
   const [createdSectors, setCreatedSectors] = useState([])
   const [ticketTargetSectors, setTicketTargetSectors] = useState([])
+  const [ticketClientCompanies, setTicketClientCompanies] = useState([])
   const [ticketRequesters, setTicketRequesters] = useState([])
   const [teamMembers, setTeamMembers] = useState([])
   const [receivedInvites, setReceivedInvites] = useState([])
@@ -786,6 +805,7 @@ function App() {
     setTicketSummary(bundle.ticketSummary)
     setCreatedSectors(bundle.sectors)
     setTicketTargetSectors(bundle.ticketTargets)
+    setTicketClientCompanies(bundle.ticketClientCompanies)
     setTicketRequesters(bundle.ticketRequesters)
     setTeamMembers(bundle.teamMembers)
     setReceivedInvites(bundle.receivedInvites)
@@ -1148,6 +1168,12 @@ function App() {
     setSelectedTicket(null)
     navigate(SECTION_ROUTE_PATHS.all)
     return createdTicket
+  }
+
+  async function handleCreateClientPreRegistration(payload) {
+    const result = await createClientPreRegistration(payload)
+    await refreshDashboardData(currentUserEmail)
+    return result
   }
 
   async function handleUpdateTicketTitle(ticketId, title) {
@@ -1715,6 +1741,7 @@ function App() {
         onCreateClientCompany={handleCreateClientCompany}
         onCreateCompanyPartnership={handleCreateCompanyPartnership}
         onCreateTicket={handleCreateTicket}
+        onCreateClientPreRegistration={handleCreateClientPreRegistration}
         onChangePassword={handleChangePassword}
         onLookupClientCompany={handleLookupClientCompany}
         onLinkExistingClientCompany={handleLinkExistingClientCompany}
@@ -1744,6 +1771,7 @@ function App() {
         onUpdateMemberSectors={handleUpdateMemberSectors}
         onViewNotifications={handleViewedNotifications}
         availableTicketSectors={ticketTargetSectors}
+        availableClientCompanies={ticketClientCompanies}
         ticketRequesters={ticketRequesters}
         companyPartnerships={companyPartnerships}
         profileError={profileError}
@@ -1821,6 +1849,7 @@ function App() {
               )
             }
           />
+          <Route path="/complete-registration" element={<CompleteRegistration />} />
           <Route
             path="/my-data/whatsapp/qrcode"
             element={

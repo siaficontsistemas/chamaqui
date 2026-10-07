@@ -32,7 +32,8 @@ public class AppSessionAuthenticationFilter extends OncePerRequestFilter {
 		"/api/v1/auth/register",
 		"/api/v1/auth/register-invite",
 		"/api/v1/auth/forgot-password",
-		"/api/v1/auth/reset-password"
+		"/api/v1/auth/reset-password",
+		"/api/v1/auth/complete-registration"
 	);
 
 	private final AppSessionService appSessionService;

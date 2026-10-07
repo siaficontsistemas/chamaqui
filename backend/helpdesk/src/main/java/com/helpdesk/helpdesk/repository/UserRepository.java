@@ -21,6 +21,8 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
 	boolean existsByCompanyOwnerIdAndIdNot(UUID companyOwnerId, UUID userId);
 
+	boolean existsByPhoneNumber(String phoneNumber);
+
 	@Query("""
 		select case when count(user) > 0 then true else false end
 		from User user
@@ -60,6 +62,9 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 	Optional<User> findByPasswordResetTokenHash(String passwordResetTokenHash);
 
 	@EntityGraph(attributePaths = {"roles", "companyOwner"})
+	Optional<User> findByRegistrationTokenHash(String registrationTokenHash);
+
+	@EntityGraph(attributePaths = {"roles", "companyOwner"})
 	java.util.List<User> findAllByWhatsappTransportIdOrderByCreatedAtAsc(String whatsappTransportId);
 
 	@Override
@@ -86,7 +91,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 		join user.roles role
 		where role.code in ('USER', 'ADMIN')
 		  and user.deletedAt is null
-		  and user.status = com.helpdesk.helpdesk.domain.UserStatus.ACTIVE
+		  and (user.status = com.helpdesk.helpdesk.domain.UserStatus.ACTIVE or user.preRegistered = true)
 		order by lower(user.fullName), lower(user.email)
 		""")
 	@EntityGraph(attributePaths = {"roles", "companyOwner"})

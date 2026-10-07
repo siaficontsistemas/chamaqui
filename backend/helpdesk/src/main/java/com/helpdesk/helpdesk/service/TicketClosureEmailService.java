@@ -42,7 +42,8 @@ public class TicketClosureEmailService {
 	public void sendConversationTranscript(
 		Ticket ticket,
 		List<TicketMessage> messages,
-		Map<UUID, List<TicketAttachment>> attachmentsByMessageId
+		Map<UUID, List<TicketAttachment>> attachmentsByMessageId,
+		String preRegistrationLink
 	) {
 		String recipient = normalizeOptionalEmail(ticket.getCopyEmail());
 
@@ -68,8 +69,8 @@ public class TicketClosureEmailService {
 			helper.setTo(recipient);
 			helper.setSubject("Chamado encerrado: " + ticket.getProtocol() + " - " + ticket.getTitle());
 			helper.setText(
-				buildPlainBody(ticket, messages, attachmentsByMessageId),
-				buildHtmlBody(ticket, messages, attachmentsByMessageId)
+				buildPlainBody(ticket, messages, attachmentsByMessageId, preRegistrationLink),
+				buildHtmlBody(ticket, messages, attachmentsByMessageId, preRegistrationLink)
 			);
 			mailSender.send(message);
 		} catch (MessagingException | RuntimeException exception) {
@@ -82,10 +83,18 @@ public class TicketClosureEmailService {
 		}
 	}
 
-	private String buildPlainBody(
+	public void sendConversationTranscript(
 		Ticket ticket,
 		List<TicketMessage> messages,
 		Map<UUID, List<TicketAttachment>> attachmentsByMessageId
+	) {
+		sendConversationTranscript(ticket, messages, attachmentsByMessageId, null);
+	}
+
+	private String buildPlainBody(
+		Ticket ticket,
+		List<TicketMessage> messages,
+		Map<UUID, List<TicketAttachment>> attachmentsByMessageId, String preRegistrationLink
 	) {
 		StringBuilder body = new StringBuilder();
 		body.append("O chamado abaixo foi encerrado e segue o historico completo da conversa.")
@@ -131,14 +140,20 @@ public class TicketClosureEmailService {
 				}
 			}
 		}
+		appendPreRegistrationMessage(body, preRegistrationLink);
 
 		return body.toString();
+	}
+
+	private void appendPreRegistrationMessage(StringBuilder body, String link) {
+		if (link == null || link.isBlank()) return;
+		body.append("\n\nPara possibilitar a abertura deste chamado, realizamos um pré-cadastro seu no Chamaqui.\n\nPara acessar o sistema e finalizar seu cadastro, utilize o link abaixo:\n").append(link).append('\n');
 	}
 
 	private String buildHtmlBody(
 		Ticket ticket,
 		List<TicketMessage> messages,
-		Map<UUID, List<TicketAttachment>> attachmentsByMessageId
+		Map<UUID, List<TicketAttachment>> attachmentsByMessageId, String preRegistrationLink
 	) {
 		StringBuilder body = new StringBuilder();
 		body.append("""
@@ -306,6 +321,9 @@ public class TicketClosureEmailService {
 			</html>
 			""");
 
+		if (preRegistrationLink != null && !preRegistrationLink.isBlank()) {
+			body.append("<hr style=\"border:0;border-top:1px solid #dbe4f0;margin:24px 0;\"><p><strong>Pré-cadastro no Chamaqui</strong></p><p>Para possibilitar a abertura deste chamado, realizamos um pré-cadastro seu no Chamaqui.</p><p>Para finalizar seu cadastro, acesse <a href=\"").append(preRegistrationLink).append("\">este link seguro</a>.</p>");
+		}
 		return body.toString();
 	}
 

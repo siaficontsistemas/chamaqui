@@ -85,6 +85,15 @@ public class User {
 	@Column(name = "password_reset_token_expires_at")
 	private OffsetDateTime passwordResetTokenExpiresAt;
 
+	@Column(name = "pre_registered", nullable = false)
+	private boolean preRegistered;
+
+	@Column(name = "registration_token_hash", length = 120)
+	private String registrationTokenHash;
+
+	@Column(name = "registration_token_expires_at")
+	private OffsetDateTime registrationTokenExpiresAt;
+
 	@Column(name = "terms_accepted_at")
 	private OffsetDateTime termsAcceptedAt;
 
@@ -273,6 +282,13 @@ public class User {
 	public void setPasswordResetTokenExpiresAt(OffsetDateTime passwordResetTokenExpiresAt) {
 		this.passwordResetTokenExpiresAt = passwordResetTokenExpiresAt;
 	}
+
+	public boolean isPreRegistered() { return preRegistered; }
+	public void setPreRegistered(boolean preRegistered) { this.preRegistered = preRegistered; }
+	public String getRegistrationTokenHash() { return registrationTokenHash; }
+	public void setRegistrationTokenHash(String registrationTokenHash) { this.registrationTokenHash = registrationTokenHash; }
+	public OffsetDateTime getRegistrationTokenExpiresAt() { return registrationTokenExpiresAt; }
+	public void setRegistrationTokenExpiresAt(OffsetDateTime registrationTokenExpiresAt) { this.registrationTokenExpiresAt = registrationTokenExpiresAt; }
 
 	public OffsetDateTime getCreatedAt() {
 		return createdAt;

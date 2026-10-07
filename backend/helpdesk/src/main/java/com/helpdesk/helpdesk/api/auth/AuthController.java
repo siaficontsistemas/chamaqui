@@ -10,6 +10,8 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.helpdesk.helpdesk.dto.auth.AuthResponse;
+import com.helpdesk.helpdesk.dto.auth.CompleteRegistrationRequest;
+import com.helpdesk.helpdesk.dto.auth.CompleteRegistrationResponse;
 import com.helpdesk.helpdesk.dto.auth.ForgotPasswordRequest;
 import com.helpdesk.helpdesk.dto.auth.LoginRequest;
 import com.helpdesk.helpdesk.dto.auth.RegisterInviteResponse;
@@ -19,6 +21,7 @@ import com.helpdesk.helpdesk.dto.common.OperationMessageResponse;
 import com.helpdesk.helpdesk.service.AppSessionService;
 import com.helpdesk.helpdesk.service.AuthService;
 import com.helpdesk.helpdesk.service.PasswordRecoveryService;
+import com.helpdesk.helpdesk.service.PreRegistrationCompletionService;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
@@ -31,15 +34,18 @@ public class AuthController {
 	private final AuthService authService;
 	private final AppSessionService appSessionService;
 	private final PasswordRecoveryService passwordRecoveryService;
+	private final PreRegistrationCompletionService preRegistrationCompletionService;
 
 	public AuthController(
 		AuthService authService,
 		AppSessionService appSessionService,
-		PasswordRecoveryService passwordRecoveryService
+		PasswordRecoveryService passwordRecoveryService,
+		PreRegistrationCompletionService preRegistrationCompletionService
 	) {
 		this.authService = authService;
 		this.appSessionService = appSessionService;
 		this.passwordRecoveryService = passwordRecoveryService;
+		this.preRegistrationCompletionService = preRegistrationCompletionService;
 	}
 
 	@PostMapping("/register")
@@ -81,5 +87,10 @@ public class AuthController {
 	@PostMapping("/reset-password")
 	public OperationMessageResponse resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
 		return passwordRecoveryService.resetPassword(request);
+	}
+
+	@PostMapping("/complete-registration")
+	public CompleteRegistrationResponse completeRegistration(@Valid @RequestBody CompleteRegistrationRequest request) {
+		return preRegistrationCompletionService.complete(request);
 	}
 }

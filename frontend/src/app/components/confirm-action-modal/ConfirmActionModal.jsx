@@ -3,6 +3,7 @@ import './ConfirmActionModal.css'
 
 function ConfirmActionModal({
   cancelLabel = 'Cancelar',
+  children = null,
   confirmLabel = 'Confirmar',
   confirmVariant = 'primary',
   description = '',
@@ -56,6 +57,7 @@ function ConfirmActionModal({
             {paragraph}
           </p>
         ))}
+        {children}
 
         <div className="confirm-action-modal__actions">
           <button

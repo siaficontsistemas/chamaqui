@@ -11,6 +11,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.helpdesk.helpdesk.domain.User;
 import com.helpdesk.helpdesk.repository.UserRepository;
+import com.helpdesk.helpdesk.repository.CompanyPartnershipRepository;
+import com.helpdesk.helpdesk.domain.CompanyPartnershipStatus;
 
 @Service
 public class ScopedUserLookupService {
@@ -19,10 +21,12 @@ public class ScopedUserLookupService {
 
 	private final UserRepository userRepository;
 	private final TenantAccessService tenantAccessService;
+	private final CompanyPartnershipRepository companyPartnershipRepository;
 
-	public ScopedUserLookupService(UserRepository userRepository, TenantAccessService tenantAccessService) {
+	public ScopedUserLookupService(UserRepository userRepository, TenantAccessService tenantAccessService, CompanyPartnershipRepository companyPartnershipRepository) {
 		this.userRepository = userRepository;
 		this.tenantAccessService = tenantAccessService;
+		this.companyPartnershipRepository = companyPartnershipRepository;
 	}
 
 	@Transactional(readOnly = true)
@@ -45,8 +49,14 @@ public class ScopedUserLookupService {
 		}
 
 		return userRepository.findAllByEmailIgnoreCaseOrderByCreatedAtAsc(normalizedEmail).stream()
-			.filter(tenantAccessService::belongsToCurrentTenant)
+			.filter(this::belongsToCurrentTenantIncludingPreRegistration)
 			.toList();
+	}
+
+	private boolean belongsToCurrentTenantIncludingPreRegistration(User user) {
+		if (tenantAccessService.belongsToCurrentTenant(user)) return true;
+		if (!user.isPreRegistered() || user.getCompanyOwner() == null || !tenantAccessService.hasCurrentTenant()) return false;
+		return companyPartnershipRepository.existsByCompanyPairAndStatus(tenantAccessService.requireCurrentTenantOwnerUserId(), user.getCompanyOwner().getId(), CompanyPartnershipStatus.ACCEPTED);
 	}
 
 	@Transactional(readOnly = true)
