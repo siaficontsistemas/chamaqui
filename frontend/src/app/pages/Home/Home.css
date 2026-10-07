@@ -1220,13 +1220,60 @@
   padding: 12px 14px;
 }
 
+.ticket-field__option-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 12px;
+}
+
+.ticket-field__option-row > .ticket-field__option {
+  flex: 1;
+  min-width: 0;
+}
+
 .ticket-field__option:not(.ticket-field__option--empty) {
   cursor: pointer;
 }
 
 .ticket-field__option:hover,
-.ticket-field__option.is-active {
+.ticket-field__option-row.is-active {
   background: rgba(31, 49, 65, 0.08);
+}
+
+.ticket-field__option-actions {
+  display: inline-flex;
+  gap: 2px;
+  padding-right: 6px;
+}
+
+.ticket-field__option-action {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #2859b3;
+  cursor: pointer;
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.ticket-field__option-action:hover,
+.ticket-field__option-action:focus-visible {
+  background: rgba(40, 89, 179, 0.12);
+}
+
+.ticket-field__option-action--danger {
+  color: #a11b27;
+}
+
+.ticket-field__option-action--danger:hover,
+.ticket-field__option-action--danger:focus-visible {
+  background: rgba(224, 32, 47, 0.1);
 }
 
 .ticket-field__option--empty {

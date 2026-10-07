@@ -23,6 +23,8 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
 	boolean existsByPhoneNumber(String phoneNumber);
 
+	boolean existsByPhoneNumberAndIdNot(String phoneNumber, UUID userId);
+
 	@Query("""
 		select case when count(user) > 0 then true else false end
 		from User user
