@@ -32,6 +32,7 @@ import org.springframework.web.multipart.MultipartFile;
 import com.helpdesk.helpdesk.common.NotFoundException;
 import com.helpdesk.helpdesk.domain.CompanyPartnershipStatus;
 import com.helpdesk.helpdesk.domain.CompanyType;
+import com.helpdesk.helpdesk.domain.Company;
 import com.helpdesk.helpdesk.domain.SectorMember;
 import com.helpdesk.helpdesk.domain.Ticket;
 import com.helpdesk.helpdesk.domain.TicketAssignmentNotification;
@@ -105,6 +106,8 @@ public class TicketService {
 	private final ScopedUserLookupService scopedUserLookupService;
 	private final AuditTrailService auditTrailService;
 	private final WebPushService webPushService;
+	private final SensitiveTokenService sensitiveTokenService;
+	private final FrontendPublicUrlService frontendPublicUrlService;
 
 	public TicketService(
 		TicketRepository ticketRepository,
@@ -127,7 +130,9 @@ public class TicketService {
 		TenantAccessService tenantAccessService,
 		ScopedUserLookupService scopedUserLookupService,
 		AuditTrailService auditTrailService,
-		WebPushService webPushService
+		WebPushService webPushService,
+		SensitiveTokenService sensitiveTokenService,
+		FrontendPublicUrlService frontendPublicUrlService
 	) {
 		this.ticketRepository = ticketRepository;
 		this.userRepository = userRepository;
@@ -150,6 +155,8 @@ public class TicketService {
 		this.scopedUserLookupService = scopedUserLookupService;
 		this.auditTrailService = auditTrailService;
 		this.webPushService = webPushService;
+		this.sensitiveTokenService = sensitiveTokenService;
+		this.frontendPublicUrlService = frontendPublicUrlService;
 	}
 
 	@Transactional(readOnly = true)
@@ -239,10 +246,16 @@ public class TicketService {
 	@Transactional(readOnly = true)
 	public List<TicketRequesterResponse> listAvailableRequesters() {
 		return userRepository.findActiveRequesterUsers().stream()
-			.filter(tenantAccessService::belongsToCurrentTenant)
+			.filter(this::isVisibleRequester)
 			.filter(this::isRequesterSideUser)
 			.map(user -> new TicketRequesterResponse(user.getId(), user.getFullName(), user.getEmail(), user.getPhoneNumber()))
 			.toList();
+	}
+
+	private boolean isVisibleRequester(User user) {
+		if (tenantAccessService.belongsToCurrentTenant(user)) return true;
+		return user.isPreRegistered() && user.getCompanyOwner() != null && tenantAccessService.hasCurrentTenant()
+			&& companyPartnershipRepository.existsByCompanyPairAndStatus(tenantAccessService.requireCurrentTenantOwnerUserId(), user.getCompanyOwner().getId(), CompanyPartnershipStatus.ACCEPTED);
 	}
 
 	private boolean isRequesterSideUser(User user) {
@@ -748,16 +761,18 @@ public class TicketService {
 
 		Ticket savedTicket = ticketRepository.save(ticket);
 		clearWhatsappConversationForTicket(savedTicket.getId());
+		String preRegistrationLink = createPreRegistrationLink(savedTicket.getRequester());
 
 		if (notifyRequesterOnClosure) {
 			createClosureNotification(savedTicket, author);
 		}
 
-		notifyWhatsappTicketClosure(savedTicket, author);
+		notifyWhatsappTicketClosure(savedTicket, author, preRegistrationLink);
 		ticketClosureEmailService.sendConversationTranscript(
 			savedTicket,
 			ticketMessageRepository.findByTicketIdOrderByCreatedAtAsc(savedTicket.getId()),
-			loadAttachmentEntitiesByMessageId(savedTicket.getId())
+			loadAttachmentEntitiesByMessageId(savedTicket.getId()),
+			preRegistrationLink
 		);
 
 		return savedTicket;
@@ -1980,7 +1995,7 @@ public class TicketService {
 		}
 	}
 
-	private void notifyWhatsappTicketClosure(Ticket ticket, User closedBy) {
+	private void notifyWhatsappTicketClosure(Ticket ticket, User closedBy, String preRegistrationLink) {
 		if (ticket == null || closedBy == null) {
 			return;
 		}
@@ -2002,6 +2017,9 @@ public class TicketService {
 
 			Se precisar de um novo atendimento, envie uma nova mensagem.
 			""".formatted(ticket.getProtocol(), closedByName).trim();
+		if (preRegistrationLink != null) {
+			closureMessage += "\n\nPara possibilitar a abertura deste chamado, realizamos um pré-cadastro seu no Chamaqui.\n\nPara acessar o sistema e finalizar seu cadastro, utilize o link abaixo:\n" + preRegistrationLink;
+		}
 
 		try {
 			sendWhatsappTicketMessage(ticket, closureMessage, List.of());
@@ -2014,6 +2032,22 @@ public class TicketService {
 				exception
 			);
 		}
+	}
+
+	private String createPreRegistrationLink(User requester) {
+		if (requester == null || !requester.isPreRegistered()) return null;
+		String rawToken = sensitiveTokenService.generateUrlSafeToken();
+		requester.setRegistrationTokenHash(sensitiveTokenService.hashToken(rawToken, "Token de cadastro inválido."));
+		requester.setRegistrationTokenExpiresAt(OffsetDateTime.now().plusDays(30));
+		userRepository.save(requester);
+		String subdomain = tenantAccessService.findPrimaryCompanyForUser(requester)
+			.map(Company::getSubdomain)
+			.orElseGet(() -> tenantAccessService.getCurrentTenant().map(tenant -> tenant.subdomain()).orElse(null));
+		if (subdomain == null || subdomain.isBlank()) {
+			logger.warn("Não foi possível determinar o subdomínio do pré-cadastro: requesterId={}", requester.getId());
+			return null;
+		}
+		return frontendPublicUrlService.buildUrl(subdomain, "/complete-registration", Map.of("preCadastroToken", rawToken));
 	}
 
 	private String resolveWhatsappClosureRecipient(Ticket ticket) {

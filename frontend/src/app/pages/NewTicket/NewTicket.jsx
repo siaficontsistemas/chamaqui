@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Header from '../../components/header/Header'
 import Sidebar from '../../components/sidebar/Sidebar'
+import ConfirmActionModal from '../../components/confirm-action-modal/ConfirmActionModal'
 import { dashboardPages } from '../../dashboardData'
 import { ChevronDownIcon, MicIcon, PlusCircleIcon } from '../../dashboardIcons'
 import {
@@ -53,11 +54,13 @@ function buildPastedImageFile(item, index) {
 }
 
 function NewTicket({
+  availableClientCompanies = [],
   availableTicketSectors = [],
   currentUser,
   headerProps,
   navigationGroups,
   onCreateTicket,
+  onCreateClientPreRegistration,
   onNavigatePage,
   ticketRequesters = [],
 }) {
@@ -83,6 +86,9 @@ function NewTicket({
     description: '',
   })
   const [feedbackMessage, setFeedbackMessage] = useState('')
+  const [preRegistrationOpen, setPreRegistrationOpen] = useState(false)
+  const [preRegistrationValues, setPreRegistrationValues] = useState({ fullName: '', phoneNumber: '', companyOwnerId: '' })
+  const [preRegistrationFeedback, setPreRegistrationFeedback] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isCompanyOptionsOpen, setIsCompanyOptionsOpen] = useState(false)
   const [isRequesterOptionsOpen, setIsRequesterOptionsOpen] = useState(false)
@@ -234,6 +240,20 @@ function NewTicket({
     setIsRequesterOptionsOpen(false)
   }
 
+  async function handlePreRegistrationSubmit(event) {
+    event?.preventDefault?.()
+    if (!preRegistrationValues.fullName.trim()) { setPreRegistrationFeedback('Informe o nome do cliente.'); return }
+    if (!preRegistrationValues.phoneNumber.trim()) { setPreRegistrationFeedback('Informe o telefone do cliente.'); return }
+    if (!preRegistrationValues.companyOwnerId) { setPreRegistrationFeedback('Selecione a empresa cliente para criar o pré-cadastro.'); return }
+    try {
+      setPreRegistrationFeedback('')
+      const created = await onCreateClientPreRegistration?.(preRegistrationValues)
+      if (created) handleRequesterSelect(created)
+      setPreRegistrationValues({ fullName: '', phoneNumber: '', companyOwnerId: '' }); setPreRegistrationOpen(false)
+      setFeedbackMessage('Pré-cadastro criado. O cliente já pode receber chamados pelo sistema.')
+    } catch (error) { setPreRegistrationFeedback(error.message) }
+  }
+
   function handleCompanySelect(selectedOption) {
     setFormValues((currentValues) => ({
       ...currentValues,
@@ -246,6 +266,31 @@ function NewTicket({
           : '',
     }))
     setIsCompanyOptionsOpen(false)
+  }
+
+  function handlePreRegistrationCompanySelect(event) {
+    setPreRegistrationValues((currentValues) => ({
+      ...currentValues,
+      companyOwnerId: event.target.value,
+    }))
+  }
+
+  function togglePreRegistration() {
+    setPreRegistrationOpen((isOpen) => {
+      if (!isOpen && !preRegistrationValues.companyOwnerId && formValues.companyOwnerId) {
+        setPreRegistrationValues((currentValues) => ({
+          ...currentValues,
+          companyOwnerId: formValues.companyOwnerId,
+        }))
+      }
+      return !isOpen
+    })
+  }
+
+  function closePreRegistration() {
+    if (isSubmitting) return
+    setPreRegistrationOpen(false)
+    setPreRegistrationFeedback('')
   }
 
   function handleFileSelection(event) {
@@ -461,54 +506,60 @@ function NewTicket({
               <form className="ticket-form" onSubmit={handleSubmit}>
               <div className="ticket-form__grid">
                 {isStaffRole ? (
-                  <label className="ticket-field ticket-field--combobox">
-                    <span>Cliente</span>
-                    <div className="ticket-field__control ticket-field__control--select">
-                      <input
-                        placeholder={ticketRequesters.length > 0 ? 'Selecione ou digite o nome do cliente...' : 'Nenhum cliente disponível'}
-                        type="text"
-                        value={formValues.requesterName}
-                        onChange={(event) => {
-                          handleChange('requesterName', event.target.value)
-                          setIsRequesterOptionsOpen(true)
-                        }}
-                        onFocus={() => setIsRequesterOptionsOpen(true)}
-                        onBlur={() => window.setTimeout(() => setIsRequesterOptionsOpen(false), 150)}
-                        disabled={ticketRequesters.length === 0}
-                        required
-                      />
-                      <button
-                        className="ticket-field__toggle"
-                        type="button"
-                        onClick={() => setIsRequesterOptionsOpen((currentValue) => !currentValue)}
-                        aria-label="Abrir opções de cliente"
-                        disabled={ticketRequesters.length === 0}
-                      >
-                        <ChevronDownIcon />
-                      </button>
-                    </div>
-                    {isRequesterOptionsOpen ? (
-                      <div className="ticket-field__options" role="listbox" aria-label="Clientes">
-                        {filteredRequesters.length > 0 ? (
-                          filteredRequesters.map((requester) => (
-                            <button
-                              className={`ticket-field__option${requester.email === formValues.requesterEmail ? ' is-active' : ''}`}
-                              key={requester.id || requester.email}
-                              type="button"
-                              onMouseDown={(event) => event.preventDefault()}
-                              onClick={() => handleRequesterSelect(requester)}
-                            >
-                              {requester.fullName} — {requester.email}
-                            </button>
-                          ))
-                        ) : (
-                          <span className="ticket-field__option ticket-field__option--empty">
-                            Nenhum cliente encontrado
-                          </span>
-                        )}
+                  <div className="ticket-client-selection">
+                    <label className="ticket-field ticket-field--combobox">
+                      <span>Cliente</span>
+                      <div className="ticket-field__control ticket-field__control--select">
+                        <input
+                          placeholder={ticketRequesters.length > 0 ? 'Selecione ou digite o nome do cliente...' : 'Nenhum cliente disponível'}
+                          type="text"
+                          value={formValues.requesterName}
+                          onChange={(event) => {
+                            handleChange('requesterName', event.target.value)
+                            setIsRequesterOptionsOpen(true)
+                          }}
+                          onFocus={() => setIsRequesterOptionsOpen(true)}
+                          onBlur={() => window.setTimeout(() => setIsRequesterOptionsOpen(false), 150)}
+                          disabled={ticketRequesters.length === 0}
+                          required
+                        />
+                        <button
+                          className="ticket-field__toggle"
+                          type="button"
+                          onClick={() => setIsRequesterOptionsOpen((currentValue) => !currentValue)}
+                          aria-label="Abrir opções de cliente"
+                          disabled={ticketRequesters.length === 0}
+                        >
+                          <ChevronDownIcon />
+                        </button>
                       </div>
-                    ) : null}
-                  </label>
+                      {isRequesterOptionsOpen ? (
+                        <div className="ticket-field__options" role="listbox" aria-label="Clientes">
+                          {filteredRequesters.length > 0 ? (
+                            filteredRequesters.map((requester) => (
+                              <button
+                                className={`ticket-field__option${requester.email === formValues.requesterEmail ? ' is-active' : ''}`}
+                                key={requester.id || requester.email}
+                                type="button"
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => handleRequesterSelect(requester)}
+                              >
+                                {requester.fullName} — {requester.email}
+                              </button>
+                            ))
+                          ) : (
+                            <span className="ticket-field__option ticket-field__option--empty">
+                              Nenhum cliente encontrado
+                            </span>
+                          )}
+                        </div>
+                      ) : null}
+                    </label>
+                    <button className="ticket-form__submit pre-registration-trigger" type="button" onClick={togglePreRegistration}>
+                      <PlusCircleIcon />
+                      <span>Adicionar novo cliente</span>
+                    </button>
+                  </div>
                 ) : null}
                 {isStaffRole ? (
                   <label className="ticket-field">
@@ -770,6 +821,55 @@ function NewTicket({
           </div>
         </section>
       </div>
+      <ConfirmActionModal
+        cancelLabel="Cancelar"
+        confirmLabel="Criar cliente"
+        description="Cadastre rapidamente o cliente para continuar a abertura do chamado."
+        isOpen={preRegistrationOpen}
+        isProcessing={isSubmitting}
+        onCancel={closePreRegistration}
+        onConfirm={handlePreRegistrationSubmit}
+        title="Novo pré-cadastro"
+      >
+        <div className="pre-registration-modal__form">
+          <label className="ticket-field">
+            <span>Nome do cliente</span>
+            <div className="ticket-field__control">
+              <input
+                type="text"
+                placeholder="Digite o nome do cliente"
+                value={preRegistrationValues.fullName}
+                onChange={(event) => setPreRegistrationValues((currentValues) => ({ ...currentValues, fullName: event.target.value }))}
+                autoFocus
+              />
+            </div>
+          </label>
+          <label className="ticket-field">
+            <span>Telefone</span>
+            <div className="ticket-field__control">
+              <input
+                type="tel"
+                placeholder="Digite o telefone do cliente"
+                value={preRegistrationValues.phoneNumber}
+                onChange={(event) => setPreRegistrationValues((currentValues) => ({ ...currentValues, phoneNumber: event.target.value }))}
+              />
+            </div>
+          </label>
+          <label className="ticket-field">
+            <span>Empresa cliente</span>
+            <div className="ticket-field__control ticket-field__control--select">
+              <select value={preRegistrationValues.companyOwnerId} onChange={handlePreRegistrationCompanySelect}>
+                <option value="" disabled>Selecione a empresa cliente...</option>
+                {availableClientCompanies.map((company) => (
+                  <option key={company.id} value={company.id}>{company.name}</option>
+                ))}
+              </select>
+              <ChevronDownIcon />
+            </div>
+          </label>
+          {preRegistrationFeedback ? <p className="team-feedback pre-registration-modal__feedback">{preRegistrationFeedback}</p> : null}
+        </div>
+      </ConfirmActionModal>
     </main>
   )
 }
