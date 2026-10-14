@@ -306,6 +306,10 @@ public class WhatsappWebhookService {
 		}	
 
 		if (conversation.getCurrentStep() == WhatsappConversationStep.ASK_INITIAL_MODE) {
+			if (shouldPromptInitialModeForNewInteraction(conversation, previousInboundMessageAt)) {
+				promptForInitialMode(companyOwner, conversation, replyTarget, null);
+				return;
+			}
 			handleInitialModeStep(companyOwner, conversation, replyTarget, normalizedBody);
 			return;
 		}
@@ -844,6 +848,7 @@ public class WhatsappWebhookService {
 		String prefix
 	) {
 		prepareForInitialMode(conversation);
+		conversation.setLastInitialModePromptAt(OffsetDateTime.now());
 		whatsappConversationRepository.save(conversation);
 		replyWithMessage(companyOwner, replyTarget, buildInitialModePrompt(prefix));
 	}
@@ -893,6 +898,7 @@ public class WhatsappWebhookService {
 	private void prepareForInitialMode(WhatsappConversation conversation) {
 		conversation.setNormalConversationActive(false);
 		conversation.setCurrentStep(WhatsappConversationStep.ASK_INITIAL_MODE);
+		conversation.setLastInitialModePromptAt(null);
 		conversation.setSector(null);
 		conversation.setPendingMessage(null);
 		conversation.setPendingName(null);
@@ -903,6 +909,15 @@ public class WhatsappWebhookService {
 		clearPendingResumeState(conversation);
 		conversation.setActiveTicket(null);
 		conversation.setLastTicketSelectionPromptAt(null);
+	}
+
+	private boolean shouldPromptInitialModeForNewInteraction(
+		WhatsappConversation conversation,
+		OffsetDateTime previousInboundMessageAt
+	) {
+		OffsetDateTime promptAt = conversation.getLastInitialModePromptAt();
+		return promptAt == null
+			|| (previousInboundMessageAt != null && !promptAt.isAfter(previousInboundMessageAt));
 	}
 
 	private void closeNormalConversation(WhatsappConversation conversation) {

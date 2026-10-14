@@ -125,6 +125,37 @@ class WhatsappWebhookServiceTest {
 	}
 
 	@Test
+	void shouldShowInitialModeInsteadOfInvalidOptionAfterClosedTicket() {
+		User companyOwner = companyOwner();
+		WhatsappConversation conversation = conversation(companyOwner, WhatsappConversationStep.ASK_INITIAL_MODE);
+		conversation.setLastInitialModePromptAt(null);
+
+		when(whatsappConversationRepository.findByCompanyOwnerIdAndPhoneNumber(companyOwner.getId(), "5511999999999"))
+			.thenReturn(Optional.of(conversation));
+
+		service.handleIncomingMessage(companyOwner, "5511999999999", "", "Preciso de ajuda", List.of());
+
+		assertEquals(WhatsappConversationStep.ASK_INITIAL_MODE, conversation.getCurrentStep());
+		verify(whatsappService).sendMessage(eq(companyOwner), eq("5511999999999"), contains("Olá! Escolha uma opção:"));
+		verify(whatsappService, org.mockito.Mockito.never()).sendMessage(
+			eq(companyOwner), eq("5511999999999"), contains("Escolha uma opção válida")
+		);
+	}
+
+	@Test
+	void shouldRejectInvalidOptionOnlyAfterInitialModeWasPresented() {
+		User companyOwner = companyOwner();
+		WhatsappConversation conversation = conversation(companyOwner, WhatsappConversationStep.ASK_INITIAL_MODE);
+
+		when(whatsappConversationRepository.findByCompanyOwnerIdAndPhoneNumber(companyOwner.getId(), "5511999999999"))
+			.thenReturn(Optional.of(conversation));
+
+		service.handleIncomingMessage(companyOwner, "5511999999999", "", "3", List.of());
+
+		verify(whatsappService).sendMessage(eq(companyOwner), eq("5511999999999"), contains("Escolha uma opção válida"));
+	}
+
+	@Test
 	void shouldReturnToInitialModeWhenAClosedTicketAssociationStillExists() {
 		User companyOwner = companyOwner();
 		Ticket closedTicket = new Ticket();
@@ -783,6 +814,9 @@ class WhatsappWebhookServiceTest {
 		conversation.setPhoneNumber("5511999999999");
 		conversation.setCurrentStep(step);
 		conversation.setNormalConversationActive(step == WhatsappConversationStep.NORMAL_CONVERSATION_ACTIVE);
+		if (step == WhatsappConversationStep.ASK_INITIAL_MODE) {
+			conversation.setLastInitialModePromptAt(OffsetDateTime.now());
+		}
 		return conversation;
 	}
 
