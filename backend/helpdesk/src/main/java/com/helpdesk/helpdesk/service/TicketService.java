@@ -856,6 +856,7 @@ public class TicketService {
 			conversation.setPendingResumeMessage(null);
 			conversation.setPendingResumeAttachments(null);
 			conversation.setLastTicketSelectionPromptAt(null);
+			conversation.setLastInitialModePromptAt(null);
 			whatsappConversationRepository.save(conversation);
 		});
 	}
@@ -2023,7 +2024,11 @@ public class TicketService {
 			Protocolo: %s
 			Encerrado por: %s
 
-			Se precisar de um novo atendimento, envie uma nova mensagem.
+			*Precisa de um novo atendimento?*
+
+			Para abrir um novo chamado, envie uma mensagem aqui no WhatsApp.
+
+			Nosso atendimento automático fará algumas perguntas. *Responda a todas elas para concluir a abertura do seu novo chamado.*
 			""".formatted(ticket.getProtocol(), closedByName).trim();
 		if (preRegistrationLink != null) {
 			closureMessage += "\n\nPara possibilitar a abertura deste chamado, realizamos um pré-cadastro seu no Chamaqui.\n\nPara acessar o sistema e finalizar seu cadastro, utilize o link abaixo:\n" + preRegistrationLink;

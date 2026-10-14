@@ -85,12 +85,15 @@ public class WhatsappConversation {
 
 	@Column(name = "last_inbound_message_at")
 	private OffsetDateTime lastInboundMessageAt;
-
+	
 	@Column(name = "last_outbound_message_at")
 	private OffsetDateTime lastOutboundMessageAt;
 
 	@Column(name = "last_ticket_selection_prompt_at")
 	private OffsetDateTime lastTicketSelectionPromptAt;
+
+	@Column(name = "last_initial_mode_prompt_at")
+	private OffsetDateTime lastInitialModePromptAt;
 
 	@Column(name = "created_at", nullable = false)
 	private OffsetDateTime createdAt;
@@ -256,6 +259,14 @@ public class WhatsappConversation {
 
 	public void setLastTicketSelectionPromptAt(OffsetDateTime lastTicketSelectionPromptAt) {
 		this.lastTicketSelectionPromptAt = lastTicketSelectionPromptAt;
+	}
+
+	public OffsetDateTime getLastInitialModePromptAt() {
+		return lastInitialModePromptAt;
+	}
+
+	public void setLastInitialModePromptAt(OffsetDateTime lastInitialModePromptAt) {
+		this.lastInitialModePromptAt = lastInitialModePromptAt;
 	}
 
 	public OffsetDateTime getCreatedAt() {

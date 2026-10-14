@@ -118,6 +118,9 @@ class TicketServiceTest {
 	@Mock
 	private AuditTrailService auditTrailService;
 
+	@Mock
+	private WebPushService webPushService;
+
 	@InjectMocks
 	private TicketService ticketService;
 
@@ -172,7 +175,14 @@ class TicketServiceTest {
 		verify(whatsappService).sendMessage(
 			eq(companyOwner),
 			eq("5511999999999@c.us"),
-			argThat(message -> message.contains("Seu chamado foi encerrado")),
+			argThat(message ->
+				message.contains("Seu chamado foi encerrado")
+					&& message.contains("Protocolo: " + ticket.getProtocol())
+					&& message.contains("Encerrado por: Funcionario")
+					&& message.contains("*Precisa de um novo atendimento?*")
+					&& message.contains("envie uma mensagem aqui no WhatsApp")
+					&& message.contains("*Responda a todas elas para concluir a abertura do seu novo chamado.*")
+			),
 			eq(List.of())
 		);
 	}
@@ -421,6 +431,7 @@ class TicketServiceTest {
 		when(ticketMessageRepository.existsByTicketId(ticketId)).thenReturn(true);
 		when(ticketMessageRepository.findFirstByTicketIdOrderByCreatedAtAsc(ticketId)).thenReturn(Optional.of(initialMessage));
 		when(ticketMessageRepository.save(any(TicketMessage.class))).thenReturn(savedMessage);
+		when(whatsappService.resolveSentMessageId(null)).thenReturn("");
 		when(ticketAttachmentRepository.findByMessageIdOrderByCreatedAtAsc(savedMessage.getId())).thenReturn(List.of());
 		when(ticketStatusRepository.findByCode("IN_PROGRESS")).thenReturn(Optional.of(inProgressStatus));
 		when(ticketRepository.save(any(Ticket.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -489,6 +500,7 @@ class TicketServiceTest {
 		when(ticketMessageRepository.existsByTicketId(ticketId)).thenReturn(true);
 		when(ticketMessageRepository.findFirstByTicketIdOrderByCreatedAtAsc(ticketId)).thenReturn(Optional.of(initialMessage));
 		when(ticketMessageRepository.save(any(TicketMessage.class))).thenReturn(savedMessage);
+		when(whatsappService.resolveSentMessageId(null)).thenReturn("");
 		when(ticketAttachmentRepository.findByMessageIdOrderByCreatedAtAsc(savedMessage.getId())).thenReturn(List.of());
 		when(ticketStatusRepository.findByCode("IN_PROGRESS")).thenReturn(Optional.of(inProgressStatus));
 		when(ticketRepository.save(any(Ticket.class))).thenAnswer(invocation -> invocation.getArgument(0));
