@@ -7,6 +7,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import static org.mockito.ArgumentMatchers.any;
@@ -35,6 +36,7 @@ import com.helpdesk.helpdesk.domain.User;
 import com.helpdesk.helpdesk.domain.WhatsappConversation;
 import com.helpdesk.helpdesk.domain.WhatsappConversationStep;
 import com.helpdesk.helpdesk.domain.UserStatus;
+import com.helpdesk.helpdesk.common.NotFoundException;
 import com.helpdesk.helpdesk.dto.ticket.CreateTicketMessageRequest;
 import com.helpdesk.helpdesk.dto.ticket.CreateTicketRequest;
 import com.helpdesk.helpdesk.dto.ticket.CloseTicketRequest;
@@ -675,6 +677,28 @@ class TicketServiceTest {
 		assertEquals("CA-2026-0059", tickets.get(0).protocol());
 		assertEquals(employee.getFullName(), tickets.get(0).assignedToName());
 		verify(ticketRepository).findByDeletedAtIsNull(Sort.by(Sort.Direction.DESC, "createdAt"));
+	}
+
+	@Test
+	void shouldUseCurrentVisibilityForListAndDirectTicketAccess() {
+		User formerAssignee = user("former@empresa.com", "Former Assignee", "EMPLOYEE", null);
+		UUID ticketId = UUID.randomUUID();
+
+		when(scopedUserLookupService.findUniqueByEmailInCurrentTenant(formerAssignee.getEmail()))
+			.thenReturn(Optional.of(formerAssignee));
+		when(ticketRepository.findVisibleByEmailOrderByCreatedAtDesc(formerAssignee.getEmail()))
+			.thenReturn(List.of());
+		when(ticketRepository.findDetailedVisibleByIdAndEmail(ticketId, formerAssignee.getEmail()))
+			.thenReturn(Optional.empty());
+
+		assertEquals(List.of(), ticketService.list(formerAssignee.getEmail(), null));
+		assertThrows(
+			NotFoundException.class,
+			() -> ticketService.get(ticketId, formerAssignee.getEmail())
+		);
+
+		verify(ticketRepository).findVisibleByEmailOrderByCreatedAtDesc(formerAssignee.getEmail());
+		verify(ticketRepository).findDetailedVisibleByIdAndEmail(ticketId, formerAssignee.getEmail());
 	}
 
 	private User user(String email, String fullName, String roleCode, User companyOwner) {
