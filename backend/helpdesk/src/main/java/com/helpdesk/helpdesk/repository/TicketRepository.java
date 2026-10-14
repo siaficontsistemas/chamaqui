@@ -35,13 +35,6 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
 			or lower(sectorOwnerCompanyOwner.email) = lower(:email)
 			or lower(assignedTo.email) = lower(:email)
 			or lower(assignedToCompanyOwner.email) = lower(:email)
-			or exists (
-				select 1
-				from TicketMessage ticketMessage
-				join ticketMessage.author messageAuthor
-				where ticketMessage.ticket = ticket
-					and lower(messageAuthor.email) = lower(:email)
-			)
 			)
 		order by ticket.createdAt desc
 		""")
@@ -75,13 +68,6 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
 				or lower(sectorOwnerCompanyOwner.email) = lower(:email)
 				or lower(assignedTo.email) = lower(:email)
 				or lower(assignedToCompanyOwner.email) = lower(:email)
-				or exists (
-					select 1
-					from TicketMessage ticketMessage
-					join ticketMessage.author messageAuthor
-					where ticketMessage.ticket = ticket
-						and lower(messageAuthor.email) = lower(:email)
-				)
 			)
 		order by ticket.createdAt desc
 		""")
@@ -117,13 +103,6 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
 			or lower(sectorOwnerCompanyOwner.email) = lower(:email)
 			or lower(assignedTo.email) = lower(:email)
 			or lower(assignedToCompanyOwner.email) = lower(:email)
-			or exists (
-				select 1
-				from TicketMessage ticketMessage
-				join ticketMessage.author messageAuthor
-				where ticketMessage.ticket = ticket
-					and lower(messageAuthor.email) = lower(:email)
-			)
 			)
 			and (
 				:search = ''
@@ -164,13 +143,6 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
 				or lower(sectorOwnerCompanyOwner.email) = lower(:email)
 				or lower(assignedTo.email) = lower(:email)
 				or lower(assignedToCompanyOwner.email) = lower(:email)
-				or exists (
-					select 1
-					from TicketMessage ticketMessage
-					join ticketMessage.author messageAuthor
-					where ticketMessage.ticket = ticket
-						and lower(messageAuthor.email) = lower(:email)
-				)
 			)
 		""")
 	@EntityGraph(attributePaths = {
