@@ -121,7 +121,7 @@ class WhatsappWebhookServiceTest {
 
 		verify(whatsappConversationRepository).save(conversationCaptor.capture());
 		assertEquals(WhatsappConversationStep.ASK_INITIAL_MODE, conversationCaptor.getValue().getCurrentStep());
-		verify(whatsappService).sendMessage(eq(companyOwner), eq("5511999999999"), contains("1) Para ser atendido por técnico do suporte aos sistemas"));
+		verify(whatsappService).sendMessage(eq(companyOwner), eq("5511999999999"), contains("1) Criar chamado"));
 	}
 
 	@Test
@@ -173,7 +173,7 @@ class WhatsappWebhookServiceTest {
 
 		assertNull(conversation.getActiveTicket());
 		assertEquals(WhatsappConversationStep.ASK_INITIAL_MODE, conversation.getCurrentStep());
-		verify(whatsappService).sendMessage(eq(companyOwner), eq("5511999999999"), contains("1) Para ser atendido por técnico do suporte aos sistemas"));
+		verify(whatsappService).sendMessage(eq(companyOwner), eq("5511999999999"), contains("1) Criar chamado"));
 	}
 
 	@Test
@@ -324,12 +324,12 @@ class WhatsappWebhookServiceTest {
 		verify(whatsappService).sendMessage(
 			eq(companyOwner),
 			eq("5511999999999"),
-			contains("1) Para ser atendido por técnico do suporte aos sistemas")
+			contains("1) Criar chamado")
 		);
 		verify(whatsappService).sendMessage(
 			eq(companyOwner),
 			eq("5511999999999"),
-			contains("2) Para falar com administração da Siaficont")
+			contains("2) Conversa normal")
 		);
 	}
 
@@ -470,7 +470,7 @@ class WhatsappWebhookServiceTest {
 
 		verify(whatsappConversationRepository).save(conversationCaptor.capture());
 		assertEquals(WhatsappConversationStep.ASK_INITIAL_MODE, conversationCaptor.getValue().getCurrentStep());
-		verify(whatsappService).sendMessage(eq(companyOwner), eq("5511999999999"), contains("2) Para falar com administração da Siaficont"));
+		verify(whatsappService).sendMessage(eq(companyOwner), eq("5511999999999"), contains("2) Conversa normal"));
 	}
 
 	@Test
