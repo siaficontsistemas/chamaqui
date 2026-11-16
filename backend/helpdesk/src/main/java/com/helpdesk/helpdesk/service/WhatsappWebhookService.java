@@ -1082,8 +1082,8 @@ public class WhatsappWebhookService {
 	private String buildInitialModePrompt(String prefix) {
 		String basePrompt = """
 			Olá! Escolha uma opção:
-			1) Criar chamado
-			2) Conversa normal
+			1) Para ser atendido por técnico do suporte aos sistemas
+			2) Para falar com administração da Siaficont
 			""".trim();
 		if (prefix == null || prefix.isBlank()) {
 			return basePrompt;
