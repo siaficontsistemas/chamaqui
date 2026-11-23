@@ -46,6 +46,7 @@ public class WhatsappWebhookService {
 	private static final Logger logger = LoggerFactory.getLogger(WhatsappWebhookService.class);
 	private static final long INACTIVITY_ROUTING_WINDOW_HOURS = 2;
 	private static final long AUTOMATED_OUTBOUND_CACHE_MINUTES = 5;
+	private static final long OUTSIDE_BUSINESS_HOURS_NOTICE_MINUTES = 30;
 
 	private final ObjectMapper objectMapper = new ObjectMapper();
 	private final UserRepository userRepository;
@@ -59,7 +60,9 @@ public class WhatsappWebhookService {
 	private final EmailDomainValidationService emailDomainValidationService;
 	private final TenantExecutionService tenantExecutionService;
 	private final ScopedUserLookupService scopedUserLookupService;
+	private final BusinessHoursService businessHoursService;
 	private final ConcurrentMap<String, OffsetDateTime> automatedOutboundMessageCache = new ConcurrentHashMap<>();
+	private final ConcurrentMap<String, OffsetDateTime> outsideBusinessHoursNoticeCache = new ConcurrentHashMap<>();
 
 	public WhatsappWebhookService(
 		UserRepository userRepository,
@@ -72,7 +75,8 @@ public class WhatsappWebhookService {
 		PasswordEncoder passwordEncoder,
 		EmailDomainValidationService emailDomainValidationService,
 		TenantExecutionService tenantExecutionService,
-		ScopedUserLookupService scopedUserLookupService
+		ScopedUserLookupService scopedUserLookupService,
+		BusinessHoursService businessHoursService
 	) {
 		this.userRepository = userRepository;
 		this.roleRepository = roleRepository;
@@ -85,6 +89,7 @@ public class WhatsappWebhookService {
 		this.emailDomainValidationService = emailDomainValidationService;
 		this.tenantExecutionService = tenantExecutionService;
 		this.scopedUserLookupService = scopedUserLookupService;
+		this.businessHoursService = businessHoursService;
 	}
 
 	public void receive(String payload, HttpServletRequest request) {
@@ -759,6 +764,11 @@ public class WhatsappWebhookService {
 		String replyTarget,
 		String body
 	) {
+		if (!businessHoursService.isWithinBusinessHours()) {
+			promptForInitialMode(companyOwner, conversation, replyTarget, null);
+			return;
+		}
+
 		if (isTicketModeSelection(body)) {
 			startNewTicketFlow(companyOwner, conversation, replyTarget, null);
 			return;
@@ -848,9 +858,41 @@ public class WhatsappWebhookService {
 		String prefix
 	) {
 		prepareForInitialMode(conversation);
+		if (!businessHoursService.isWithinBusinessHours()) {
+			// Sem menu fora do expediente: a próxima mensagem volta a passar por aqui e o aviso se repete (com limite de frequência).
+			whatsappConversationRepository.save(conversation);
+			replyOutsideBusinessHours(companyOwner, replyTarget, prefix, true);
+			return;
+		}
+		clearOutsideBusinessHoursNotice(companyOwner, replyTarget);
 		conversation.setLastInitialModePromptAt(OffsetDateTime.now());
 		whatsappConversationRepository.save(conversation);
 		replyWithMessage(companyOwner, replyTarget, buildInitialModePrompt(prefix));
+	}
+
+	/**
+	 * Responde com o aviso de fora do expediente.
+	 * Com {@code throttled}, mensagens passivas (saudações, texto livre) recebem o aviso no máximo
+	 * uma vez a cada {@value #OUTSIDE_BUSINESS_HOURS_NOTICE_MINUTES} minutos por contato.
+	 */
+	private void replyOutsideBusinessHours(User companyOwner, String replyTarget, String prefix, boolean throttled) {
+		String cacheKey = companyOwner.getId() + ":" + replyTarget;
+		OffsetDateTime now = OffsetDateTime.now();
+		if (throttled) {
+			OffsetDateTime lastNoticeAt = outsideBusinessHoursNoticeCache.get(cacheKey);
+			if (lastNoticeAt != null && lastNoticeAt.isAfter(now.minusMinutes(OUTSIDE_BUSINESS_HOURS_NOTICE_MINUTES))) {
+				logger.info("Aviso de fora do expediente já enviado recentemente: companyOwnerId={}, target={}", companyOwner.getId(), replyTarget);
+				return;
+			}
+		}
+		outsideBusinessHoursNoticeCache.put(cacheKey, now);
+		String notice = businessHoursService.buildOutsideBusinessHoursMessage();
+		String message = prefix == null || prefix.isBlank() ? notice : prefix.trim() + "\n" + notice;
+		replyWithMessage(companyOwner, replyTarget, message);
+	}
+
+	private void clearOutsideBusinessHoursNotice(User companyOwner, String replyTarget) {
+		outsideBusinessHoursNoticeCache.remove(companyOwner.getId() + ":" + replyTarget);
 	}
 
 	private void startNormalConversation(User companyOwner, WhatsappConversation conversation, String replyTarget) {
@@ -1105,6 +1147,13 @@ public class WhatsappWebhookService {
 		String replyTarget,
 		String prefix
 	) {
+		if (!businessHoursService.isWithinBusinessHours()) {
+			// Pedido explícito de abrir chamado: mantém o estado atual da conversa e sempre avisa.
+			whatsappConversationRepository.save(conversation);
+			replyOutsideBusinessHours(companyOwner, replyTarget, null, false);
+			return;
+		}
+
 		conversation.setSector(null);
 		conversation.setPendingMessage(null);
 		conversation.setPendingSubject(null);

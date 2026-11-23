@@ -69,6 +69,10 @@ function SidebarIcon({ icon, itemId }) {
     return <ReportIcon />
   }
 
+  if (icon === 'users') {
+    return <UsersIcon />
+  }
+
   if (icon === 'plus') {
     return <PlusIcon />
   }
@@ -143,6 +147,20 @@ function BuildingIcon() {
         d="M4 20V8.5L10 5v15M20 20V11l-6-3v12M2 20h20M7 9.5h.01M7 12.5h.01M7 15.5h.01M13.5 11.5h.01M13.5 14.5h.01M16.5 11.5h.01M16.5 14.5h.01"
         stroke="currentColor"
         strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function UsersIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M16 19v-1.2a3.8 3.8 0 0 0-3.8-3.8H7.8A3.8 3.8 0 0 0 4 17.8V19M10 10.5a3.25 3.25 0 1 0 0-6.5 3.25 3.25 0 0 0 0 6.5ZM20 19v-1.1a3.4 3.4 0 0 0-2.6-3.3M15.5 4.2a3.25 3.25 0 0 1 0 6.1"
+        stroke="currentColor"
+        strokeWidth="1.8"
         strokeLinecap="round"
         strokeLinejoin="round"
       />

@@ -17,6 +17,13 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
 	boolean existsByDocumentNumber(String documentNumber);
 
+	boolean existsByEmailIgnoreCaseAndIdNot(String email, UUID userId);
+
+	boolean existsByDocumentNumberAndIdNot(String documentNumber, UUID userId);
+
+	@EntityGraph(attributePaths = {"companyOwner"})
+	java.util.List<User> findByPreRegisteredTrueOrderByFullNameAsc();
+
 	boolean existsByCompanyDocument(String companyDocument);
 
 	boolean existsByCompanyOwnerIdAndIdNot(UUID companyOwnerId, UUID userId);

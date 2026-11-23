@@ -30,7 +30,7 @@ public class PreRegistrationCompletionService {
   if (expectedSubdomain == null || expectedSubdomain.isBlank()) throw new IllegalArgumentException("A empresa do pré-cadastro não possui um subdomínio válido.");
   if (currentSubdomain == null || !expectedSubdomain.equalsIgnoreCase(currentSubdomain)) throw new IllegalArgumentException("Acesse o link pelo subdomínio correto da empresa.");
   String document=request.documentNumber().replaceAll("\\D", ""); if (!BrazilianDocumentValidator.isValidCpf(document)) throw new IllegalArgumentException("Informe um CPF válido.");
-  String email=request.email().trim().toLowerCase(Locale.ROOT); if (userRepository.existsByEmailIgnoreCase(email)) throw new IllegalArgumentException("Já existe um cadastro associado a esse email."); if (userRepository.existsByDocumentNumber(document)) throw new IllegalArgumentException("Já existe um cadastro associado a esse CPF.");
+  String email=request.email().trim().toLowerCase(Locale.ROOT); if (userRepository.existsByEmailIgnoreCaseAndIdNot(email, user.getId())) throw new IllegalArgumentException("Já existe um cadastro associado a esse email."); if (userRepository.existsByDocumentNumberAndIdNot(document, user.getId())) throw new IllegalArgumentException("Já existe um cadastro associado a esse CPF.");
   User companyOwner = user.getCompanyOwner();
   if (companyOwner == null) throw new IllegalArgumentException("O pré-cadastro não possui uma empresa vinculada.");
   Role employeeRole = roleRepository.findByCode("EMPLOYEE")
