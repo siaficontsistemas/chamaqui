@@ -221,6 +221,11 @@ export function completePreRegistration(payload) {
   return apiRequest('/api/v1/auth/complete-registration', { method: 'POST', body: JSON.stringify(payload) })
 }
 
+/** Lista os pré-cadastros de clientes das empresas clientes vinculadas ao tenant atual. */
+export function listClientPreRegistrations() {
+  return apiRequest('/api/v1/client-pre-registrations')
+}
+
 export function createClientPreRegistration(payload) {
   return apiRequest('/api/v1/client-pre-registrations', { method: 'POST', body: JSON.stringify(payload) })
 }

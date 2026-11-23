@@ -8,5 +8,7 @@ import jakarta.validation.constraints.Size;
 public record PreRegisterClientRequest(
 	@NotBlank @Size(min = 3, max = 150) String fullName,
 	@NotBlank @Size(max = 30) String phoneNumber,
-	@NotNull UUID companyOwnerId
+	@NotNull UUID companyOwnerId,
+	@Size(max = 150) String email,
+	@Size(max = 20) String documentNumber
 ) {}

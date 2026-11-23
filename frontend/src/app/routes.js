@@ -19,6 +19,7 @@ export const SECTION_ROUTE_PATHS = {
   team: '/team',
   createSector: '/sectors/new',
   clientCompanyRegister: '/client-companies/new',
+  clientUsers: '/clients',
 }
 
 const SECTION_MATCHERS = [
@@ -32,6 +33,7 @@ const SECTION_MATCHERS = [
   ['team', '/team'],
   ['createSector', '/sectors/new'],
   ['clientCompanyRegister', '/client-companies/new'],
+  ['clientUsers', '/clients'],
   ['tickets', '/tickets'],
 ]
 

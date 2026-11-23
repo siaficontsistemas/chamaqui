@@ -75,6 +75,13 @@ const dashboardPages = {
     contentText:
       'Cadastre a empresa cliente dentro da sua operação para que os funcionários dela possam solicitar acesso depois.',
   },
+  clientUsers: {
+    id: 'clientUsers',
+    label: 'Usuários',
+    contentTitle: 'Usuários',
+    contentText:
+      'Cadastre os clientes das empresas clientes para que possam abrir chamados pelo WhatsApp e pelo portal.',
+  },
 }
 
 const roleLabels = {
@@ -131,6 +138,7 @@ function buildNavigationGroups({
   currentMemberId,
   canAccessTeamPage = false,
   canCreateSector = false,
+  canManageClientUsers = false,
 }) {
   const visibleSectors = getVisibleSectors(userRole, sectors, teamMembers, currentMemberId)
   const sectorItems = [
@@ -167,6 +175,15 @@ function buildNavigationGroups({
                 id: 'team',
                 label: 'Equipe',
                 icon: 'building',
+              },
+            ]
+          : []),
+        ...(canManageClientUsers
+          ? [
+              {
+                id: 'clientUsers',
+                label: 'Usuários',
+                icon: 'users',
               },
             ]
           : []),

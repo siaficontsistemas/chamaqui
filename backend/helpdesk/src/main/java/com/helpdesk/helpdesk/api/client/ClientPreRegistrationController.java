@@ -1,6 +1,7 @@
 package com.helpdesk.helpdesk.api.client;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -23,6 +24,11 @@ import jakarta.validation.Valid;
 public class ClientPreRegistrationController {
 	private final ClientPreRegistrationService service;
 	public ClientPreRegistrationController(ClientPreRegistrationService service) { this.service = service; }
+
+	@GetMapping
+	public java.util.List<PreRegisterClientResponse> list(HttpSession session) {
+		return service.list(session);
+	}
 
 	@PostMapping
 	@ResponseStatus(HttpStatus.CREATED)

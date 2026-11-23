@@ -1,6 +1,10 @@
 package com.helpdesk.helpdesk.service;
 
+import java.time.Clock;
+import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -22,6 +26,8 @@ import org.mockito.Mock;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -86,6 +92,8 @@ class WhatsappWebhookServiceTest {
 
 	private WhatsappWebhookService service;
 
+	private MutableClock clock;
+
 	@BeforeEach
 	void setUp() {
 		service = new WhatsappWebhookService(
@@ -99,7 +107,8 @@ class WhatsappWebhookServiceTest {
 			passwordEncoder,
 			emailDomainValidationService,
 			tenantExecutionService,
-			scopedUserLookupService
+			scopedUserLookupService,
+			businessHours()
 		);
 
 		lenient().when(whatsappConversationRepository.save(any(WhatsappConversation.class)))
@@ -800,6 +809,102 @@ class WhatsappWebhookServiceTest {
 		verify(whatsappService).sendMessage(eq(companyOwner), eq("209607456719099@lid"), contains("Chamado aberto"));
 	}
 
+	@Test
+	void shouldSendOutsideBusinessHoursNoticeInsteadOfMenuOnFirstMessage() {
+		clock.setLocal("2026-11-23T18:00");
+		User companyOwner = companyOwner();
+
+		when(whatsappConversationRepository.findByCompanyOwnerIdAndPhoneNumber(companyOwner.getId(), "5511999999999"))
+			.thenReturn(Optional.empty());
+
+		service.handleIncomingMessage(companyOwner, "5511999999999", "", "Oi", List.of());
+
+		verify(whatsappConversationRepository).save(conversationCaptor.capture());
+		assertEquals(WhatsappConversationStep.ASK_INITIAL_MODE, conversationCaptor.getValue().getCurrentStep());
+		assertNull(conversationCaptor.getValue().getLastInitialModePromptAt());
+		verify(whatsappService).sendMessage(
+			eq(companyOwner),
+			eq("5511999999999"),
+			contains("de segunda a sexta, das 08:00 às 12:00 e das 14:00 às 18:00")
+		);
+		verify(whatsappService, never()).sendMessage(any(User.class), any(String.class), contains("Escolha uma opção"));
+	}
+
+	@Test
+	void shouldNotOpenTicketWhenMenuOptionIsChosenOutsideBusinessHours() {
+		clock.setLocal("2026-11-23T12:00");
+		User companyOwner = companyOwner();
+		WhatsappConversation conversation = conversation(companyOwner, WhatsappConversationStep.ASK_INITIAL_MODE);
+		conversation.setLastInboundMessageAt(OffsetDateTime.now().minusMinutes(5));
+
+		when(whatsappConversationRepository.findByCompanyOwnerIdAndPhoneNumber(companyOwner.getId(), "5511999999999"))
+			.thenReturn(Optional.of(conversation));
+
+		service.handleIncomingMessage(companyOwner, "5511999999999", "", "1", List.of());
+
+		assertEquals(WhatsappConversationStep.ASK_INITIAL_MODE, conversation.getCurrentStep());
+		verify(whatsappService).sendMessage(eq(companyOwner), eq("5511999999999"), contains("fora do horário de atendimento"));
+		verify(whatsappService, never()).sendMessage(any(User.class), any(String.class), contains("setor"));
+		verify(ticketService, never()).createFromWhatsapp(any(TicketService.CreateWhatsappTicketRequest.class));
+	}
+
+	@Test
+	void shouldThrottleRepeatedOutsideBusinessHoursNotices() {
+		clock.setLocal("2026-11-28T10:00");
+		User companyOwner = companyOwner();
+		WhatsappConversation conversation = conversation(companyOwner, WhatsappConversationStep.ASK_INITIAL_MODE);
+		conversation.setLastInitialModePromptAt(null);
+
+		when(whatsappConversationRepository.findByCompanyOwnerIdAndPhoneNumber(companyOwner.getId(), "5511999999999"))
+			.thenReturn(Optional.of(conversation));
+
+		service.handleIncomingMessage(companyOwner, "5511999999999", "", "Oi", List.of());
+		service.handleIncomingMessage(companyOwner, "5511999999999", "", "Alguém aí?", List.of());
+
+		verify(whatsappService, times(1)).sendMessage(eq(companyOwner), eq("5511999999999"), contains("fora do horário de atendimento"));
+	}
+
+	@Test
+	void shouldKeepNormalConversationAndWarnWhenCreateTicketCommandArrivesOutsideBusinessHours() {
+		clock.setLocal("2026-11-29T15:00");
+		User companyOwner = companyOwner();
+		WhatsappConversation conversation = conversation(companyOwner, WhatsappConversationStep.NORMAL_CONVERSATION_ACTIVE);
+		conversation.setLastInboundMessageAt(OffsetDateTime.now().minusMinutes(1));
+
+		when(whatsappConversationRepository.findByCompanyOwnerIdAndPhoneNumber(companyOwner.getId(), "5511999999999"))
+			.thenReturn(Optional.of(conversation));
+
+		service.handleIncomingMessage(companyOwner, "5511999999999", "", "criar chamado", List.of());
+
+		assertEquals(WhatsappConversationStep.NORMAL_CONVERSATION_ACTIVE, conversation.getCurrentStep());
+		verify(whatsappService).sendMessage(eq(companyOwner), eq("5511999999999"), contains("Não é possível abrir chamados agora"));
+	}
+
+	@Test
+	void shouldShowMenuAgainWhenBusinessHoursStart() {
+		clock.setLocal("2026-11-23T13:59");
+		User companyOwner = companyOwner();
+		WhatsappConversation conversation = conversation(companyOwner, WhatsappConversationStep.ASK_INITIAL_MODE);
+		conversation.setLastInitialModePromptAt(null);
+
+		when(whatsappConversationRepository.findByCompanyOwnerIdAndPhoneNumber(companyOwner.getId(), "5511999999999"))
+			.thenReturn(Optional.of(conversation));
+
+		service.handleIncomingMessage(companyOwner, "5511999999999", "", "Oi", List.of());
+		clock.setLocal("2026-11-23T14:00");
+		service.handleIncomingMessage(companyOwner, "5511999999999", "", "Oi de novo", List.of());
+
+		verify(whatsappService).sendMessage(eq(companyOwner), eq("5511999999999"), contains("fora do horário de atendimento"));
+		verify(whatsappService).sendMessage(eq(companyOwner), eq("5511999999999"), contains("Olá! Escolha uma opção:"));
+	}
+
+	private BusinessHoursService businessHours() {
+		// Segunda-feira, 10:00 em São Paulo: dentro do expediente para os cenários já existentes.
+		clock = new MutableClock(ZoneId.of("America/Sao_Paulo"));
+		clock.setLocal("2026-11-23T10:00");
+		return new BusinessHoursService(true, "America/Sao_Paulo", "MONDAY,TUESDAY,WEDNESDAY,THURSDAY,FRIDAY", "08:00-12:00,14:00-18:00", clock);
+	}
+
 	private User companyOwner() {
 		User user = new User();
 		user.setFullName("Empresa A");
@@ -839,6 +944,35 @@ class WhatsappWebhookServiceTest {
 			field.set(target, value);
 		} catch (ReflectiveOperationException exception) {
 			throw new IllegalStateException("Não foi possível preparar os dados do teste.", exception);
+		}
+	}
+
+	/** Relógio ajustável para simular horários dentro e fora do expediente. */
+	private static final class MutableClock extends Clock {
+		private final ZoneId zone;
+		private Instant instant = Instant.EPOCH;
+
+		private MutableClock(ZoneId zone) {
+			this.zone = zone;
+		}
+
+		void setLocal(String localDateTime) {
+			instant = java.time.LocalDateTime.parse(localDateTime).atZone(zone).toInstant();
+		}
+
+		@Override
+		public ZoneId getZone() {
+			return ZoneOffset.UTC;
+		}
+
+		@Override
+		public Clock withZone(ZoneId zoneId) {
+			return this;
+		}
+
+		@Override
+		public Instant instant() {
+			return instant;
 		}
 	}
 }

@@ -93,6 +93,7 @@ import AllTickets from './app/pages/AllTickets/AllTickets'
 import Calendar from './app/pages/Calendar/Calendar'
 import ClosedTickets from './app/pages/ClosedTickets/ClosedTickets'
 import ClientCompanyRegister from './app/pages/ClientCompanyRegister/ClientCompanyRegister'
+import ClientUsers from './app/pages/ClientUsers/ClientUsers'
 import CreateSector from './app/pages/CreateSector/CreateSector'
 import Home from './app/pages/Home/Home'
 import Login from './app/pages/Login/Login'
@@ -118,6 +119,7 @@ const dashboardPageComponents = {
   closed: ClosedTickets,
   createSector: CreateSector,
   clientCompanyRegister: ClientCompanyRegister,
+  clientUsers: ClientUsers,
   newTicket: NewTicket,
   myData: MyData,
   team: Team,
@@ -700,11 +702,15 @@ function App() {
   const canAccessTeamPage =
     currentUserRole === 'admin' || currentMemberId !== null || hasPendingTeamInvites
   const canAccessCreateSector = currentUserRole === 'admin' && currentCompanyUsesSectors
+  // Cadastro de clientes: somente a equipe de suporte (admin e funcionários) da empresa provedora.
+  const canManageClientUsers =
+    (currentUserRole === 'admin' || currentUserRole === 'employee') && currentCompanyUsesSectors
   const navigationGroups = useMemo(
     () =>
       buildNavigationGroups({
         canAccessTeamPage,
         canCreateSector: canAccessCreateSector,
+        canManageClientUsers,
         userRole: effectiveUserRole,
         sectors: currentCompanyUsesSectors ? createdSectors : [],
         teamMembers,
@@ -713,6 +719,7 @@ function App() {
     [
       canAccessCreateSector,
       canAccessTeamPage,
+      canManageClientUsers,
       createdSectors,
       currentCompanyUsesSectors,
       currentMemberId,
@@ -1955,6 +1962,20 @@ function App() {
               authUser ? (
                 currentUserRole === 'admin' && currentUser?.companyType === 'RESPONDER' ? (
                   renderDashboardPage('clientCompanyRegister')
+                ) : (
+                  <Navigate replace to={SECTION_ROUTE_PATHS.tickets} />
+                )
+              ) : (
+                <Navigate replace to={PUBLIC_ROUTE_PATHS.login} />
+              )
+            }
+          />
+          <Route
+            path={SECTION_ROUTE_PATHS.clientUsers}
+            element={
+              authUser ? (
+                canManageClientUsers ? (
+                  renderDashboardPage('clientUsers')
                 ) : (
                   <Navigate replace to={SECTION_ROUTE_PATHS.tickets} />
                 )
